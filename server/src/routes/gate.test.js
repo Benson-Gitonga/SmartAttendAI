@@ -5,6 +5,7 @@ import { openDatabase } from '../db/index.js';
 import { seed } from '../db/seed.js';
 import { recordAttendance, todayISO } from '../db/repository.js';
 import { createApp } from '../app.js';
+import { createCardHandler } from '../attendance/handler.js';
 
 let db;
 let server;
@@ -105,3 +106,58 @@ describe('GET /api/gate/classes/:id/attendance', () => {
     assert.equal(body.records[0].date, '2026-09-01');
   });
 });
+
+describe('POST /api/rfid/scan from a gate device', () => {
+  let deviceServer;
+  let deviceBase;
+
+  beforeEach(async () => {
+    // Every scan challenged, so the two-step flow is deterministic.
+    const app = createApp({ db, cardHandler: createCardHandler({ db, challengeRate: 1 }), logger: false });
+    deviceServer = app.listen(0);
+    await new Promise((r) => deviceServer.once('listening', r));
+    deviceBase = `http://127.0.0.1:${deviceServer.address().port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise((r) => deviceServer.close(r));
+  });
+
+  const scan = (body) =>
+    fetch(`${deviceBase}/api/rfid/scan`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  test('tap, asked for a finger, match: shows up at the gate for the class', async () => {
+    const first = await scan({ cardUid: '01020304', interactive: true }); // Blue Card
+    assert.equal(first.status, 200);
+    assert.equal((await first.json()).outcome, 'fingerprint-required');
+
+    const second = await scan({ cardUid: '01020304', interactive: true, fingerprint: 'match' });
+    const body = await second.json();
+    assert.equal(body.outcome, 'recorded');
+    assert.equal(body.student.full_name, 'Jack Otieno');
+
+    const gate = await (await getClassAttendance(CLASS)).json();
+    assert.ok(gate.records.some((r) => r.studentId === 'stu-form3b-006'));
+  });
+
+  test('lower-case UIDs are accepted', async () => {
+    const res = await scan({ cardUid: 'aabbccdd', interactive: true, fingerprint: 'match' });
+    assert.equal((await res.json()).student.student_id, 'stu-form3b-009');
+  });
+
+  test('unknown card is a 404', async () => {
+    const res = await scan({ cardUid: 'C0FFEE99', interactive: true });
+    assert.equal(res.status, 404);
+    assert.equal((await res.json()).outcome, 'unknown-card');
+  });
+
+  test('bad fingerprint value is a 400', async () => {
+    const res = await scan({ cardUid: '01020304', fingerprint: 'maybe' });
+    assert.equal(res.status, 400);
+  });
+});
+

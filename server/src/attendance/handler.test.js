@@ -103,3 +103,60 @@ describe('createCardHandler - simulated scans write to SQLite', () => {
     assert.ok(rate > 0.17 && rate < 0.33, `expected ~0.25, got ${rate.toFixed(3)} (${challenges}/${n})`);
   });
 });
+
+describe('createCardHandler - gate device reports the fingerprint', () => {
+  test('interactive scan picked for a challenge asks for a finger and writes nothing', () => {
+    const handle = createCardHandler({ db, challengeRate: 1 });
+    const result = handle({ cardUid: CARD, interactive: true });
+
+    assert.equal(result.outcome, 'fingerprint-required');
+    assert.equal(result.student.full_name, 'Amina Wanjiru');
+    assert.equal(countAttendance(), 0);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM fingerprint_challenges').get().n, 0);
+  });
+
+  test('interactive scan not picked for a challenge records straight away', () => {
+    const handle = createCardHandler({ db, challengeRate: 0 });
+    const result = handle({ cardUid: CARD, interactive: true });
+
+    assert.equal(result.outcome, 'recorded');
+    assert.equal(rowFor('stu-form3b-001').capture_method, 'rfid');
+  });
+
+  test('device-reported match records a verified fingerprint attendance', () => {
+    const handle = createCardHandler({ db, challengeRate: 0, successRate: 0 });
+    const result = handle({ cardUid: CARD, interactive: true, fingerprint: 'match' });
+
+    assert.equal(result.outcome, 'recorded');
+    assert.equal(result.fingerprint.source, 'device');
+    const row = rowFor('stu-form3b-001');
+    assert.equal(row.capture_method, 'fingerprint');
+    assert.equal(row.verified, 1);
+  });
+
+  test('device-reported no_match rejects the scan regardless of successRate', () => {
+    const handle = createCardHandler({ db, challengeRate: 0, successRate: 1 });
+    const result = handle({ cardUid: CARD, interactive: true, fingerprint: 'no_match' });
+
+    assert.equal(result.outcome, 'rejected');
+    assert.equal(countAttendance(), 0);
+    assert.equal(db.prepare("SELECT result FROM fingerprint_challenges").get().result, 'no_match');
+  });
+
+  test('student already in today is a duplicate before any finger is asked for', () => {
+    const handle = createCardHandler({ db, challengeRate: 0 });
+    handle({ cardUid: CARD });
+    const again = createCardHandler({ db, challengeRate: 1 })({ cardUid: CARD, interactive: true });
+
+    assert.equal(again.outcome, 'duplicate');
+    assert.equal(countAttendance(), 1);
+  });
+
+  test('a Wokwi preset card resolves to its demo student', () => {
+    const handle = createCardHandler({ db, challengeRate: 0 });
+    const result = handle({ cardUid: '01020304' }); // Blue Card
+
+    assert.equal(result.outcome, 'recorded');
+    assert.equal(result.student.student_id, 'stu-form3b-006');
+  });
+});

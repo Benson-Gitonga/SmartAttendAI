@@ -35,7 +35,7 @@ afterEach(async () => {
   db.close();
 });
 
-/** Back-fill 28 school days: 'steady' mostly present, 'chronic' mostly absent. */
+/** Back-fill 28 school days: 'steady' always present, 'chronic' absent for the last 4 weeks. */
 function seedTwoMonthsHistory() {
   const today = new Date();
   for (let n = 40; n >= 1; n -= 1) {
@@ -46,7 +46,9 @@ function seedTwoMonthsHistory() {
     const dow = new Date(date).getDay();
     if (dow === 0 || dow === 6) continue;
     recordAttendance(db, { studentId: 'stu-steady', date, status: 'present', captureMethod: 'import' });
-    recordAttendance(db, { studentId: 'stu-chronic', date, status: n <= 10 ? 'absent' : 'present', captureMethod: 'import' });
+    // 20 days, not 10: the model also uses term position, so a 10-day streak
+    // scores just under red on some dates (e.g. 2026-10-10) and the test flaked.
+    recordAttendance(db, { studentId: 'stu-chronic', date, status: n <= 20 ? 'absent' : 'present', captureMethod: 'import' });
   }
 }
 

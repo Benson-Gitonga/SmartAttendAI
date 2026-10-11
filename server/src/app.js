@@ -60,11 +60,20 @@ export function createApp({ db, cardHandler = createCardHandler({ db }), logger 
   // Platform-wide school list + activate/deactivate, for the system-admin role.
   app.use('/api/system-admin', createSystemAdminRouter({ db }));
 
-  // Fire one scan by hand. Body: { "cardUid": "04A1B2C3" }
+  // One scan from a gate device or by hand. Body: { "cardUid": "04A1B2C3" }
+  // plus, for a device with a fingerprint step, "interactive": true and later
+  // "fingerprint": "match" | "no_match" (see attendance/handler.js).
   app.post('/api/rfid/scan', (req, res) => {
-    const { cardUid } = req.body ?? {};
+    const { cardUid, interactive, fingerprint } = req.body ?? {};
     if (!cardUid) return res.status(400).json({ error: 'cardUid is required' });
-    const result = cardHandler({ cardUid });
+    if (fingerprint !== undefined && !['match', 'no_match'].includes(fingerprint)) {
+      return res.status(400).json({ error: 'fingerprint must be "match" or "no_match"' });
+    }
+    const result = cardHandler({
+      cardUid: String(cardUid).toUpperCase(),
+      interactive: interactive === true,
+      fingerprint,
+    });
     const status = result.outcome === 'unknown-card' ? 404 : 200;
     res.status(status).json(result);
   });

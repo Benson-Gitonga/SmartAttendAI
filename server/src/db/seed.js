@@ -1,6 +1,7 @@
 // Demo roster. Uses the same IDs as client/src/db/seedData.js so records sync.
 import { openDatabase } from './index.js';
 import { config } from '../config.js';
+import { upsertCard } from './repository.js';
 
 export const DEMO_SCHOOL = {
   school_id: 'school-kibera-001',
@@ -16,19 +17,23 @@ export const DEMO_CLASS = {
   academic_year: 2026,
 };
 
-// 4-byte hex UIDs, like a MIFARE Classic card.
+// 4-byte hex UIDs, like a MIFARE Classic card. Students 006-010 hold the
+// Wokwi MFRC522 preset cards (Blue, Green, Yellow, Red, NFC Tag) so the
+// simulated gate in hardware/wokwi-gate scans real roster cards. The Wokwi
+// Key Fob (C0FFEE99) is deliberately unregistered.
 export const DEMO_STUDENTS = [
   { student_id: 'stu-form3b-001', admission_no: '3B/001', full_name: 'Amina Wanjiru',   card_uid: '04A1B2C3' },
   { student_id: 'stu-form3b-002', admission_no: '3B/002', full_name: 'Brian Kamau',     card_uid: '04D4E5F6' },
   { student_id: 'stu-form3b-003', admission_no: '3B/003', full_name: 'Daniel Mutua',    card_uid: '0417A8B9' },
   { student_id: 'stu-form3b-004', admission_no: '3B/004', full_name: 'Faith Achieng',   card_uid: '04C2D3E4' },
   { student_id: 'stu-form3b-005', admission_no: '3B/005', full_name: 'Grace Muthoni',   card_uid: '0455667788' },
-  { student_id: 'stu-form3b-006', admission_no: '3B/006', full_name: 'Jack Otieno',     card_uid: '04998877' },
-  { student_id: 'stu-form3b-007', admission_no: '3B/007', full_name: 'Kevin Odhiambo',  card_uid: '04AABBCC' },
-  { student_id: 'stu-form3b-008', admission_no: '3B/008', full_name: 'Lydia Chebet',    card_uid: '04DDEEFF' },
-  { student_id: 'stu-form3b-009', admission_no: '3B/009', full_name: 'Moses Kipchoge',  card_uid: '04123456' },
-  { student_id: 'stu-form3b-010', admission_no: '3B/010', full_name: 'Naomi Waweru',    card_uid: '0478DEF0' },
+  { student_id: 'stu-form3b-006', admission_no: '3B/006', full_name: 'Jack Otieno',     card_uid: '01020304' },
+  { student_id: 'stu-form3b-007', admission_no: '3B/007', full_name: 'Kevin Odhiambo',  card_uid: '11223344' },
+  { student_id: 'stu-form3b-008', admission_no: '3B/008', full_name: 'Lydia Chebet',    card_uid: '55667788' },
+  { student_id: 'stu-form3b-009', admission_no: '3B/009', full_name: 'Moses Kipchoge',  card_uid: 'AABBCCDD' },
+  { student_id: 'stu-form3b-010', admission_no: '3B/010', full_name: 'Naomi Waweru',    card_uid: '04112233445566' },
 ].map((s) => ({ ...s, class_group_id: DEMO_CLASS.class_group_id, enrolled_at: '2026-01-06' }));
+
 
 /** Safe to re-run. Does not touch attendance or the sync queue. */
 export function seed(db) {
@@ -51,14 +56,10 @@ export function seed(db) {
        ON CONFLICT(student_id) DO UPDATE SET
          admission_no = excluded.admission_no, full_name = excluded.full_name`
     );
-    const upsertCard = db.prepare(
-      `INSERT INTO rfid_cards (card_uid, student_id) VALUES (@card_uid, @student_id)
-       ON CONFLICT(card_uid) DO UPDATE SET student_id = excluded.student_id`
-    );
 
     for (const s of DEMO_STUDENTS) {
       upsertStudent.run(s);
-      upsertCard.run({ card_uid: s.card_uid, student_id: s.student_id });
+      upsertCard(db, { cardUid: s.card_uid, studentId: s.student_id });
     }
   });
   tx();

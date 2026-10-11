@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "author": "SmartAttend AI",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "board-mfrc522", "id": "rfid", "top": -10, "left": -290, "attrs": {} },
+    { "type": "board-ssd1306", "id": "oled", "top": -130, "left": 30, "attrs": { "i2cAddress": "0x3c" } },
+    { "type": "wokwi-led", "id": "ledGreen", "top": 20, "left": 230, "attrs": { "color": "green", "label": "OK" } },
+    { "type": "wokwi-led", "id": "ledRed", "top": 20, "left": 290, "attrs": { "color": "red", "label": "NO" } },
+    { "type": "wokwi-resistor", "id": "r1", "top": 110, "left": 210, "rotate": 90, "attrs": { "value": "220" } },
+    { "type": "wokwi-resistor", "id": "r2", "top": 110, "left": 270, "rotate": 90, "attrs": { "value": "220" } },
+    { "type": "wokwi-buzzer", "id": "buzzer", "top": -110, "left": 250, "attrs": { "volume": "0.2" } },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btnMatch",
+      "top": 200,
+      "left": 210,
+      "attrs": { "color": "green", "label": "Finger matches", "bounce": "0" }
+    },
+    {
+      "type": "wokwi-pushbutton",
+      "id": "btnNoMatch",
+      "top": 270,
+      "left": 210,
+      "attrs": { "color": "red", "label": "Wrong finger", "bounce": "0" }
+    }
+  ],
+  "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+
+    [ "rfid:3.3V", "esp:3V3", "red", [] ],
+    [ "rfid:GND", "esp:GND.1", "black", [] ],
+    [ "rfid:RST", "esp:4", "orange", [] ],
+    [ "rfid:SDA", "esp:5", "blue", [] ],
+    [ "rfid:SCK", "esp:18", "yellow", [] ],
+    [ "rfid:MISO", "esp:19", "purple", [] ],
+    [ "rfid:MOSI", "esp:23", "green", [] ],
+
+    [ "oled:VCC", "esp:3V3", "red", [] ],
+    [ "oled:GND", "esp:GND.2", "black", [] ],
+    [ "oled:SDA", "esp:21", "blue", [] ],
+    [ "oled:SCL", "esp:22", "yellow", [] ],
+
+    [ "ledGreen:A", "esp:25", "green", [] ],
+    [ "ledGreen:C", "r1:1", "black", [] ],
+    [ "r1:2", "esp:GND.2", "black", [] ],
+    [ "ledRed:A", "esp:26", "red", [] ],
+    [ "ledRed:C", "r2:1", "black", [] ],
+    [ "r2:2", "esp:GND.2", "black", [] ],
+
+    [ "buzzer:2", "esp:27", "orange", [] ],
+    [ "buzzer:1", "esp:GND.2", "black", [] ],
+
+    [ "btnMatch:1.l", "esp:32", "green", [] ],
+    [ "btnMatch:2.l", "esp:GND.1", "black", [] ],
+    [ "btnNoMatch:1.l", "esp:33", "red", [] ],
+    [ "btnNoMatch:2.l", "esp:GND.1", "black", [] ]
+  ],
+  "dependencies": {}
+}

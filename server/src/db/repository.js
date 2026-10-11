@@ -31,6 +31,10 @@ export function findStudentByCardUid(db, cardUid) {
     .get(cardUid) ?? null;
 }
 
+export function hasAttendanceForDate(db, studentId, date = todayISO()) {
+  return !!db.prepare('SELECT 1 FROM attendance_events WHERE student_id = ? AND date = ?').get(studentId, date);
+}
+
 /**
  * Write one attendance record, its sync-queue entry and an audit row in a
  * single transaction.
