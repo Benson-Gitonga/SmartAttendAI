@@ -19,6 +19,20 @@
       "attrs": { "color": "green", "label": "Finger matches", "bounce": "0" }
     },
     {
+      "type": "wokwi-slide-switch",
+      "id": "wifiSwitch",
+      "top": 200,
+      "left": -150,
+      "attrs": { "value": "", "bounce": "0" }
+    },
+    {
+      "type": "wokwi-text",
+      "id": "wifiLabel",
+      "top": 170,
+      "left": -200,
+      "attrs": { "text": "Wi-Fi: left = on, right = off" }
+    },
+    {
       "type": "wokwi-pushbutton",
       "id": "btnNoMatch",
       "top": 270,
@@ -56,7 +70,10 @@
     [ "btnMatch:1.l", "esp:32", "green", [] ],
     [ "btnMatch:2.l", "esp:GND.1", "black", [] ],
     [ "btnNoMatch:1.l", "esp:33", "red", [] ],
-    [ "btnNoMatch:2.l", "esp:GND.1", "black", [] ]
+    [ "btnNoMatch:2.l", "esp:GND.1", "black", [] ],
+
+    [ "wifiSwitch:2", "esp:14", "violet", [] ],
+    [ "wifiSwitch:3", "esp:GND.1", "black", [] ]
   ],
   "dependencies": {}
 }
