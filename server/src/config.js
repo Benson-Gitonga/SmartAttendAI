@@ -35,6 +35,15 @@ export const config = {
   // Start the RFID simulation loop when the server boots.
   simulationEnabled: process.env.SIMULATION_ENABLED !== 'false',
 
+  // Gate devices (hardware/wokwi-gate) send this in the X-Device-Key header.
+  // Empty means POST /api/rfid/scan is open, as before.
+  deviceApiKey: process.env.DEVICE_API_KEY || '',
+
+  // How old an offline-queued gate scan may be when it finally arrives, and
+  // how far ahead of the server clock a device clock may run.
+  offlineScanMaxAgeDays: num(process.env.OFFLINE_SCAN_MAX_AGE_DAYS, 7),
+  deviceClockSkewMs: num(process.env.DEVICE_CLOCK_SKEW_MS, 5 * 60_000),
+
   // Outbound cloud sync (src/workers/syncWorker.js).
   sync: {
     workerDisabled: process.env.SYNC_WORKER_DISABLED === 'true',

@@ -51,6 +51,8 @@ export function recordAttendance(db, event) {
     recordedBy = null,
     source = 'simulation',
     eventId = randomUUID(),
+    // When it actually happened, if not now (an offline gate scan sent later).
+    createdAt = null,
   } = event;
 
   if (!studentId) throw new Error('studentId is required');
@@ -59,14 +61,26 @@ export function recordAttendance(db, event) {
     throw new Error(`bad captureMethod: ${captureMethod}`);
   }
 
+  const createdIso = createdAt ? new Date(createdAt).toISOString() : new Date().toISOString();
+
   const tx = db.transaction(() => {
     const info = db
       .prepare(
         `INSERT INTO attendance_events
-           (event_id, student_id, date, status, capture_method, verified, recorded_by, source)
-         VALUES (@eventId, @studentId, @date, @status, @captureMethod, @verified, @recordedBy, @source)`
+           (event_id, student_id, date, status, capture_method, verified, recorded_by, source, created_at)
+         VALUES (@eventId, @studentId, @date, @status, @captureMethod, @verified, @recordedBy, @source, @createdAtSql)`
       )
-      .run({ eventId, studentId, date, status, captureMethod, verified: verified ? 1 : 0, recordedBy, source });
+      .run({
+        eventId,
+        studentId,
+        date,
+        status,
+        captureMethod,
+        verified: verified ? 1 : 0,
+        recordedBy,
+        source,
+        createdAtSql: toSqliteTimestamp(createdIso),
+      });
 
     // createdAt must be RFC3339, so it is generated here rather than by SQLite.
     const payload = JSON.stringify({
@@ -76,7 +90,7 @@ export function recordAttendance(db, event) {
       status,
       captureMethod,
       recordedBy,
-      createdAt: new Date().toISOString(),
+      createdAt: createdIso,
     });
     db.prepare(`INSERT INTO sync_queue (event_id, payload, status) VALUES (?, ?, 'pending')`).run(
       eventId,
@@ -92,7 +106,7 @@ export function recordAttendance(db, event) {
       detail: JSON.stringify({ studentId, date, status, captureMethod, verified: !!verified, source }),
     });
 
-    return { id: info.lastInsertRowid, eventId, studentId, date, status, captureMethod, verified: !!verified, source };
+    return { id: info.lastInsertRowid, eventId, studentId, date, status, captureMethod, verified: !!verified, source, createdAt: createdIso };
   });
 
   try {
@@ -136,6 +150,11 @@ export function getAttendanceForDate(db, date = todayISO()) {
 }
 
 /** SQLite `datetime('now')` ('YYYY-MM-DD HH:MM:SS', UTC) -> RFC3339; ISO strings pass through. */
+/** ISO 8601 -> SQLite's datetime('now') format (UTC), so old and new rows sort together. */
+function toSqliteTimestamp(iso) {
+  return iso.slice(0, 19).replace('T', ' ');
+}
+
 function toIsoTimestamp(value) {
   if (value == null) return null;
   return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value) ? `${value.replace(' ', 'T')}Z` : value;

@@ -159,5 +159,123 @@ describe('POST /api/rfid/scan from a gate device', () => {
     const res = await scan({ cardUid: '01020304', fingerprint: 'maybe' });
     assert.equal(res.status, 400);
   });
+
+  test('a UID that is not hex is a 400', async () => {
+    const res = await scan({ cardUid: 'NOT-A-CARD' });
+    assert.equal(res.status, 400);
+    assert.equal((await res.json()).error, 'invalid scan');
+  });
+
+  test('unexpected fields are a 400', async () => {
+    const res = await scan({ cardUid: '01020304', studentId: 'stu-form3b-001' });
+    assert.equal(res.status, 400);
+  });
+
+  test('an offline scan must say when it happened and carry a scanId', async () => {
+    assert.equal((await scan({ cardUid: '01020304', offline: true })).status, 400);
+    assert.equal((await scan({ cardUid: '01020304', offline: true, scannedAt: new Date().toISOString() })).status, 400);
+  });
+
+  test('an offline scan cannot carry a fingerprint result', async () => {
+    const res = await scan({
+      cardUid: '01020304',
+      offline: true,
+      scanId: randomUUID(),
+      scannedAt: new Date().toISOString(),
+      fingerprint: 'match',
+    });
+    assert.equal(res.status, 400);
+  });
+
+  test('a scan time far in the future is a 422', async () => {
+    const res = await scan({
+      cardUid: '01020304',
+      offline: true,
+      scanId: randomUUID(),
+      scannedAt: new Date(Date.now() + 3600_000).toISOString(),
+    });
+    assert.equal(res.status, 422);
+    assert.match((await res.json()).error, /future/);
+  });
+
+  test("a queued scan from yesterday shows up on yesterday's gate list, not today's", async () => {
+    const yesterday = new Date(Date.now() - 24 * 3600_000);
+    yesterday.setHours(7, 20, 0, 0);
+    const res = await scan({
+      cardUid: '11223344', // Green Card -> Kevin Odhiambo
+      offline: true,
+      scanId: randomUUID(),
+      scannedAt: yesterday.toISOString(),
+      deviceId: 'gate-main',
+    });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.outcome, 'recorded');
+    assert.equal(body.challenged, false); // challengeRate is 1 here, but offline scans skip it
+
+    const then = await (await getClassAttendance(CLASS, `?date=${todayISO(yesterday)}`)).json();
+    const kevin = then.records.find((r) => r.studentId === 'stu-form3b-007');
+    assert.ok(kevin, "Kevin should be on yesterday's list");
+    assert.equal(kevin.captureMethod, 'rfid');
+    assert.equal(new Date(kevin.createdAt).getTime(), yesterday.getTime());
+
+    const today = await (await getClassAttendance(CLASS)).json();
+    assert.ok(!today.records.some((r) => r.studentId === 'stu-form3b-007'));
+  });
+
+  test('replaying the same queued scan is a harmless duplicate', async () => {
+    const body = { cardUid: '11223344', offline: true, scanId: randomUUID(), scannedAt: new Date().toISOString() };
+    assert.equal((await (await scan(body)).json()).outcome, 'recorded');
+    assert.equal((await (await scan(body)).json()).outcome, 'duplicate');
+  });
+});
+
+describe('POST /api/rfid/scan with a device key set', () => {
+  let keyedServer;
+  let keyedBase;
+
+  beforeEach(async () => {
+    const app = createApp({
+      db,
+      cardHandler: createCardHandler({ db, challengeRate: 0 }),
+      logger: false,
+      deviceApiKey: 'gate-secret-123',
+    });
+    keyedServer = app.listen(0);
+    await new Promise((r) => keyedServer.once('listening', r));
+    keyedBase = `http://127.0.0.1:${keyedServer.address().port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise((r) => keyedServer.close(r));
+  });
+
+  const post = (headers = {}) =>
+    fetch(`${keyedBase}/api/rfid/scan`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...headers },
+      body: JSON.stringify({ cardUid: '01020304' }),
+    });
+
+  test('no key is a 401 and nothing is recorded', async () => {
+    const res = await post();
+    assert.equal(res.status, 401);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM attendance_events').get().n, 0);
+  });
+
+  test('a wrong key is a 401', async () => {
+    assert.equal((await post({ 'x-device-key': 'gate-secret-124' })).status, 401);
+    assert.equal((await post({ 'x-device-key': 'short' })).status, 401);
+  });
+
+  test('the right key gets through', async () => {
+    const res = await post({ 'x-device-key': 'gate-secret-123' });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).outcome, 'recorded');
+  });
+
+  test('the key only guards the scan endpoint', async () => {
+    assert.equal((await fetch(`${keyedBase}/health`)).status, 200);
+  });
 });
 

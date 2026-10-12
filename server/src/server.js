@@ -3,7 +3,7 @@ import { config } from './config.js';
 import { getDb, closeDb } from './db/index.js';
 import { seed } from './db/seed.js';
 import { createApp } from './app.js';
-import { createCardHandler } from './attendance/handler.js';
+import { createCardHandler, describeOutcome } from './attendance/handler.js';
 import { RfidEmitter } from './simulation/rfidEmitter.js';
 
 const db = getDb();
@@ -15,6 +15,7 @@ const app = createApp({ db, cardHandler });
 const server = app.listen(config.port, () => {
   console.log(`SmartAttend server listening on http://localhost:${config.port}`);
   console.log(`  DB: ${config.dbPath}`);
+  console.log(`  Gate device key: ${config.deviceApiKey ? 'required (DEVICE_API_KEY)' : 'off, /api/rfid/scan is open'}`);
 });
 
 // The sync worker runs in its own thread so a slow AWS call cannot block the server.
@@ -53,26 +54,7 @@ if (config.simulationEnabled) {
 }
 
 function logOutcome(scan, result) {
-  const who = result.student ? `${result.student.full_name} (${result.student.student_id})` : scan.cardUid;
-  switch (result.outcome) {
-    case 'recorded':
-      console.log(
-        `[rfid] ${who} -> present via ${result.event.capture_method ?? result.event.captureMethod}` +
-          `${result.challenged ? ' (fingerprint verified)' : ''}`
-      );
-      break;
-    case 'duplicate':
-      console.log(`[rfid] ${who} -> already recorded today, ignored`);
-      break;
-    case 'rejected':
-      console.log(`[rfid] ${who} -> REJECTED: fingerprint no-match (possible buddy punch)`);
-      break;
-    case 'unknown-card':
-      console.log(`[rfid] unknown card ${scan.cardUid}, ignored`);
-      break;
-    default:
-      console.log(`[rfid] ${who} -> ${result.outcome}`);
-  }
+  console.log(`[rfid] ${describeOutcome(scan, result)}`);
 }
 
 function shutdown(signal) {

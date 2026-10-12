@@ -1,6 +1,10 @@
 import express from 'express';
 import morgan from 'morgan';
-import { createCardHandler } from './attendance/handler.js';
+import { timingSafeEqual } from 'node:crypto';
+import { createCardHandler, checkScanTime, describeOutcome } from './attendance/handler.js';
+import { rfidScanSchema } from './schemas/rfidScan.schema.js';
+import { validate } from './lib/validate.js';
+import { config } from './config.js';
 import { createSyncRouter } from './routes/sync.js';
 import { createRosterRouter } from './routes/roster.js';
 import { createAdminRouter } from './routes/admin.js';
@@ -18,8 +22,14 @@ import {
  * @param {object} opts
  * @param {import('better-sqlite3').Database} opts.db
  * @param {ReturnType<typeof createCardHandler>} [opts.cardHandler]
+ * @param {string} [opts.deviceApiKey] required X-Device-Key for gate scans; '' = open
  */
-export function createApp({ db, cardHandler = createCardHandler({ db }), logger = true } = {}) {
+export function createApp({
+  db,
+  cardHandler = createCardHandler({ db }),
+  logger = true,
+  deviceApiKey = config.deviceApiKey,
+} = {}) {
   const app = express();
   app.use(express.json());
   if (logger) app.use(morgan('dev'));
@@ -62,18 +72,20 @@ export function createApp({ db, cardHandler = createCardHandler({ db }), logger 
 
   // One scan from a gate device or by hand. Body: { "cardUid": "04A1B2C3" }
   // plus, for a device with a fingerprint step, "interactive": true and later
-  // "fingerprint": "match" | "no_match" (see attendance/handler.js).
-  app.post('/api/rfid/scan', (req, res) => {
-    const { cardUid, interactive, fingerprint } = req.body ?? {};
-    if (!cardUid) return res.status(400).json({ error: 'cardUid is required' });
-    if (fingerprint !== undefined && !['match', 'no_match'].includes(fingerprint)) {
-      return res.status(400).json({ error: 'fingerprint must be "match" or "no_match"' });
-    }
-    const result = cardHandler({
-      cardUid: String(cardUid).toUpperCase(),
-      interactive: interactive === true,
-      fingerprint,
-    });
+  // "fingerprint": "match" | "no_match", and for a scan replayed from the
+  // device's offline queue "offline", "scannedAt" and "scanId".
+  // See attendance/handler.js and schemas/rfidScan.schema.js.
+  app.post('/api/rfid/scan', requireDeviceKey(deviceApiKey), (req, res) => {
+    const { valid, errors } = validate(rfidScanSchema, req.body ?? {});
+    if (!valid) return res.status(400).json({ error: 'invalid scan', errors });
+
+    const timeProblem = checkScanTime(req.body.scannedAt);
+    if (timeProblem) return res.status(422).json({ error: timeProblem });
+
+    const scan = { ...req.body, cardUid: req.body.cardUid.toUpperCase() };
+    const result = cardHandler(scan);
+    if (logger) console.log(`[gate] ${describeOutcome(scan, result)}`);
+
     const status = result.outcome === 'unknown-card' ? 404 : 200;
     res.status(status).json(result);
   });
@@ -87,4 +99,17 @@ export function createApp({ db, cardHandler = createCardHandler({ db }), logger 
   });
 
   return app;
+}
+
+/** Gate devices prove who they are with a shared key. An empty key turns the check off. */
+function requireDeviceKey(expected) {
+  const want = Buffer.from(expected);
+  return (req, res, next) => {
+    if (!expected) return next();
+    const got = Buffer.from(req.get('x-device-key') ?? '');
+    if (got.length !== want.length || !timingSafeEqual(got, want)) {
+      return res.status(401).json({ error: 'missing or wrong X-Device-Key' });
+    }
+    next();
+  };
 }

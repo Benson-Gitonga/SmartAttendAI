@@ -85,6 +85,18 @@ is picked for a fingerprint check the reply is `"outcome": "fingerprint-required
 and nothing is written; the device then resends the scan with
 `"fingerprint": "match"` or `"no_match"`.
 
+A scan the device saved while it could not reach the server is replayed later
+with `"offline": true`, the device's own `"scannedAt"` time and a `"scanId"`
+(a UUID). It is filed under the day it happened, recorded as an unverified card
+scan (there was nobody to ask for a fingerprint), and `scanId` becomes the
+event id, so sending the same queued scan twice only records it once. Scan
+times more than `OFFLINE_SCAN_MAX_AGE_DAYS` old, or from a clock running
+ahead, get a `422`. Every replay leaves an `rfid.offline_scan` audit row with
+how late it arrived.
+
+Set `DEVICE_API_KEY` and gate devices must send it as the `X-Device-Key`
+header, otherwise they get a `401`. The rest of the API is unaffected.
+
 ## How a scan becomes a record
 
 `src/attendance/handler.js`:
