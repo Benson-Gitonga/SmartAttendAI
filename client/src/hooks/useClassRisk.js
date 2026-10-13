@@ -4,6 +4,9 @@ import { computeFeatures, scoreRiskML, isAssessable, toISO } from '../lib/riskMo
 
 const HISTORY_DAYS = 63; // covers the 6-week trend and the feature windows
 
+// A pattern can flag red with a modest model score, so rank by flag first.
+const FLAG_ORDER = { green: 0, amber: 1, red: 2 };
+
 function daysAgoISO(n) {
   const dt = new Date();
   dt.setDate(dt.getDate() - n);
@@ -57,7 +60,7 @@ export function useClassRisk(classGroupId) {
   const flagged = useMemo(
     () => assessed
       .filter((r) => r.assessable && r.risk.flag !== 'green')
-      .sort((a, b) => b.risk.score - a.risk.score),
+      .sort((a, b) => FLAG_ORDER[b.risk.flag] - FLAG_ORDER[a.risk.flag] || b.risk.score - a.risk.score),
     [assessed],
   );
 

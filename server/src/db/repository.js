@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { assessStudent, FOLLOW_UP_FRESH_DAYS } from '../lib/riskModel.js';
+import { assessStudent, flagRank, FOLLOW_UP_FRESH_DAYS } from '../lib/riskModel.js';
 
 /** Local calendar date as YYYY-MM-DD. Matches the client's todayISO(). */
 export function todayISO(now = new Date()) {
@@ -435,12 +435,13 @@ export function getFlaggedStudents(db, schoolId) {
         guardianEmail: s.guardianEmail,
         flag: assessment.flag,
         dropoutProbability: assessment.dropoutProbability,
+        patterns: assessment.patterns,
         lastFollowUpAt: lastAt,
         needsFollowUp,
       };
     })
     .filter(Boolean)
-    .sort((a, b) => b.dropoutProbability - a.dropoutProbability);
+    .sort((a, b) => flagRank(b.flag) - flagRank(a.flag) || b.dropoutProbability - a.dropoutProbability);
 }
 
 export function getSchoolOverview(db, schoolId) {

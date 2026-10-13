@@ -30,6 +30,13 @@ REPO_ROOT = ML_DIR.parent
 
 AMBER_FRACTION = 0.35 / 0.60
 
+# The app reads its own copies; keep all three in step.
+OUTPUT_PATHS = (
+    ML_DIR / "models" / "hgb_export.json",
+    REPO_ROOT / "client" / "src" / "data" / "riskModel.json",
+    REPO_ROOT / "server" / "src" / "data" / "riskModel.json",
+)
+
 
 def export_tree(tree_predictor) -> dict:
     nodes = tree_predictor.nodes
@@ -90,10 +97,15 @@ def main() -> int:
     print(f"sanity check over 200 random rows (incl. NaNs): max |diff| = {max_diff:.2e}")
     assert max_diff < 1e-6, "export does not match the live model - not writing the file"
 
-    out_path = ML_DIR / "models" / "hgb_export.json"
-    out_path.write_text(json.dumps(export), encoding="utf-8")
+    payload = json.dumps(export)
     n_nodes = sum(len(t["isLeaf"]) for t in trees)
-    print(f"wrote {out_path} - {len(trees)} trees, {n_nodes} nodes total, {out_path.stat().st_size / 1024:.1f} KB")
+    for out_path in OUTPUT_PATHS:
+        if not out_path.parent.is_dir():  # e.g. on Colab, where only ml/ is uploaded
+            print(f"skipped {out_path.relative_to(REPO_ROOT)} (folder not present)")
+            continue
+        out_path.write_text(payload, encoding="utf-8")
+        print(f"wrote {out_path.relative_to(REPO_ROOT)}")
+    print(f"{len(trees)} trees, {n_nodes} nodes total, {len(payload) / 1024:.1f} KB")
     return 0
 
 

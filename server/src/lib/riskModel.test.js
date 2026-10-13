@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { assessStudent, isAssessable, MIN_ASSESSABLE_DAYS } from './riskModel.js';
+import { assessStudent, detectPatterns, isAssessable, MIN_ASSESSABLE_DAYS } from './riskModel.js';
 
 function isoAddDays(iso, n) {
   const [y, m, d] = iso.split('-').map(Number);
@@ -85,5 +85,44 @@ describe('assessStudent', () => {
     const rows = termRows(ASOF, (date, i) => (i % 10 === 0 ? 'absent' : 'present'));
     const result = assessStudent(rows, ASOF);
     assert.equal(result.flag, 'amber');
+  });
+});
+
+describe('detectPatterns', () => {
+  test('4 school days absent in a row is red, ongoing', () => {
+    // Fri Mar 13 back to Tue Mar 10.
+    const rows = termRows(ASOF, (date) => (date >= '2026-03-10' ? 'absent' : 'present'));
+    assert.deepEqual(detectPatterns(rows, ASOF), [
+      { kind: 'streak', flag: 'red', days: 4, from: '2026-03-10', to: '2026-03-13', ongoing: true },
+    ]);
+  });
+
+  test('3 in a row is not a pattern', () => {
+    const rows = termRows(ASOF, (date) => (date >= '2026-03-11' ? 'absent' : 'present'));
+    assert.deepEqual(detectPatterns(rows, ASOF), []);
+  });
+
+  test('a day with no register neither counts nor breaks the run', () => {
+    const rows = termRows(ASOF, (date) => (date >= '2026-03-09' ? 'absent' : 'present'))
+      .filter((r) => r.date !== '2026-03-11');
+    assert.equal(detectPatterns(rows, ASOF)[0].days, 4);
+  });
+
+  test('every Monday missed is an amber weekday habit', () => {
+    const rows = termRows(ASOF, (date) => (new Date(`${date}T00:00`).getDay() === 1 ? 'absent' : 'present'));
+    assert.deepEqual(detectPatterns(rows, ASOF), [
+      { kind: 'weekday', flag: 'amber', weekday: 'Monday', missed: 4, of: 4 },
+    ]);
+  });
+});
+
+describe('assessStudent with patterns', () => {
+  test('a 4-day streak is red even if the model says otherwise, and keeps the model score', () => {
+    const rows = termRows(ASOF, (date) => (date >= '2026-03-10' ? 'absent' : 'present'));
+    const result = assessStudent(rows, ASOF);
+    assert.equal(result.flag, 'red');
+    assert.equal(result.overridden, result.mlFlag !== 'red');
+    assert.equal(result.patterns[0].kind, 'streak');
+    assert.ok(result.dropoutProbability > 0 && result.dropoutProbability < 1);
   });
 });

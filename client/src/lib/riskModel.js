@@ -3,7 +3,9 @@
  *
  * `scoreRiskML` runs the trained model exported to `data/riskModel.json` by
  * `ml/training/export_model.py`. Re-export that file whenever the model is
- * retrained. `scoreRisk` is the older rule-based scorer, kept as a fallback.
+ * retrained. `detectPatterns` adds hard rules on top: a pattern can raise the
+ * model's flag but never lower it. `scoreRisk` is the older rule-based
+ * scorer, kept as a fallback.
  *
  * Features follow the Python pipeline in `ml/training/`:
  *   - windows are 14 / 28 calendar days, counting only school days (Mon-Fri);
@@ -27,6 +29,7 @@ export const FEATURE_NAMES = [
 const WEEK = 7;
 const WINDOW_DAYS = 14;
 const MONTH_DAYS = 28;
+const SIX_WEEK_DAYS = 42;
 const ATTENDED = new Set(['present', 'late']);
 
 /** RuleBasedScorer.WEIGHTS */
@@ -237,6 +240,95 @@ export function computeMlExtraFeatures(history, asOf = toISO(new Date())) {
   };
 }
 
+// Attendance patterns: hard rules on top of the model
+
+/** This many school days marked absent in a row always flags red. */
+export const PERSISTENT_STREAK_DAYS = 4;
+/** Missing this many of the last WEEKDAY_LOOKBACK same weekdays flags amber. */
+export const WEEKDAY_HABIT_MISSES = 3;
+const WEEKDAY_LOOKBACK = 4;
+
+const DOW_LABEL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const FLAG_RANK = { green: 0, amber: 1, red: 2 };
+export const worseFlag = (a, b) => (FLAG_RANK[b] > FLAG_RANK[a] ? b : a);
+
+const SHORT_DATE = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+const shortDate = (iso) => SHORT_DATE.format(parseISO(iso));
+
+/**
+ * Patterns that flag a student whatever the model says. Only days with a
+ * record count: a school day with no register (a holiday, a closure, a missed
+ * roll call) neither adds to nor breaks a run.
+ *
+ * @returns {Array<
+ *   | { kind: 'streak', flag: 'red', days: number, from: string, to: string, ongoing: boolean }
+ *   | { kind: 'weekday', flag: 'amber', weekday: string, missed: number, of: number }
+ * >}
+ */
+export function detectPatterns(history, asOf = toISO(new Date())) {
+  const byDate = new Map(history.map((r) => [r.date, r.status]));
+  const out = [];
+
+  // Persistent absence: the longest run of recorded absences in the last 4 weeks.
+  const recorded = schoolDaysBetween(addDays(asOf, -MONTH_DAYS), asOf).filter((d) => byDate.has(d));
+  let best = null;
+  let runStart = null;
+  recorded.forEach((d, i) => {
+    if (byDate.get(d) === 'absent') {
+      if (runStart === null) runStart = i;
+      const days = i - runStart + 1;
+      if (!best || days >= best.days) best = { days, from: recorded[runStart], to: d, end: i };
+    } else {
+      runStart = null;
+    }
+  });
+  if (best && best.days >= PERSISTENT_STREAK_DAYS) {
+    out.push({
+      kind: 'streak',
+      flag: 'red',
+      days: best.days,
+      from: best.from,
+      to: best.to,
+      ongoing: best.end === recorded.length - 1,
+    });
+  }
+
+  // Weekday habit: the same weekday missed again and again (e.g. 3 of the last 4 Mondays).
+  const byWeekday = new Map();
+  for (const d of schoolDaysBetween(addDays(asOf, -SIX_WEEK_DAYS), asOf)) {
+    if (!byDate.has(d)) continue;
+    const g = parseISO(d).getDay();
+    if (!byWeekday.has(g)) byWeekday.set(g, []);
+    byWeekday.get(g).push(byDate.get(d));
+  }
+  const habits = [];
+  for (const [g, statuses] of byWeekday) {
+    const last = statuses.slice(-WEEKDAY_LOOKBACK);
+    if (last.length < WEEKDAY_HABIT_MISSES) continue;
+    const missed = last.filter((st) => st === 'absent').length;
+    if (missed >= WEEKDAY_HABIT_MISSES) habits.push({ g, missed, of: last.length });
+  }
+  // Missing most days of the week is general absence, not a weekday habit.
+  if (habits.length >= 1 && habits.length <= 2) {
+    habits.sort((a, b) => b.missed / b.of - a.missed / a.of);
+    const h = habits[0];
+    out.push({ kind: 'weekday', flag: 'amber', weekday: DOW_LABEL[h.g], missed: h.missed, of: h.of });
+  }
+
+  return out;
+}
+
+/** One sentence per pattern, for the Alerts table and the profile. */
+export function describePattern(p) {
+  if (p.kind === 'streak') {
+    const span = p.from === p.to ? shortDate(p.from) : `${shortDate(p.from)} to ${shortDate(p.to)}`;
+    return p.ongoing
+      ? `Absent ${p.days} school days in a row and not back yet (since ${shortDate(p.from)}).`
+      : `Missed ${p.days} school days in a row (${span}).`;
+  }
+  return `Missed ${p.missed} of the last ${p.of} ${p.weekday}s.`;
+}
+
 const sigmoid = (x) => 1 / (1 + Math.exp(-x));
 
 function walkTree(tree, featureVector) {
@@ -277,10 +369,18 @@ export function scoreRiskFromFeatures(allFeatures) {
   return { score: dropoutProbability, flag, dropoutProbability, overridden: false, components: {} };
 }
 
+/**
+ * The model's prediction, raised by any attendance pattern. `score` and
+ * `dropoutProbability` stay the model's own output; `mlFlag` is the flag
+ * before patterns, and `overridden` is true when a pattern raised it.
+ */
 export function scoreRiskML(history, asOf = toISO(new Date())) {
   const base = computeFeatures(history, asOf);
   const extra = computeMlExtraFeatures(history, asOf);
-  return scoreRiskFromFeatures({ ...base, ...extra });
+  const ml = scoreRiskFromFeatures({ ...base, ...extra });
+  const patterns = detectPatterns(history, asOf);
+  const flag = patterns.reduce((f, pt) => worseFlag(f, pt.flag), ml.flag);
+  return { ...ml, flag, mlFlag: ml.flag, overridden: flag !== ml.flag, patterns };
 }
 
 /**
@@ -302,8 +402,6 @@ export function weeklyTrend(history, asOf = toISO(new Date()), weeks = 6) {
   return out;
 }
 
-const DOW_LABEL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
 function dominantAbsenceDay(history, asOf) {
   const byDate = new Map(history.map((r) => [r.date, r.status]));
   const counts = new Map();
@@ -321,10 +419,11 @@ function dominantAbsenceDay(history, asOf) {
 
 /** @returns {string[]} short insights for the Alerts card and profile */
 export function riskInsights(history, features, risk, asOf = toISO(new Date())) {
-  const out = [];
+  const patterns = risk.patterns ?? [];
+  const out = patterns.map(describePattern);
   const streak = features.longest_absence_streak;
 
-  if (streak >= 3) {
+  if (streak >= 3 && !patterns.some((pt) => pt.kind === 'streak')) {
     const dom = dominantAbsenceDay(history, asOf);
     out.push(
       dom && dom.count >= 2 && features.dow_concentration >= 0.4

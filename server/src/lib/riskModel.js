@@ -2,6 +2,8 @@
  * Server-side absenteeism risk, mirroring client/src/lib/riskModel.js.
  * `assessStudent` runs the trained model in `data/riskModel.json`; re-export it
  * with ml/training/export_model.py whenever the model is retrained.
+ * `detectPatterns` adds hard rules on top: a pattern can raise the model's
+ * flag but never lower it.
  */
 
 import { readFileSync } from 'node:fs';
@@ -13,6 +15,7 @@ const mlModel = JSON.parse(readFileSync(join(here, '..', 'data', 'riskModel.json
 
 const WINDOW_DAYS = 14;
 const MONTH_DAYS = 28;
+const SIX_WEEK_DAYS = 42;
 const ATTENDED = new Set(['present', 'late']);
 
 const WEIGHTS = { consecutive: 0.4, monthly_rate: 0.3, day_of_week: 0.15, trend: 0.15 };
@@ -179,6 +182,74 @@ export function computeMlExtraFeatures(history, asOf = toISO(new Date())) {
   return { fee_absence_rate: 0, health_absence_rate: 0, attendance_rate_term: rate_term, days_into_term };
 }
 
+// Attendance patterns: hard rules on top of the model. Mirrors client/src/lib/riskModel.js.
+
+/** This many school days marked absent in a row always flags red. */
+export const PERSISTENT_STREAK_DAYS = 4;
+/** Missing this many of the last WEEKDAY_LOOKBACK same weekdays flags amber. */
+export const WEEKDAY_HABIT_MISSES = 3;
+const WEEKDAY_LOOKBACK = 4;
+
+const DOW_LABEL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const FLAG_RANK = { green: 0, amber: 1, red: 2 };
+export const worseFlag = (a, b) => (FLAG_RANK[b] > FLAG_RANK[a] ? b : a);
+export const flagRank = (flag) => FLAG_RANK[flag] ?? 0;
+
+/**
+ * Patterns that flag a student whatever the model says. Only days with a
+ * record count: a school day with no register neither adds to nor breaks a run.
+ */
+export function detectPatterns(history, asOf = toISO(new Date())) {
+  const byDate = new Map(history.map((r) => [r.date, r.status]));
+  const out = [];
+
+  const recorded = schoolDaysBetween(addDays(asOf, -MONTH_DAYS), asOf).filter((d) => byDate.has(d));
+  let best = null;
+  let runStart = null;
+  recorded.forEach((d, i) => {
+    if (byDate.get(d) === 'absent') {
+      if (runStart === null) runStart = i;
+      const days = i - runStart + 1;
+      if (!best || days >= best.days) best = { days, from: recorded[runStart], to: d, end: i };
+    } else {
+      runStart = null;
+    }
+  });
+  if (best && best.days >= PERSISTENT_STREAK_DAYS) {
+    out.push({
+      kind: 'streak',
+      flag: 'red',
+      days: best.days,
+      from: best.from,
+      to: best.to,
+      ongoing: best.end === recorded.length - 1,
+    });
+  }
+
+  const byWeekday = new Map();
+  for (const d of schoolDaysBetween(addDays(asOf, -SIX_WEEK_DAYS), asOf)) {
+    if (!byDate.has(d)) continue;
+    const g = parseISO(d).getDay();
+    if (!byWeekday.has(g)) byWeekday.set(g, []);
+    byWeekday.get(g).push(byDate.get(d));
+  }
+  const habits = [];
+  for (const [g, statuses] of byWeekday) {
+    const last = statuses.slice(-WEEKDAY_LOOKBACK);
+    if (last.length < WEEKDAY_HABIT_MISSES) continue;
+    const missed = last.filter((st) => st === 'absent').length;
+    if (missed >= WEEKDAY_HABIT_MISSES) habits.push({ g, missed, of: last.length });
+  }
+  // Missing most days of the week is general absence, not a weekday habit.
+  if (habits.length >= 1 && habits.length <= 2) {
+    habits.sort((a, b) => b.missed / b.of - a.missed / a.of);
+    const h = habits[0];
+    out.push({ kind: 'weekday', flag: 'amber', weekday: DOW_LABEL[h.g], missed: h.missed, of: h.of });
+  }
+
+  return out;
+}
+
 const sigmoid = (x) => 1 / (1 + Math.exp(-x));
 
 function walkTree(tree, featureVector) {
@@ -217,5 +288,8 @@ export function assessStudent(history, asOf = toISO(new Date())) {
   if (!isAssessable(history)) return null;
   const features = computeFeatures(history, asOf);
   const extra = computeMlExtraFeatures(history, asOf);
-  return { features, ...scoreRiskFromFeatures({ ...features, ...extra }) };
+  const ml = scoreRiskFromFeatures({ ...features, ...extra });
+  const patterns = detectPatterns(history, asOf);
+  const flag = patterns.reduce((f, pt) => worseFlag(f, pt.flag), ml.flag);
+  return { features: { ...features, ...extra }, ...ml, flag, mlFlag: ml.flag, overridden: flag !== ml.flag, patterns };
 }

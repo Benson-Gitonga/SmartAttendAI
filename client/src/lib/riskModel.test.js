@@ -1,6 +1,8 @@
 import {
   computeFeatures,
   computeMlExtraFeatures,
+  detectPatterns,
+  riskInsights,
   scoreRisk,
   scoreRiskFromFeatures,
   scoreRiskML,
@@ -198,6 +200,79 @@ describe('scoreRiskML end-to-end from history', () => {
     const r = scoreRiskML(history, AS_OF);
     expect(r.flag).toBe('red');
     expect(r.dropoutProbability).toBeGreaterThan(0.3);
+  });
+});
+
+describe('detectPatterns', () => {
+  const weekday = (iso) => new Date(`${iso}T00:00`).getDay();
+
+  it('flags 4 school days absent in a row as red', () => {
+    // The last 4 school days before Mon Sep 7: Tue 1 .. Fri 4.
+    const history = historyEndingBefore(AS_OF, 20, (i) => (i < 4 ? 'absent' : 'present'));
+    const [p] = detectPatterns(history, AS_OF);
+    expect(p).toMatchObject({
+      kind: 'streak', flag: 'red', days: 4, ongoing: true, from: '2026-09-01', to: '2026-09-04',
+    });
+  });
+
+  it('counts a run across a weekend, and notices the student came back', () => {
+    // Fri Aug 28, Mon 31, Tue Sep 1, Wed 2 absent; back Thu 3.
+    const history = historyEndingBefore(AS_OF, 20, (i) => (i >= 2 && i <= 5 ? 'absent' : 'present'));
+    const [p] = detectPatterns(history, AS_OF);
+    expect(p).toMatchObject({ days: 4, ongoing: false, from: '2026-08-28', to: '2026-09-02' });
+  });
+
+  it('does not flag 3 days in a row', () => {
+    const history = historyEndingBefore(AS_OF, 20, (i) => (i < 3 ? 'absent' : 'present'));
+    expect(detectPatterns(history, AS_OF)).toEqual([]);
+  });
+
+  it('skips days with no register instead of counting them as absences', () => {
+    // 2 absences, a day with no record, 2 more absences: a 4-day run, not broken.
+    const history = historyEndingBefore(AS_OF, 20, (i) => (i < 5 ? 'absent' : 'present'))
+      .filter((r) => r.date !== '2026-09-02');
+    expect(detectPatterns(history, AS_OF)[0]).toMatchObject({ kind: 'streak', days: 4 });
+    // And no records at all is not a streak.
+    expect(detectPatterns([], AS_OF)).toEqual([]);
+  });
+
+  it('flags 3 of the last 4 Mondays as amber', () => {
+    let mondaysSeen = 0;
+    const history = historyEndingBefore(AS_OF, 30, () => 'present').reverse().map((r) => {
+      if (weekday(r.date) !== 1) return r;
+      mondaysSeen += 1;
+      // newest first: miss the 1st, 2nd and 4th most recent Mondays
+      return { ...r, status: [1, 2, 4].includes(mondaysSeen) ? 'absent' : 'present' };
+    }).reverse();
+    expect(detectPatterns(history, AS_OF)).toEqual([
+      { kind: 'weekday', flag: 'amber', weekday: 'Monday', missed: 3, of: 4 },
+    ]);
+  });
+
+  it('does not call general absence a weekday habit', () => {
+    const history = historyEndingBefore(AS_OF, 30, (i) => (i % 2 === 0 ? 'absent' : 'present'));
+    expect(detectPatterns(history, AS_OF).some((p) => p.kind === 'weekday')).toBe(false);
+  });
+});
+
+describe('scoreRiskML with patterns', () => {
+  it('keeps the model score but raises the flag on a 4-day streak', () => {
+    const history = historyEndingBefore(AS_OF, 30, (i) => (i < 4 ? 'absent' : 'present'));
+    const r = scoreRiskML(history, AS_OF);
+    expect(r.flag).toBe('red');
+    expect(r.patterns[0].kind).toBe('streak');
+    expect(r.overridden).toBe(r.mlFlag !== 'red');
+    expect(riskInsights(history, computeFeatures(history, AS_OF), r, AS_OF)[0]).toMatch(
+      /^Absent 4 school days in a row and not back yet/
+    );
+  });
+
+  it('leaves the model flag alone when no pattern fires', () => {
+    const history = historyEndingBefore(AS_OF, 30, () => 'present');
+    const r = scoreRiskML(history, AS_OF);
+    expect(r.patterns).toEqual([]);
+    expect(r.flag).toBe(r.mlFlag);
+    expect(r.overridden).toBe(false);
   });
 });
 

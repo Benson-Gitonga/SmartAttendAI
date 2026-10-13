@@ -36,6 +36,40 @@ ml/
 Windows are half-open `[start, as_of)` (no leakage); a missing record on a
 scheduled school day counts as absent.
 
+## Patterns on top of the model
+
+The model predicts; it is not guaranteed to flag a pattern that has already
+happened. So the app (`detectPatterns` in `client/src/lib/riskModel.js` and
+`server/src/lib/riskModel.js`) adds two rules that can raise the model's flag
+but never lower it:
+
+| pattern | rule | flag |
+|---|---|---|
+| persistent absence | 4+ school days marked absent in a row, last 4 weeks | red |
+| weekday habit | same weekday absent in 3 of its last 4 occurrences (1-2 weekdays only) | at least amber |
+
+Only days with a register count, so a holiday or a missed roll call neither
+starts nor breaks a run. The risk score shown is still the model's probability.
+
+### Tried and dropped: streak and weekday features (2026-10-13)
+
+Two extra features were trained and tuned on Colab with the full pipeline:
+`current_absence_streak` (absences in a row up to `as_of`) and
+`weekday_absence_excess` (worst single-weekday absence rate minus the overall
+rate, last six weeks). They made no difference, so the model stays at 11 features:
+
+| tuned HistGB | SCH-01 F1 | SCH-01 AUC | SCH-02 F1 | SCH-02 AUC |
+|---|---|---|---|---|
+| 11 features (shipped) | .480 | .706 | .484 | .771 |
+| 13 features | .479 | .707 | .484 | .771 |
+
+Permutation importance on SCH-02 (AUC drop when shuffled) was 0.0000 for
+`current_absence_streak` and 0.0001 for `weekday_absence_excess`, against 0.122
+for `attendance_rate_term`. The label (>= 30% absent over the next four weeks)
+is driven by the term-long attendance rate, and the data has no real weekday
+effect (absence is ~13% on every weekday). That is why both patterns are rules
+in the app rather than model features.
+
 ## Current model
 
 Tuned `HistGradientBoostingClassifier` (`max_leaf_nodes=7`, 210 trees). It was
