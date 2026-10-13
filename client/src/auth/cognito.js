@@ -5,6 +5,10 @@ import {
   AuthenticationDetails
 } from 'amazon-cognito-identity-js';
 import { db, LOCAL_SCHOOL_ID } from '../db/database';
+import { AuthError, signInError, signUpError, confirmError, resendError } from './authErrors';
+import { savePendingSignup, clearPendingSignup } from './pendingSignup';
+
+export { AuthError };
 
 /**
  * Amazon Cognito authentication. Without VITE_COGNITO_USER_POOL_ID and
@@ -29,14 +33,6 @@ function userPool() {
     poolInstance = new CognitoUserPool({ UserPoolId: USER_POOL_ID, ClientId: CLIENT_ID });
   }
   return poolInstance;
-}
-
-export class AuthError extends Error {
-  constructor(code, message) {
-    super(message);
-    this.name = 'AuthError';
-    this.code = code;
-  }
 }
 
 /** Reads a JWT payload without verifying it. */
@@ -113,7 +109,7 @@ async function persist(session) {
 }
 
 /**
- * @throws {AuthError} NOT_AUTHORIZED | NEW_PASSWORD_REQUIRED | NETWORK
+ * @throws {AuthError} NOT_AUTHORIZED | NOT_CONFIRMED | NEW_PASSWORD_REQUIRED | NETWORK
  */
 export async function signIn(username, password) {
   if (!username || !password) {
@@ -136,10 +132,7 @@ export async function signIn(username, password) {
   const cognitoSession = await new Promise((resolve, reject) => {
     user.authenticateUser(details, {
       onSuccess: resolve,
-      onFailure: (err) => {
-        const code = err?.code === 'NetworkError' ? 'NETWORK' : 'NOT_AUTHORIZED';
-        reject(new AuthError(code, err?.message ?? 'Sign in failed'));
-      },
+      onFailure: (err) => reject(signInError(err)),
       newPasswordRequired: () =>
         reject(new AuthError('NEW_PASSWORD_REQUIRED', 'A new password is required for this account'))
     });
@@ -150,10 +143,10 @@ export async function signIn(username, password) {
 
 /**
  * Local mode signs in straight away. Cognito mode emails a code that must be
- * passed to confirmSignUp().
+ * passed to confirmSignUp(), and remembers the email on the device until then.
  *
  * @param {'teacher'|'admin'|'system_admin'} [role] local mode only
- * @throws {AuthError} INVALID_INPUT | NETWORK | SIGNUP_FAILED
+ * @throws {AuthError} INVALID_INPUT | NETWORK | ACCOUNT_EXISTS | SIGNUP_FAILED
  */
 export async function signUp({ name, email, password, role = 'teacher', schoolName = null }) {
   const displayName = name?.trim();
@@ -184,21 +177,20 @@ export async function signUp({ name, email, password, role = 'teacher', schoolNa
 
   await new Promise((resolve, reject) => {
     pool.signUp(username, password, attributes, [], (err, result) => {
-      if (err) {
-        const code = err?.code === 'NetworkError' ? 'NETWORK' : 'SIGNUP_FAILED';
-        reject(new AuthError(code, err?.message ?? 'Could not create the account'));
-        return;
-      }
-      resolve(result);
+      if (err) reject(signUpError(err));
+      else resolve(result);
     });
   });
 
+  await savePendingSignup(username);
   return { needsConfirmation: true, username };
 }
 
 /**
- * Confirm a Cognito sign-up with the emailed code, then sign in.
- * @throws {AuthError} INVALID_INPUT | NETWORK | CONFIRM_FAILED
+ * Confirm a Cognito sign-up with the emailed code, then sign in if the
+ * password is known. Returns null when it is not (the app was reopened since
+ * sign-up), and the caller should ask the teacher to sign in.
+ * @throws {AuthError} INVALID_INPUT | NETWORK | CODE_EXPIRED | CODE_MISMATCH | TOO_MANY_ATTEMPTS | CONFIRM_FAILED
  */
 export async function confirmSignUp(username, code, password) {
   const pool = userPool();
@@ -212,15 +204,13 @@ export async function confirmSignUp(username, code, password) {
   const user = new CognitoUser({ Username: username.trim(), Pool: pool });
   await new Promise((resolve, reject) => {
     user.confirmRegistration(code.trim(), true, (err, result) => {
-      if (err) {
-        const c = err?.code === 'NetworkError' ? 'NETWORK' : 'CONFIRM_FAILED';
-        reject(new AuthError(c, err?.message ?? 'Could not confirm the account'));
-        return;
-      }
-      resolve(result);
+      const failure = err ? confirmError(err) : null;
+      if (failure) reject(failure);
+      else resolve(result);
     });
   });
 
+  await clearPendingSignup();
   if (password) return signIn(username, password);
   return null;
 }
@@ -231,7 +221,7 @@ export async function resendConfirmationCode(username) {
   const user = new CognitoUser({ Username: username.trim(), Pool: pool });
   await new Promise((resolve, reject) => {
     user.resendConfirmationCode((err, result) => {
-      if (err) reject(new AuthError('NETWORK', err?.message ?? 'Could not resend the code'));
+      if (err) reject(resendError(err));
       else resolve(result);
     });
   });

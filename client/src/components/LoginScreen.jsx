@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import {
@@ -14,10 +14,14 @@ const FEATURES = [
 
 /**
  * Views: signin, signup, and confirm (the Cognito email code, never shown in
- * local mode).
+ * local mode). A sign-up waiting for its code is remembered on the device, so
+ * reopening the app returns to the confirm view.
  */
 export default function LoginScreen() {
-  const { signIn, signUp, confirmSignUp, resendConfirmationCode, cognitoConfigured } = useAuth();
+  const {
+    signIn, signUp, confirmSignUp, resendConfirmationCode, cognitoConfigured,
+    loadPendingSignup, savePendingSignup, clearPendingSignup,
+  } = useAuth();
   const online = useOnlineStatus();
 
   const [view, setView] = useState('signin');
@@ -35,6 +39,18 @@ export default function LoginScreen() {
 
   const blocked = cognitoConfigured && !online && view !== 'confirm';
 
+  useEffect(() => {
+    if (!cognitoConfigured) return undefined;
+    let cancelled = false;
+    loadPendingSignup().then((pending) => {
+      if (cancelled || !pending) return;
+      setEmail(pending.email);
+      setView('confirm');
+      setNotice(`Finish setting up your account: enter the code we emailed to ${pending.email}.`);
+    });
+    return () => { cancelled = true; };
+  }, [cognitoConfigured, loadPendingSignup]);
+
   function switchView(next) {
     setView(next);
     setError(null);
@@ -49,8 +65,25 @@ export default function LoginScreen() {
     try {
       await signIn(email.trim(), password);
     } catch (err) {
+      if (err.code === 'NOT_CONFIRMED') {
+        await openConfirmWithNewCode(email.trim());
+        return;
+      }
       setError(err.message ?? 'Sign in failed');
       setBusy(false);
+    }
+  }
+
+  /** The account exists but its email was never verified: send a fresh code. */
+  async function openConfirmWithNewCode(address) {
+    await savePendingSignup(address);
+    switchView('confirm');
+    try {
+      await resendConfirmationCode(address);
+      setNotice(`This account is not verified yet. We sent a new code to ${address}.`);
+    } catch (err) {
+      setNotice(`This account is not verified yet. Enter the code we emailed to ${address}.`);
+      setError(err.message ?? 'Could not send a new code');
     }
   }
 
@@ -69,6 +102,11 @@ export default function LoginScreen() {
         setNotice(`We emailed a verification code to ${email.trim()}.`);
       }
     } catch (err) {
+      if (err.code === 'ACCOUNT_EXISTS') {
+        switchView('signin');
+        setNotice(err.message);
+        return;
+      }
       setError(err.message ?? 'Could not create the account');
       setBusy(false);
     }
@@ -79,11 +117,23 @@ export default function LoginScreen() {
     setError(null);
     setBusy(true);
     try {
-      await confirmSignUp(email.trim(), code, password);
+      const session = await confirmSignUp(email.trim(), code, password);
+      // No password after the app was reopened, so ask for it.
+      if (!session) {
+        switchView('signin');
+        setPassword('');
+        setNotice('Your email is verified. Sign in with your password to continue.');
+      }
     } catch (err) {
       setError(err.message ?? 'Could not confirm the account');
       setBusy(false);
     }
+  }
+
+  async function leaveConfirm() {
+    await clearPendingSignup();
+    setCode('');
+    switchView('signin');
   }
 
   async function handleResend() {
@@ -145,6 +195,7 @@ export default function LoginScreen() {
             </div>
           )}
           {error && <div className="notice notice--err" role="alert">{error}</div>}
+          {notice && <div className="notice notice--info" role="status">{notice}</div>}
 
           <div className="field">
             <label className="field__label" htmlFor="email">Email address</label>
@@ -382,9 +433,15 @@ export default function LoginScreen() {
           <h1 className="auth__brand">Verify your email</h1>
           <p className="auth__tagline">{email.trim()}</p>
           <p className="auth__help">
-            Enter the verification code we emailed you to finish setting up your account.
+            Check your inbox and spam folder for a 6-digit code. It stays valid for 24 hours,
+            and if you close the app you will come back to this screen.
           </p>
 
+          {cognitoConfigured && !online && (
+            <div className="notice notice--warn" role="status">
+              You’re offline. You can type the code now, but verifying needs a connection.
+            </div>
+          )}
           {error && <div className="notice notice--err" role="alert">{error}</div>}
           {notice && <div className="notice notice--info" role="status">{notice}</div>}
 
@@ -412,7 +469,7 @@ export default function LoginScreen() {
             <button className="linkbtn" type="button" onClick={handleResend} disabled={busy}>
               Resend code
             </button>
-            <button className="linkbtn" type="button" onClick={() => switchView('signin')} disabled={busy}>
+            <button className="linkbtn" type="button" onClick={leaveConfirm} disabled={busy}>
               Back to sign in
             </button>
           </div>

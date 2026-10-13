@@ -12,6 +12,7 @@ import {
   isCognitoConfigured
 } from './cognito';
 import { verifyPin, setPin, hasPin, getPinStatus, clearLockout } from './pin';
+import { loadPendingSignup, savePendingSignup, clearPendingSignup } from './pendingSignup';
 
 const AuthContext = createContext(null);
 
@@ -132,6 +133,9 @@ export function AuthProvider({ children }) {
     signUp,
     confirmSignUp,
     resendConfirmationCode,
+    loadPendingSignup,
+    savePendingSignup,
+    clearPendingSignup,
     signOut,
     unlockWithPin,
     enrolPin,
