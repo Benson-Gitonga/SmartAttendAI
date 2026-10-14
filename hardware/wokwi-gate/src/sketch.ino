@@ -24,10 +24,10 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <ArduinoJson.h>
-#include <LittleFS.h>
 #include <Preferences.h>
 #include <esp_random.h>
 #include <time.h>
+#include <esp_arduino_version.h>
 #include <vector>
 
 // ---------------------------------------------------------------- settings
@@ -72,8 +72,7 @@ const unsigned long AUTH_RETRY_MS = 60000;        // after a 401, a config probl
 const unsigned long FLUSH_GAP_MS = 300;           // between queued uploads
 const unsigned long BUTTON_DEBOUNCE_MS = 30;
 const unsigned long SWITCH_DEBOUNCE_MS = 50;
-const size_t QUEUE_MAX = 200;
-const char *QUEUE_FILE = "/scan-queue.jsonl";
+const size_t QUEUE_MAX = 100;  // ~7 KB of the 20 KB NVS partition
 const time_t CLOCK_VALID_AFTER = 1700000000;  // 2023-11-14; before that NTP hasn't answered
 
 // ---------------------------------------------------------------- types
@@ -118,11 +117,26 @@ const Note BEEP_PROMPT[] = {{1000, 60}};
 const Note BEEP_QUEUED[] = {{1200, 70}, {0, 50}, {900, 120}};
 const Note BEEP_ERROR[] = {{200, 600}};
 
+// Drives the buzzer through the LEDC PWM peripheral directly. tone()/noTone()
+// logged "LEDC is not initialized" when a pattern started with a silence.
+// The LEDC API changed in Arduino-ESP32 3.x (browser Wokwi) from 2.x (PlatformIO).
 class Beeper {
  public:
   explicit Beeper(int pin) : pin_(pin) {}
 
+  void begin() {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    ledcAttach(pin_, 2000, 8);
+#else
+    ledcSetup(CHANNEL, 2000, 8);
+    ledcAttachPin(pin_, CHANNEL);
+#endif
+    write(0);
+    ready_ = true;
+  }
+
   void play(const Note *notes, uint8_t count) {
+    if (!ready_) return;
     notes_ = notes;
     count_ = count;
     index_ = 0;
@@ -133,7 +147,7 @@ class Beeper {
     if (!notes_ || millis() < noteEndsAt_) return;
     index_++;
     if (index_ >= count_) {
-      noTone(pin_);
+      write(0);
       notes_ = nullptr;
       return;
     }
@@ -141,14 +155,23 @@ class Beeper {
   }
 
  private:
+  static const uint8_t CHANNEL = 0;
+
+  void write(uint32_t freq) {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    ledcWriteTone(pin_, freq);
+#else
+    ledcWriteTone(CHANNEL, freq);
+#endif
+  }
+
   void startNote() {
-    const Note &n = notes_[index_];
-    if (n.freq) tone(pin_, n.freq);
-    else noTone(pin_);
-    noteEndsAt_ = millis() + n.ms;
+    write(notes_[index_].freq);  // 0 = silence
+    noteEndsAt_ = millis() + notes_[index_].ms;
   }
 
   int pin_;
+  bool ready_ = false;
   const Note *notes_ = nullptr;
   uint8_t count_ = 0;
   uint8_t index_ = 0;
@@ -207,46 +230,59 @@ String newUuid() {
 }
 
 // ================================================================ offline queue
-// Scans that could not reach the server. Kept in RAM and mirrored to a
-// LittleFS file after every change, so a power cut doesn't lose them.
+// Scans that could not reach the server. Kept in RAM and mirrored to the
+// ESP32's NVS flash (the same store Preferences uses) after every change, so
+// a power cut doesn't lose them. NVS rather than a LittleFS file because every
+// ESP32 partition layout has it, including the one Wokwi's VS Code runner uses.
+
+// Fixed-size form of QueuedScan, written to NVS as one blob.
+struct StoredScan {
+  char scanId[37];
+  char cardUid[21];
+  uint32_t epoch;
+  uint32_t atMillis;
+  uint32_t bootId;
+};
 
 std::vector<QueuedScan> queue;
+Preferences queueStore;
 bool flashOk = false;
 uint32_t bootId = 0;
 uint32_t syncedThisRun = 0;
 
 void saveQueue() {
   if (!flashOk) return;
-  File f = LittleFS.open(QUEUE_FILE, "w");
-  if (!f) {
-    Serial.println("[queue] could not write flash, keeping the queue in RAM only");
+  if (queue.empty()) {
+    if (queueStore.isKey("scans")) queueStore.remove("scans");
     return;
   }
-  for (const QueuedScan &q : queue) {
-    JsonDocument doc;
-    doc["id"] = q.scanId;
-    doc["uid"] = q.cardUid;
-    doc["t"] = q.epoch;
-    doc["ms"] = q.atMillis;
-    doc["boot"] = q.bootId;
-    serializeJson(doc, f);
-    f.print('\n');
+  std::vector<StoredScan> out(queue.size());
+  for (size_t i = 0; i < queue.size(); i++) {
+    StoredScan &o = out[i];
+    memset(&o, 0, sizeof(o));
+    strlcpy(o.scanId, queue[i].scanId.c_str(), sizeof(o.scanId));
+    strlcpy(o.cardUid, queue[i].cardUid.c_str(), sizeof(o.cardUid));
+    o.epoch = queue[i].epoch;
+    o.atMillis = queue[i].atMillis;
+    o.bootId = queue[i].bootId;
   }
-  f.close();
+  size_t bytes = out.size() * sizeof(StoredScan);
+  if (queueStore.putBytes("scans", out.data(), bytes) != bytes) {
+    Serial.println("[queue] could not write flash, keeping the queue in RAM only");
+  }
 }
 
 void loadQueue() {
   queue.clear();
-  if (!flashOk || !LittleFS.exists(QUEUE_FILE)) return;
-  File f = LittleFS.open(QUEUE_FILE, "r");
-  while (f && f.available()) {
-    String line = f.readStringUntil('\n');
-    if (line.length() == 0) continue;
-    JsonDocument doc;
-    if (deserializeJson(doc, line)) continue;  // skip a damaged line, keep the rest
-    queue.push_back({doc["id"] | "", doc["uid"] | "", doc["t"] | 0u, doc["ms"] | 0u, doc["boot"] | 0u});
+  if (!flashOk) return;
+  if (!queueStore.isKey("scans")) return;  // first boot, nothing saved yet
+  size_t bytes = queueStore.getBytesLength("scans");
+  if (bytes == 0 || bytes % sizeof(StoredScan) != 0) return;  // nothing saved, or an older format
+  std::vector<StoredScan> in(bytes / sizeof(StoredScan));
+  queueStore.getBytes("scans", in.data(), bytes);
+  for (const StoredScan &o : in) {
+    queue.push_back({String(o.scanId), String(o.cardUid), o.epoch, o.atMillis, o.bootId});
   }
-  f.close();
 }
 
 // Was this card already saved offline for the same day? Then it's "already in".
@@ -693,7 +729,6 @@ void setup() {
   Serial.begin(115200);
   pinMode(PIN_LED_GREEN, OUTPUT);
   pinMode(PIN_LED_RED, OUTPUT);
-  pinMode(PIN_BUZZER, OUTPUT);
   pinMode(PIN_BTN_MATCH, INPUT_PULLUP);
   pinMode(PIN_BTN_NO_MATCH, INPUT_PULLUP);
   pinMode(PIN_WIFI_SWITCH, INPUT_PULLUP);
@@ -705,7 +740,8 @@ void setup() {
   bootId = prefs.getUInt("boot", 0) + 1;
   prefs.putUInt("boot", bootId);
 
-  flashOk = LittleFS.begin(true);  // formats on first use
+  beeper.begin();
+  flashOk = queueStore.begin("scanq", false);
   loadQueue();
   Serial.printf("Boot %u, %u scan(s) waiting from before\n", (unsigned)bootId, (unsigned)queue.size());
 

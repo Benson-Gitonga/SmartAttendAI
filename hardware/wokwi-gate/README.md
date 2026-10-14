@@ -53,7 +53,7 @@ Click the reader to open its panel, pick a card, then **Tap**.
 | Green Card | `11223344` | Kevin Odhiambo |
 | Yellow Card | `55667788` | Lydia Chebet |
 | Red Card | `AABBCCDD` | Moses Kipchoge |
-| NFC Tag | `04112233445566` | Naomi Waweru |
+| NFC Tag | `04112233` (Wokwi reads the first 4 of its 7 bytes) | Naomi Waweru |
 | Key Fob | `C0FFEE99` | not registered |
 
 ## Demo script

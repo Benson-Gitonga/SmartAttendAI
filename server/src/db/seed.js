@@ -31,7 +31,7 @@ export const DEMO_STUDENTS = [
   { student_id: 'stu-form3b-007', admission_no: '3B/007', full_name: 'Kevin Odhiambo',  card_uid: '11223344' },
   { student_id: 'stu-form3b-008', admission_no: '3B/008', full_name: 'Lydia Chebet',    card_uid: '55667788' },
   { student_id: 'stu-form3b-009', admission_no: '3B/009', full_name: 'Moses Kipchoge',  card_uid: 'AABBCCDD' },
-  { student_id: 'stu-form3b-010', admission_no: '3B/010', full_name: 'Naomi Waweru',    card_uid: '04112233445566' },
+  { student_id: 'stu-form3b-010', admission_no: '3B/010', full_name: 'Naomi Waweru',    card_uid: '04112233' }, // Wokwi NFC Tag reads as its first 4 bytes
 ].map((s) => ({ ...s, class_group_id: DEMO_CLASS.class_group_id, enrolled_at: '2026-01-06' }));
 
 
