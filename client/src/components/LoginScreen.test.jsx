@@ -15,6 +15,8 @@ beforeEach(() => {
   Object.assign(auth, {
     cognitoConfigured: true,
     signIn: jest.fn().mockResolvedValue({}),
+    signInWithGoogle: jest.fn().mockResolvedValue(undefined),
+    googleError: null,
     signUp: jest.fn(),
     confirmSignUp: jest.fn(),
     resendConfirmationCode: jest.fn().mockResolvedValue(undefined),
@@ -85,5 +87,36 @@ describe('LoginScreen email verification', () => {
     render(<LoginScreen />);
     expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
     expect(auth.loadPendingSignup).not.toHaveBeenCalled();
+  });
+});
+
+describe('LoginScreen roles and Google', () => {
+  it('never asks people to pick their own role', async () => {
+    const user = userEvent.setup();
+    render(<LoginScreen />);
+    await user.click(screen.getByRole('button', { name: 'Create an account' }));
+    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
+    expect(screen.queryByText('School admin')).not.toBeInTheDocument();
+  });
+
+  it('starts Google sign-in from the sign-in screen', async () => {
+    const user = userEvent.setup();
+    render(<LoginScreen />);
+    await user.click(screen.getByRole('button', { name: 'Continue with Google' }));
+    expect(auth.signInWithGoogle).toHaveBeenCalled();
+  });
+
+  it('shows why Google sign-in could not start', async () => {
+    const user = userEvent.setup();
+    auth.signInWithGoogle.mockRejectedValue(authError('GOOGLE_UNAVAILABLE', 'Google sign-in is not set up on this deployment yet'));
+    render(<LoginScreen />);
+    await user.click(screen.getByRole('button', { name: 'Continue with Google' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Google sign-in is not set up');
+  });
+
+  it('shows an error from the Google redirect', () => {
+    auth.googleError = 'Google sign-in was cancelled';
+    render(<LoginScreen />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Google sign-in was cancelled');
   });
 });

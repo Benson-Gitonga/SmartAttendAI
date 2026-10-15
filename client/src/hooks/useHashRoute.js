@@ -12,11 +12,14 @@ const SLUGS = {
 };
 const TAB_BY_SLUG = Object.fromEntries(Object.entries(SLUGS).map(([tab, slug]) => [slug, tab]));
 
-/** `#/at-risk/student/stu-007` -> { tab: 'alerts', studentId: 'stu-007', classId: null } */
-export function parseHash(hash) {
+/**
+ * `#/at-risk/student/stu-007` -> { tab: 'alerts', studentId: 'stu-007', classId: null }
+ * An empty or unknown hash opens `home`.
+ */
+export function parseHash(hash, home = 'dashboard') {
   const [slug, kind, id] = hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent);
   return {
-    tab: TAB_BY_SLUG[slug] ?? 'dashboard',
+    tab: TAB_BY_SLUG[slug] ?? home,
     studentId: kind === 'student' && id ? id : null,
     classId: kind === 'class' && id ? id : null,
   };
@@ -30,16 +33,16 @@ export function toHash({ tab, studentId = null, classId = null }) {
 }
 
 /** Current route plus `navigate(next)`, which pushes a history entry. */
-export function useHashRoute() {
-  const [route, setRoute] = useState(() => parseHash(window.location.hash));
+export function useHashRoute(home = 'dashboard') {
+  const [route, setRoute] = useState(() => parseHash(window.location.hash, home));
 
   useEffect(() => {
-    const canonical = toHash(parseHash(window.location.hash));
+    const canonical = toHash(parseHash(window.location.hash, home));
     if (window.location.hash !== canonical) window.history.replaceState(null, '', canonical);
-    const onPop = () => setRoute(parseHash(window.location.hash));
+    const onPop = () => setRoute(parseHash(window.location.hash, home));
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
-  }, []);
+  }, [home]);
 
   // `up: true` (breadcrumb parent) steps back when that is where we came
   // from, so the back button does not return to the page just left.

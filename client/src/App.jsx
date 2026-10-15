@@ -47,7 +47,10 @@ const writeActiveClass = (id) => {
 function TeacherApp() {
   const { user, session, pinState, signOut, simulateExpiry } = useAuth();
   const online = useOnlineStatus();
-  const [route, navigate] = useHashRoute();
+  const role = user?.role ?? 'teacher';
+  // Each role opens on its own page: admins on the school overview.
+  const home = role === 'admin' ? 'overview' : 'dashboard';
+  const [route, navigate] = useHashRoute(home);
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [pending, setPending] = useState(0);
@@ -58,7 +61,6 @@ function TeacherApp() {
   const [registerStatus, setRegisterStatus] = useState(null); // 'done' | 'due' | null
   const registerDirty = useRef(false);
   const setRegisterDirty = useCallback((dirty) => { registerDirty.current = dirty; }, []);
-  const role = user?.role ?? 'teacher';
 
   const [classes, setClasses] = useState(null); // null = still loading
   const [activeClassId, setActiveClassId] = useState(null);
@@ -114,7 +116,7 @@ function TeacherApp() {
 
   // Admins have no roster page; teachers have no school overview.
   const allowed = (tab) => (tab === 'students' ? role !== 'admin' : tab === 'overview' ? role === 'admin' : true);
-  const tab = allowed(route.tab) ? route.tab : 'dashboard';
+  const tab = allowed(route.tab) ? route.tab : home;
 
   // Leaving the register with unsaved ticks asks first.
   const go = useCallback((next, opts) => {
@@ -140,6 +142,19 @@ function TeacherApp() {
   // Full-screen gates
 
   if (classes === null) return <div className="centered">Loading classes…</div>;
+
+  // A school admin with no class of their own goes straight to the school.
+  if (classes.length === 0 && role === 'admin') {
+    return (
+      <SchoolAdminHome
+        route={route}
+        go={go}
+        user={user}
+        online={online}
+        onSignOut={signOut}
+      />
+    );
+  }
 
   if (classes.length === 0) {
     return <SetupWizard onDone={(id) => { writeActiveClass(id); bump(); }} />;
@@ -281,6 +296,33 @@ const pinSkipKey = (user) => `smartattend:pin-skipped:${user?.username ?? ''}`;
 const readPinSkipped = (user) => {
   try { return localStorage.getItem(pinSkipKey(user)) === '1'; } catch { return false; }
 };
+
+/** School overview for an admin who does not teach a class. */
+function SchoolAdminHome({ route, go, user, online, onSignOut }) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const overview = { label: 'School Overview', onClick: () => go({ tab: 'overview' }, { up: true }) };
+  const crumbs = route.classId ? [overview, { label: 'Class' }] : [{ label: 'School Overview' }];
+
+  return (
+    <div className="app">
+      <TopBar crumbs={crumbs} online={online} onAccount={() => setSheetOpen(true)} />
+      <div className="app__scroll">
+        {route.classId
+          ? <AdminClassDetail classGroupId={route.classId} />
+          : <AdminOverview onOpenClass={(id) => go({ tab: 'overview', classId: id })} />}
+      </div>
+      <Toaster />
+      {sheetOpen && (
+        <AccountSheet
+          user={user}
+          online={online}
+          onSignOut={() => { setSheetOpen(false); onSignOut(); }}
+          onClose={() => setSheetOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
 
 function AuthGate() {
   const { status, pinState, user } = useAuth();

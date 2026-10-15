@@ -3,7 +3,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import {
   CapIcon, MailIcon, LockIcon, EyeIcon, EyeOffIcon, KeypadIcon, UserIcon,
-  CheckCircleIcon, SyncIcon, BellIcon,
+  CheckCircleIcon, SyncIcon, BellIcon, GoogleIcon,
 } from './icons';
 
 const FEATURES = [
@@ -16,10 +16,13 @@ const FEATURES = [
  * Views: signin, signup, and confirm (the Cognito email code, never shown in
  * local mode). A sign-up waiting for its code is remembered on the device, so
  * reopening the app returns to the confirm view.
+ *
+ * There is no role picker: the account's role decides which app loads.
  */
 export default function LoginScreen() {
   const {
     signIn, signUp, confirmSignUp, resendConfirmationCode, cognitoConfigured,
+    signInWithGoogle, googleError,
     loadPendingSignup, savePendingSignup, clearPendingSignup,
   } = useAuth();
   const online = useOnlineStatus();
@@ -30,10 +33,8 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [code, setCode] = useState('');
-  const [role, setRole] = useState('teacher');
-  const [schoolName, setSchoolName] = useState('');
   const [reveal, setReveal] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState(googleError ?? null);
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
 
@@ -87,6 +88,18 @@ export default function LoginScreen() {
     }
   }
 
+  async function handleGoogle() {
+    setError(null);
+    setNotice(null);
+    setBusy(true);
+    try {
+      await signInWithGoogle(); // navigates away on success
+    } catch (err) {
+      setError(err.message ?? 'Google sign-in failed');
+      setBusy(false);
+    }
+  }
+
   async function handleSignUp(e) {
     e.preventDefault();
     setError(null);
@@ -96,7 +109,7 @@ export default function LoginScreen() {
     }
     setBusy(true);
     try {
-      const result = await signUp({ name, email, password, role, schoolName: schoolName.trim() || null });
+      const result = await signUp({ name, email, password });
       if (result?.needsConfirmation) {
         switchView('confirm');
         setNotice(`We emailed a verification code to ${email.trim()}.`);
@@ -147,6 +160,16 @@ export default function LoginScreen() {
     }
   }
 
+  const googleBlock = (
+    <>
+      <button type="button" className="btn btn--outline btn--google" onClick={handleGoogle} disabled={busy || blocked}>
+        <GoogleIcon size={18} />
+        Continue with Google
+      </button>
+      <div className="auth__divider">or</div>
+    </>
+  );
+
   const revealBtn = (
     <button
       type="button"
@@ -196,6 +219,8 @@ export default function LoginScreen() {
           )}
           {error && <div className="notice notice--err" role="alert">{error}</div>}
           {notice && <div className="notice notice--info" role="status">{notice}</div>}
+
+          {googleBlock}
 
           <div className="field">
             <label className="field__label" htmlFor="email">Email address</label>
@@ -255,8 +280,11 @@ export default function LoginScreen() {
 
           {!cognitoConfigured && (
             <p className="devnote">
-              <strong>Demo mode:</strong> any email and password signs in on this device.
-              Set <code>VITE_COGNITO_USER_POOL_ID</code> and <code>VITE_COGNITO_CLIENT_ID</code> to use AWS Cognito.
+              <strong>Demo mode:</strong> any email and password signs in on this device as a teacher.
+              Use <code>admin@smartattend.demo</code> for the school admin view
+              or <code>sysadmin@smartattend.demo</code> for the system admin view.
+              Set <code>VITE_COGNITO_USER_POOL_ID</code> and <code>VITE_COGNITO_CLIENT_ID</code> to use AWS Cognito,
+              and <code>VITE_COGNITO_DOMAIN</code> for Google sign-in.
             </p>
           )}
         </form>
@@ -266,7 +294,7 @@ export default function LoginScreen() {
         <form className="auth__card" onSubmit={handleSignUp}>
           <div className="auth__logo"><CapIcon size={24} /></div>
           <h1 className="auth__brand">Create your account</h1>
-          <p className="auth__tagline">Set up SmartAttend for your school</p>
+          <p className="auth__tagline">Teachers start here. Admin access is granted by your school.</p>
 
           {blocked && (
             <div className="notice notice--warn" role="status">
@@ -276,60 +304,7 @@ export default function LoginScreen() {
           {error && <div className="notice notice--err" role="alert">{error}</div>}
           {notice && <div className="notice notice--info" role="status">{notice}</div>}
 
-          <div className="field">
-            <span className="field__label">I am a…</span>
-            <div className="role-picker" role="radiogroup" aria-label="Account role">
-              <button
-                type="button"
-                className={`role-picker__opt${role === 'teacher' ? ' role-picker__opt--active' : ''}`}
-                role="radio"
-                aria-checked={role === 'teacher'}
-                onClick={() => setRole('teacher')}
-                disabled={busy || blocked}
-              >
-                <strong>Teacher</strong>
-                <span>Take attendance for my own class(es)</span>
-              </button>
-              <button
-                type="button"
-                className={`role-picker__opt${role === 'admin' ? ' role-picker__opt--active' : ''}`}
-                role="radio"
-                aria-checked={role === 'admin'}
-                onClick={() => setRole('admin')}
-                disabled={busy || blocked}
-              >
-                <strong>School admin</strong>
-                <span>See attendance across every class</span>
-              </button>
-              <button
-                type="button"
-                className={`role-picker__opt${role === 'system_admin' ? ' role-picker__opt--active' : ''}`}
-                role="radio"
-                aria-checked={role === 'system_admin'}
-                onClick={() => setRole('system_admin')}
-                disabled={busy || blocked}
-              >
-                <strong>System admin</strong>
-                <span>Activate or deactivate schools platform-wide</span>
-              </button>
-            </div>
-          </div>
-
-          {role === 'admin' && (
-            <div className="field">
-              <label className="field__label" htmlFor="su-school">School name <span style={{ fontWeight: 400 }}>(optional)</span></label>
-              <input
-                id="su-school"
-                className="field__input"
-                type="text"
-                autoComplete="organization"
-                placeholder="e.g. Kibera Secondary School"
-                value={schoolName}
-                onChange={(e) => setSchoolName(e.target.value)}
-                disabled={busy || blocked}
-              />
-            </div>
-          )}
+          {googleBlock}
 
           <div className="field">
             <label className="field__label" htmlFor="su-name">Full name</label>

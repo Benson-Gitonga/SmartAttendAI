@@ -9,12 +9,20 @@ import {
   isSessionValid,
   extendSessionWithPin,
   expireSessionNow,
-  isCognitoConfigured
+  isCognitoConfigured,
+  isGoogleConfigured,
+  startGoogleSignIn,
+  completeGoogleSignIn
 } from './cognito';
 import { verifyPin, setPin, hasPin, getPinStatus, clearLockout } from './pin';
 import { loadPendingSignup, savePendingSignup, clearPendingSignup } from './pendingSignup';
 
 const AuthContext = createContext(null);
+
+// A fresh sign-in drops the last user's page, so each role opens on its own home.
+function clearRoute() {
+  if (window.location.hash) window.history.replaceState(null, '', window.location.pathname + window.location.search);
+}
 
 /**
  *   signedOut: no session on the device.
@@ -26,6 +34,7 @@ export const AUTH_STATUS = { LOADING: 'loading', SIGNED_OUT: 'signedOut', LOCKED
 export function AuthProvider({ children }) {
   const [status, setStatus] = useState(AUTH_STATUS.LOADING);
   const [session, setSession] = useState(null);
+  const [googleError, setGoogleError] = useState(null);
   const [pinState, setPinState] = useState({ enrolled: false, locked: false, attemptsRemaining: 3 });
 
   const refreshPinState = useCallback(async (username) => {
@@ -46,6 +55,20 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Coming back from Google: finish that sign-in before anything else.
+      try {
+        const fromGoogle = await completeGoogleSignIn();
+        if (cancelled) return;
+        if (fromGoogle) {
+          clearRoute();
+          await clearLockout(fromGoogle.username);
+          await applySession(fromGoogle);
+          return;
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setGoogleError(err.message ?? 'Google sign-in failed');
+      }
       const stored = await loadStoredSession();
       if (cancelled) return;
       if (!stored) {
@@ -61,20 +84,32 @@ export function AuthProvider({ children }) {
     const next = await cognitoSignIn(username, password);
     // An online login outranks an offline lockout.
     await clearLockout(username);
+    clearRoute();
     await applySession(next);
     return { session: next, pinEnrolled: await hasPin(username) };
   }, [applySession]);
 
-  const signUp = useCallback(async ({ name, email, password, role, schoolName }) => {
-    const result = await cognitoSignUp({ name, email, password, role, schoolName });
+  const signInWithGoogle = useCallback(async () => {
+    setGoogleError(null);
+    await startGoogleSignIn();
+  }, []);
+
+  const signUp = useCallback(async ({ name, email, password }) => {
+    const result = await cognitoSignUp({ name, email, password });
     await clearLockout(email.trim());
-    if (!result.needsConfirmation) await applySession(result.session);
+    if (!result.needsConfirmation) {
+      clearRoute();
+      await applySession(result.session);
+    }
     return result;
   }, [applySession]);
 
   const confirmSignUp = useCallback(async (username, code, password) => {
     const next = await cognitoConfirmSignUp(username, code, password);
-    if (next) await applySession(next);
+    if (next) {
+      clearRoute();
+      await applySession(next);
+    }
     return next;
   }, [applySession]);
 
@@ -129,7 +164,10 @@ export function AuthProvider({ children }) {
         }
       : null,
     cognitoConfigured: isCognitoConfigured(),
+    googleConfigured: isGoogleConfigured(),
+    googleError,
     signIn,
+    signInWithGoogle,
     signUp,
     confirmSignUp,
     resendConfirmationCode,
@@ -141,7 +179,7 @@ export function AuthProvider({ children }) {
     enrolPin,
     simulateExpiry
   }), [
-    status, session, pinState, signIn, signUp, confirmSignUp,
+    status, session, pinState, googleError, signIn, signInWithGoogle, signUp, confirmSignUp,
     resendConfirmationCode, signOut, unlockWithPin, enrolPin, simulateExpiry
   ]);
 
