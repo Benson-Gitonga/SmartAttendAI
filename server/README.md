@@ -72,7 +72,12 @@ All optional. Copy `.env.example` to `.env` to override.
 | POST | `/api/sync` | inbound attendance batch from the offline PWA (see below) |
 | GET | `/api/gate/classes/:id/attendance?date=YYYY-MM-DD` | one class's records for a day (default today) plus `gate.lastScanAt` - the PWA pulls this before roll call (see below) |
 | * | `/api/roster/*` | roster upserts pushed from the PWA (schools, classes, students, cards) |
-| * | `/api/admin/*` | per-school reporting: overview, classes, flagged students, follow-ups |
+| GET | `/api/admin/schools/:id/today?date=` | every class's register for a day (school admin) |
+| POST/PATCH | `/api/admin/schools/:id/classes`, `/api/admin/classes/:id` | create a class, rename it or change its teacher |
+| GET | `/api/admin/schools/:id/teachers` | teachers with their classes |
+| GET/PUT | `/api/admin/classes/:id/register?date=` | read, or take/correct, a class's register; PUT needs a `reason` (see below) |
+| GET | `/api/teacher/classes` | the classes assigned to the signed-in teacher, with students |
+| * | `/api/admin/*` | also: overview, flagged students, follow-ups |
 | POST | `/api/auth/login` | school staff sign-in, body `{ "email", "password" }`, returns a token, the user and their school |
 | GET | `/api/auth/me` | the signed-in user and their school's current status |
 | POST | `/api/schools/register` | a school's application: the school (`pending`) and its admin account (see below) |
@@ -132,6 +137,22 @@ address lock that pair out for 15 minutes.
 | `teacher@kibera.ac.ke` | teacher | Kibera Secondary |
 | `g.achieng@kisumuday.ac.ke` | school admin | Kisumu Day (pending) |
 | `p.mwangi@nyerihigh.ac.ke` | school admin | Nyeri High (pending) |
+
+### School admin supervision
+
+The school admin creates classes and assigns each one a teacher
+(`class_groups.teacher_user_id`). Teachers cannot create classes, and may only
+change the roster of classes assigned to them. A teacher's device downloads
+its classes from `GET /api/teacher/classes`.
+
+`PUT /api/admin/classes/:id/register` takes or corrects the register for any
+past day or today: `{ date, reason, note?, marks: [{ studentId, status,
+absenceReason? }] }`. `reason` is one of `teacher_absent`, `wrong_mark`,
+`late_arrival`, `gate_error`, `other` (which needs a `note`). Each changed mark
+updates `attendance_events` in place (or adds one), is queued for the cloud
+again, and leaves an `attendance_overrides` row with the old and new mark, the
+reason, the admin and the class teacher it was done for. The teacher's device
+picks the change up on its next gate pull.
 
 ### System admin sign-in
 

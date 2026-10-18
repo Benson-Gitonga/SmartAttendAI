@@ -609,9 +609,10 @@ export function getClassesForSchool(db, schoolId) {
   return db
     .prepare(
       `SELECT c.class_group_id AS classGroupId, c.grade, c.stream, c.academic_year AS academicYear,
-              c.teacher_name AS teacherName,
+              coalesce(u.full_name, c.teacher_name) AS teacherName, c.teacher_user_id AS teacherUserId,
               (SELECT COUNT(*) FROM students s WHERE s.class_group_id = c.class_group_id AND s.active = 1) AS studentCount
          FROM class_groups c
+         LEFT JOIN users u ON u.user_id = c.teacher_user_id
         WHERE c.school_id = ?
         ORDER BY c.grade, c.stream`
     )
@@ -621,9 +622,12 @@ export function getClassesForSchool(db, schoolId) {
 export function getClassGroup(db, classGroupId) {
   return db
     .prepare(
-      `SELECT class_group_id AS classGroupId, school_id AS schoolId, grade, stream,
-              academic_year AS academicYear, teacher_name AS teacherName
-         FROM class_groups WHERE class_group_id = ?`
+      `SELECT c.class_group_id AS classGroupId, c.school_id AS schoolId, c.grade, c.stream,
+              c.academic_year AS academicYear, coalesce(u.full_name, c.teacher_name) AS teacherName,
+              c.teacher_user_id AS teacherUserId
+         FROM class_groups c
+         LEFT JOIN users u ON u.user_id = c.teacher_user_id
+        WHERE c.class_group_id = ?`
     )
     .get(classGroupId);
 }
@@ -762,4 +766,315 @@ export function addFollowUp(db, { studentId, flag, method, note = null, actor = 
 
 export function getFollowUps(db, studentId) {
   return db.prepare(`SELECT * FROM follow_ups WHERE student_id = ? ORDER BY created_at DESC`).all(studentId);
+}
+
+// School admin: classes, teachers, the day's register board and corrections.
+
+export const OVERRIDE_REASONS = ['teacher_absent', 'wrong_mark', 'late_arrival', 'gate_error', 'other'];
+const ABSENCE_REASON_VALUES = ['fee', 'health', 'other', 'unknown'];
+
+/** Teachers of a school, each with the classes they are assigned. */
+export function getTeachersForSchool(db, schoolId) {
+  const teachers = db
+    .prepare(
+      `SELECT user_id AS userId, email, full_name AS fullName, phone, job_title AS jobTitle, status,
+              last_sign_in_at AS lastSignInAt
+         FROM users WHERE school_id = ? AND role = 'teacher' ORDER BY full_name`
+    )
+    .all(schoolId);
+  const classes = db
+    .prepare(
+      `SELECT class_group_id AS classGroupId, grade, stream, teacher_user_id AS teacherUserId
+         FROM class_groups WHERE school_id = ? AND teacher_user_id IS NOT NULL ORDER BY grade, stream`
+    )
+    .all(schoolId);
+  return teachers.map((t) => ({ ...t, classes: classes.filter((c) => c.teacherUserId === t.userId) }));
+}
+
+/** A teacher account in this school that can be given a class, or null. */
+function assignableTeacher(db, schoolId, userId) {
+  return (
+    db
+      .prepare(`SELECT user_id AS userId, full_name AS fullName FROM users
+                 WHERE user_id = ? AND school_id = ? AND role = 'teacher' AND status <> 'disabled'`)
+      .get(userId, schoolId) ?? null
+  );
+}
+
+export class ClassInputError extends Error {}
+
+/** A school admin creates a class, optionally with its teacher. */
+export function createClassGroup(db, { schoolId, grade, stream = null, academicYear, teacherUserId = null, actor = null }) {
+  const teacher = teacherUserId ? assignableTeacher(db, schoolId, teacherUserId) : null;
+  if (teacherUserId && !teacher) throw new ClassInputError('that teacher is not in this school');
+
+  const classGroupId = `class-${randomUUID()}`;
+  db.prepare(
+    `INSERT INTO class_groups (class_group_id, school_id, grade, stream, academic_year, teacher_name, teacher_user_id)
+     VALUES (@classGroupId, @schoolId, @grade, @stream, @academicYear, @teacherName, @teacherUserId)`
+  ).run({
+    classGroupId,
+    schoolId,
+    grade: grade.trim(),
+    stream: stream?.trim() || null,
+    academicYear,
+    teacherName: teacher?.fullName ?? null,
+    teacherUserId: teacher?.userId ?? null,
+  });
+  logAudit(db, { action: 'class.created', actorId: actor, recordId: classGroupId, detail: { grade, stream, teacherUserId } });
+  return getClassGroup(db, classGroupId);
+}
+
+/** Rename a class or change its teacher (`teacherUserId: null` unassigns). */
+export function updateClassGroup(db, classGroupId, patch, { actor = null } = {}) {
+  const cls = getClassGroup(db, classGroupId);
+  if (!cls) return null;
+  const sets = [];
+  const params = { classGroupId };
+  if (patch.grade !== undefined) {
+    sets.push('grade = @grade');
+    params.grade = patch.grade.trim();
+  }
+  if (patch.stream !== undefined) {
+    sets.push('stream = @stream');
+    params.stream = patch.stream?.trim() || null;
+  }
+  if (patch.academicYear !== undefined) {
+    sets.push('academic_year = @academicYear');
+    params.academicYear = patch.academicYear;
+  }
+  if (patch.teacherUserId !== undefined) {
+    const teacher = patch.teacherUserId ? assignableTeacher(db, cls.schoolId, patch.teacherUserId) : null;
+    if (patch.teacherUserId && !teacher) throw new ClassInputError('that teacher is not in this school');
+    sets.push('teacher_user_id = @teacherUserId', 'teacher_name = @teacherName');
+    params.teacherUserId = teacher?.userId ?? null;
+    params.teacherName = teacher?.fullName ?? null;
+  }
+  if (sets.length > 0) {
+    db.prepare(`UPDATE class_groups SET ${sets.join(', ')} WHERE class_group_id = @classGroupId`).run(params);
+    logAudit(db, { action: 'class.updated', actorId: actor, recordId: classGroupId, detail: patch });
+  }
+  return getClassGroup(db, classGroupId);
+}
+
+/**
+ * Every class's register for one day, for the admin's "Today" board.
+ * status: 'empty' (no students), 'not_taken' (no marks at all), 'gate_only'
+ * (only gate scans, no roll call yet), 'partial', or 'done'.
+ */
+export function getRegisterBoard(db, schoolId, date = todayISO()) {
+  const rows = db
+    .prepare(
+      `SELECT c.class_group_id AS classGroupId, c.grade, c.stream,
+              coalesce(u.full_name, c.teacher_name) AS teacherName, c.teacher_user_id AS teacherUserId,
+              COUNT(DISTINCT s.student_id) AS studentCount,
+              COUNT(a.event_id) AS marked,
+              SUM(a.status = 'present') AS present,
+              SUM(a.status = 'late') AS late,
+              SUM(a.status = 'absent') AS absent,
+              SUM(a.capture_method IN ('rfid', 'fingerprint')) AS gateMarks,
+              SUM(a.capture_method = 'manual') AS manualMarks,
+              MAX(a.created_at) AS lastMarkAt
+         FROM class_groups c
+         LEFT JOIN users u ON u.user_id = c.teacher_user_id
+         LEFT JOIN students s ON s.class_group_id = c.class_group_id AND s.active = 1
+         LEFT JOIN attendance_events a ON a.student_id = s.student_id AND a.date = @date
+        WHERE c.school_id = @schoolId
+        GROUP BY c.class_group_id
+        ORDER BY c.grade, c.stream`
+    )
+    .all({ schoolId, date });
+
+  const classes = rows.map((r) => {
+    const n = (v) => v ?? 0;
+    let status = 'done';
+    if (r.studentCount === 0) status = 'empty';
+    else if (r.marked === 0) status = 'not_taken';
+    else if (n(r.manualMarks) === 0 && r.marked < r.studentCount) status = 'gate_only';
+    else if (r.marked < r.studentCount) status = 'partial';
+    return {
+      ...r,
+      present: n(r.present),
+      late: n(r.late),
+      absent: n(r.absent),
+      gateMarks: n(r.gateMarks),
+      manualMarks: n(r.manualMarks),
+      unmarked: Math.max(0, r.studentCount - r.marked),
+      lastMarkAt: r.lastMarkAt ? toIsoTimestamp(r.lastMarkAt) : null,
+      status,
+    };
+  });
+
+  const sum = (k) => classes.reduce((t, c) => t + c[k], 0);
+  const marked = sum('marked');
+  return {
+    date,
+    totals: {
+      classes: classes.length,
+      done: classes.filter((c) => c.status === 'done').length,
+      waiting: classes.filter((c) => ['not_taken', 'gate_only', 'partial'].includes(c.status)).length,
+      students: sum('studentCount'),
+      present: sum('present'),
+      late: sum('late'),
+      absent: sum('absent'),
+      unmarked: sum('unmarked'),
+      attendanceRate: marked > 0 ? (sum('present') + sum('late')) / marked : null,
+    },
+    classes,
+  };
+}
+
+/** One class's register for a day: every student, their mark (if any) and the last correction. */
+export function getClassRegister(db, classGroupId, date = todayISO()) {
+  const students = getStudentsForClass(db, classGroupId);
+  const marks = new Map(getClassAttendanceForDate(db, classGroupId, date).map((m) => [m.studentId, m]));
+  const overrides = new Map(
+    db
+      .prepare(
+        `SELECT o.student_id AS studentId, o.from_status AS fromStatus, o.to_status AS toStatus, o.reason,
+                o.note, o.actor, o.on_behalf_of AS onBehalfOf, o.created_at AS createdAt
+           FROM attendance_overrides o
+           JOIN students s ON s.student_id = o.student_id
+          WHERE s.class_group_id = ? AND o.date = ?
+          ORDER BY o.id`
+      )
+      .all(classGroupId, date)
+      .map((o) => [o.studentId, { ...o, createdAt: toIsoTimestamp(o.createdAt) }])
+  );
+  return {
+    date,
+    students: students.map((st) => {
+      const mark = marks.get(st.studentId);
+      return {
+        studentId: st.studentId,
+        fullName: st.fullName,
+        admissionNo: st.admissionNo,
+        mark: mark
+          ? {
+              eventId: mark.eventId,
+              status: mark.status,
+              absenceReason: mark.reason,
+              captureMethod: mark.captureMethod,
+              recordedBy: mark.recordedBy,
+              createdAt: mark.createdAt,
+            }
+          : null,
+        override: overrides.get(st.studentId) ?? null,
+      };
+    }),
+  };
+}
+
+/**
+ * A school admin takes or corrects a class's register for a day. Each changed
+ * mark updates attendance_events in place (or adds one), goes back on the
+ * cloud sync queue, and leaves an attendance_overrides row with the reason.
+ * Marks that already match are left alone.
+ *
+ * @param {{classGroupId, date, reason, note?, actor, marks: {studentId, status, absenceReason?}[]}} input
+ * @returns {{changed: string[], unchanged: string[]}}
+ */
+export function overrideRegister(db, { classGroupId, date, reason, note = null, actor, marks }) {
+  const cls = getClassGroup(db, classGroupId);
+  const inClass = new Set(getStudentsForClass(db, classGroupId).map((st) => st.studentId));
+  const findMark = db.prepare(`SELECT event_id AS eventId, status, reason FROM attendance_events WHERE student_id = ? AND date = ?`);
+  const update = db.prepare(
+    `UPDATE attendance_events
+        SET status = @status, reason = @reason, capture_method = 'manual', source = 'manual',
+            recorded_by = @actor, verified = 0, synced_at = NULL
+      WHERE event_id = @eventId`
+  );
+  const insert = db.prepare(
+    `INSERT INTO attendance_events (event_id, student_id, date, status, capture_method, recorded_by, reason, source, created_at)
+     VALUES (@eventId, @studentId, @date, @status, 'manual', @actor, @reason, 'manual', @createdAt)`
+  );
+  const enqueue = db.prepare(
+    `INSERT INTO sync_queue (event_id, payload, status) VALUES (@eventId, @payload, 'pending')
+     ON CONFLICT (event_id) DO UPDATE SET payload = excluded.payload, status = 'pending', attempt_count = 0,
+       next_attempt_at = NULL, last_error = NULL, synced_at = NULL`
+  );
+  const logOverride = db.prepare(
+    `INSERT INTO attendance_overrides
+       (event_id, student_id, date, from_status, to_status, from_reason, to_reason, reason, note, actor, on_behalf_of)
+     VALUES (@eventId, @studentId, @date, @fromStatus, @toStatus, @fromReason, @toReason, @reason, @note, @actor, @onBehalfOf)`
+  );
+
+  const changed = [];
+  const unchanged = [];
+  db.transaction(() => {
+    for (const m of marks) {
+      if (!inClass.has(m.studentId)) throw new ClassInputError(`${m.studentId} is not in this class`);
+      const absenceReason = m.status === 'absent' && ABSENCE_REASON_VALUES.includes(m.absenceReason) ? m.absenceReason : null;
+      const existing = findMark.get(m.studentId, date);
+      if (existing && existing.status === m.status && (existing.reason ?? null) === absenceReason) {
+        unchanged.push(m.studentId);
+        continue;
+      }
+
+      const createdIso = new Date().toISOString();
+      const eventId = existing?.eventId ?? randomUUID();
+      if (existing) {
+        update.run({ eventId, status: m.status, reason: absenceReason, actor });
+      } else {
+        insert.run({
+          eventId, studentId: m.studentId, date, status: m.status, reason: absenceReason, actor,
+          createdAt: toSqliteTimestamp(createdIso),
+        });
+      }
+
+      enqueue.run({
+        eventId,
+        payload: JSON.stringify({
+          eventId, studentId: m.studentId, date, status: m.status, captureMethod: 'manual',
+          recordedBy: actor, reason: absenceReason, createdAt: createdIso,
+        }),
+      });
+      logOverride.run({
+        eventId,
+        studentId: m.studentId,
+        date,
+        fromStatus: existing?.status ?? null,
+        toStatus: m.status,
+        fromReason: existing?.reason ?? null,
+        toReason: absenceReason,
+        reason,
+        note: note?.trim() || null,
+        actor,
+        onBehalfOf: cls?.teacherName ?? null,
+      });
+      changed.push(m.studentId);
+    }
+    if (changed.length > 0) {
+      logAudit(db, {
+        action: 'attendance.overridden',
+        actorId: actor,
+        recordId: classGroupId,
+        detail: { date, reason, note: note?.trim() || null, students: changed },
+      });
+    }
+  })();
+  return { changed, unchanged };
+}
+
+/** The classes a teacher is assigned, with their students, for the teacher's device to download. */
+export function getTeacherClasses(db, userId) {
+  const classes = db
+    .prepare(
+      `SELECT c.class_group_id AS classGroupId, c.school_id AS schoolId, c.grade, c.stream,
+              c.academic_year AS academicYear, coalesce(u.full_name, c.teacher_name) AS teacherName
+         FROM class_groups c
+         LEFT JOIN users u ON u.user_id = c.teacher_user_id
+        WHERE c.teacher_user_id = ?
+        ORDER BY c.grade, c.stream`
+    )
+    .all(userId);
+  const cards = db.prepare(`SELECT card_uid AS cardUid FROM rfid_cards WHERE student_id = ? AND active = 1`);
+  return classes.map((c) => ({
+    ...c,
+    students: getStudentsForClass(db, c.classGroupId).map((st) => ({
+      ...st,
+      active: st.active === 1,
+      cardUid: cards.get(st.studentId)?.cardUid ?? null,
+    })),
+  }));
 }

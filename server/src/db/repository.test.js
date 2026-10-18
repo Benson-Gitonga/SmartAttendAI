@@ -24,13 +24,14 @@ beforeEach(() => {
 });
 
 describe('schema', () => {
-  test('creates all 10 tables', () => {
+  test('creates all 11 tables', () => {
     const names = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
       .all()
       .map((r) => r.name);
     assert.deepEqual(names, [
       'attendance_events',
+      'attendance_overrides',
       'audit_log',
       'class_groups',
       'fingerprint_challenges',

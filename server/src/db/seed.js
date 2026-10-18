@@ -110,6 +110,14 @@ export function seed(db) {
          grade = excluded.grade, stream = excluded.stream, academic_year = excluded.academic_year`
     ).run(DEMO_CLASS);
 
+    // The demo class belongs to the demo teacher, so signing in as them shows it.
+    const kiberaTeacher = DEMO_USERS.find((u) => u.school_id === DEMO_SCHOOL.school_id && u.role === 'teacher');
+    db.prepare(
+      `UPDATE class_groups
+          SET teacher_user_id = (SELECT user_id FROM users WHERE email = @email), teacher_name = @full_name
+        WHERE class_group_id = @class_group_id AND teacher_user_id IS NULL`
+    ).run({ email: kiberaTeacher.email, full_name: kiberaTeacher.full_name, class_group_id: DEMO_CLASS.class_group_id });
+
     const upsertStudent = db.prepare(
       `INSERT INTO students (student_id, class_group_id, admission_no, full_name, enrolled_at)
        VALUES (@student_id, @class_group_id, @admission_no, @full_name, @enrolled_at)

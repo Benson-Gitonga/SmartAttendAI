@@ -156,3 +156,24 @@ CREATE TABLE IF NOT EXISTS follow_ups (
 );
 
 CREATE INDEX IF NOT EXISTS idx_followups_student ON follow_ups(student_id, created_at);
+
+-- A school admin taking or correcting a class's register (teacher absent,
+-- wrong mark...). attendance_events keeps the current mark; this keeps who
+-- changed it, from what, and why. The reason is required.
+CREATE TABLE IF NOT EXISTS attendance_overrides (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id     TEXT NOT NULL REFERENCES attendance_events(event_id) ON DELETE CASCADE,
+  student_id   TEXT NOT NULL,
+  date         TEXT NOT NULL,
+  from_status  TEXT,                                   -- NULL: the student had no mark
+  to_status    TEXT NOT NULL CHECK (to_status IN ('present', 'absent', 'late')),
+  from_reason  TEXT,
+  to_reason    TEXT,
+  reason       TEXT NOT NULL CHECK (reason IN ('teacher_absent', 'wrong_mark', 'late_arrival', 'gate_error', 'other')),
+  note         TEXT,
+  actor        TEXT NOT NULL,                          -- the admin's email
+  on_behalf_of TEXT,                                   -- the class teacher at the time
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_overrides_student_date ON attendance_overrides(student_id, date);

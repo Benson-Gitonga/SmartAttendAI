@@ -60,6 +60,13 @@ export function migrate(db) {
   for (const [column, type] of Object.entries(applicationColumns)) {
     if (!hasColumn('schools', column)) db.exec(`ALTER TABLE schools ADD COLUMN ${column} ${type}`);
   }
+  // The class's teacher as an account (admin-assigned). teacher_name stays as
+  // the display name for classes from before accounts existed.
+  if (!hasColumn('class_groups', 'teacher_user_id')) {
+    db.exec(`ALTER TABLE class_groups ADD COLUMN teacher_user_id TEXT REFERENCES users(user_id) ON DELETE SET NULL`);
+  }
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_classes_teacher ON class_groups(teacher_user_id)`);
+
   // One school per code, except that a rejected school may apply again.
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_schools_code
              ON schools(upper(school_code)) WHERE school_code IS NOT NULL AND status <> 'rejected'`);

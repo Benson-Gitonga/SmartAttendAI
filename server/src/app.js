@@ -14,6 +14,7 @@ import { createGateRouter } from './routes/gate.js';
 import { createSystemAdminAuth } from './auth/systemAdminAuth.js';
 import { createUserAuth } from './auth/userAuth.js';
 import { createAuthRouter } from './routes/auth.js';
+import { createTeacherRouter } from './routes/teacher.js';
 import {
   getAttendanceForDate,
   getRecentChallenges,
@@ -75,6 +76,7 @@ export function createApp({
 
   app.use('/api/roster', createRosterRouter({ db, userAuth }));
   app.use('/api/admin', createAdminRouter({ db, userAuth }));
+  app.use('/api/teacher', createTeacherRouter({ db, userAuth }));
 
   // Today's gate scans (and any teacher marks) for one class, pulled by the
   // PWA before roll call so the teacher only handles students who didn't scan.

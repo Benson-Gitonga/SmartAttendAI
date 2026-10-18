@@ -38,14 +38,34 @@ export function createRosterRouter({ db, userAuth }) {
   // so the usual "push the parent first" 409 still applies.
   const blocked = (res, req, { schoolId, classGroupId, studentId }) => {
     const owner = schoolId ?? schoolIdOf(db, { classGroupId, studentId });
-    if (owner == null || owner === req.user.schoolId) return false;
+    if (owner == null || owner === req.user.schoolId) return notYourClass(res, req, { classGroupId, studentId });
     res.status(403).json({ error: 'that belongs to another school' });
+    return true;
+  };
+
+  // A teacher edits only the classes the school admin assigned them.
+  const assignedTeacher = db.prepare(`SELECT teacher_user_id AS teacherUserId FROM class_groups WHERE class_group_id = ?`);
+  const classOfStudent = db.prepare(`SELECT class_group_id AS classGroupId FROM students WHERE student_id = ?`);
+  const notYourClass = (res, req, { classGroupId, studentId }) => {
+    if (req.user.role !== 'teacher') return false;
+    const cls = classGroupId ?? (studentId ? classOfStudent.get(studentId)?.classGroupId : null);
+    const row = cls ? assignedTeacher.get(cls) : null;
+    if (!row || row.teacherUserId === req.user.userId) return false;
+    res.status(403).json({ error: 'that class is not assigned to you' });
+    return true;
+  };
+
+  // Schools and classes are set up by the school admin, not by teachers.
+  const adminOnly = (res, req) => {
+    if (req.user.role === 'admin') return false;
+    res.status(403).json({ error: 'only the school admin creates schools and classes' });
     return true;
   };
 
   router.post('/schools', (req, res) => {
     const body = req.body ?? {};
     if (!require(res, body, ['schoolId', 'name'])) return;
+    if (adminOnly(res, req)) return;
     if (blocked(res, req, { schoolId: body.schoolId })) return;
     res.status(200).json(upsertSchool(db, body));
   });
@@ -53,6 +73,7 @@ export function createRosterRouter({ db, userAuth }) {
   router.post('/classes', (req, res) => {
     const body = req.body ?? {};
     if (!require(res, body, ['classGroupId', 'schoolId', 'grade'])) return;
+    if (adminOnly(res, req)) return;
     if (blocked(res, req, { schoolId: body.schoolId })) return;
     try {
       res.status(200).json(upsertClassGroup(db, body));

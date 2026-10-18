@@ -10,12 +10,12 @@ let base;
 let userAuth;
 let headers; // made on the first request of each test
 
-// Requests from a signed-in teacher of school-1.
+// Requests from a signed-in school admin of school-1, who sets up classes.
 const SCHOOL = 'school-1';
 const api = (p, init = {}) => {
   if (!headers) {
     db.prepare('INSERT OR IGNORE INTO schools (school_id, name) VALUES (?, ?)').run(SCHOOL, 'Test School');
-    headers = staffHeaders(db, userAuth, { schoolId: SCHOOL, role: 'teacher' });
+    headers = staffHeaders(db, userAuth, { schoolId: SCHOOL, role: 'admin' });
   }
   return fetch(`${base}${p}`, { ...init, headers: { ...headers, ...init.headers } });
 };
