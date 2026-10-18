@@ -9,7 +9,7 @@
 
 import { Router } from 'express';
 import { validate } from '../lib/validate.js';
-import { createClassSchema, updateClassSchema, registerOverrideSchema } from '../schemas/admin.schema.js';
+import { createClassSchema, updateClassSchema, registerOverrideSchema, inviteTeacherSchema } from '../schemas/admin.schema.js';
 import {
   getSchoolOverview,
   getClassesForSchool,
@@ -27,6 +27,11 @@ import {
   getClassRegister,
   overrideRegister,
   ClassInputError,
+  inviteTeacher,
+  issueSetupCode,
+  getSchoolTeacher,
+  setTeacherEnabled,
+  RegistrationConflictError,
 } from '../db/repository.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -107,6 +112,50 @@ export function createAdminRouter({ db, userAuth }) {
   router.get('/schools/:schoolId/teachers', (req, res) => {
     res.json({ teachers: getTeachersForSchool(db, req.params.schoolId) });
   });
+
+  // Invite a teacher: an account with no password yet, and a one-time code
+  // the admin passes on (WhatsApp, SMS, email or paper). Shown only once.
+  router.post('/schools/:schoolId/teachers', (req, res) => {
+    const { valid, errors } = validate(inviteTeacherSchema, req.body ?? {});
+    if (!valid) return invalid(res, errors);
+    try {
+      const { teacher, code, expiresAt } = inviteTeacher(db, {
+        ...req.body, schoolId: req.params.schoolId, createdBy: req.user.email,
+      });
+      res.status(201).json({ teacher, code, expiresAt, purpose: 'invite' });
+    } catch (err) {
+      if (err instanceof RegistrationConflictError) {
+        return res.status(409).json({ error: 'An account with this email already exists.', field: 'email' });
+      }
+      throw err;
+    }
+  });
+
+  const teacherOr404 = (req, res) => {
+    const teacher = getSchoolTeacher(db, req.user.schoolId, req.params.userId);
+    if (!teacher) notMine(res, 'teacher');
+    return teacher;
+  };
+
+  // A fresh code: a new invite if they never set a password, otherwise a
+  // password reset. Any earlier code stops working.
+  router.post('/teachers/:userId/code', (req, res) => {
+    const teacher = teacherOr404(req, res);
+    if (!teacher) return undefined;
+    if (teacher.status === 'disabled') return res.status(409).json({ error: 'Enable this teacher first.' });
+    const purpose = teacher.status === 'invited' ? 'invite' : 'reset';
+    res.status(201).json({ teacher, ...issueSetupCode(db, { userId: teacher.userId, purpose, createdBy: req.user.email }) });
+  });
+
+  // Disabling signs the teacher out everywhere at once (their token is
+  // re-checked on every request). Their classes stay assigned until changed.
+  for (const [action, enabled] of [['disable', false], ['enable', true]]) {
+    router.post(`/teachers/:userId/${action}`, (req, res) => {
+      const teacher = teacherOr404(req, res);
+      if (!teacher) return undefined;
+      res.json(setTeacherEnabled(db, teacher.userId, enabled, { actor: req.user.email }));
+    });
+  }
 
   router.get('/classes/:id/students', (req, res) => {
     const cls = getClassGroup(db, req.params.id);

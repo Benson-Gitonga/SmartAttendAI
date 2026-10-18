@@ -77,6 +77,9 @@ All optional. Copy `.env.example` to `.env` to override.
 | GET | `/api/admin/schools/:id/teachers` | teachers with their classes |
 | GET/PUT | `/api/admin/classes/:id/register?date=` | read, or take/correct, a class's register; PUT needs a `reason` (see below) |
 | GET | `/api/teacher/classes` | the classes assigned to the signed-in teacher, with students |
+| POST | `/api/admin/schools/:id/teachers` | invite a teacher: returns a one-time code, shown once |
+| POST | `/api/admin/teachers/:id/{code,disable,enable}` | new invite or password-reset code; disable or enable a teacher |
+| GET/POST | `/api/auth/setup-codes/:code`, `/api/auth/setup` | who a code is for; set a password with it and sign in |
 | * | `/api/admin/*` | also: overview, flagged students, follow-ups |
 | POST | `/api/auth/login` | school staff sign-in, body `{ "email", "password" }`, returns a token, the user and their school |
 | GET | `/api/auth/me` | the signed-in user and their school's current status |
@@ -153,6 +156,18 @@ updates `attendance_events` in place (or adds one), is queued for the cloud
 again, and leaves an `attendance_overrides` row with the old and new mark, the
 reason, the admin and the class teacher it was done for. The teacher's device
 picks the change up on its next gate pull.
+
+### Teacher invites
+
+Teachers do not sign up. The school admin invites them (name, email, phone),
+which creates an `invited` account with no password and a one-time code such
+as `K7QM-4XPA` (`setup_codes`, SHA-256 only, 7 days). The admin sends it from
+their own phone (WhatsApp, SMS, email links in the app); SmartAttend sends
+nothing itself. The teacher opens `/#/join/<code>` or enters it under "I have
+an invite code", chooses a password and is signed in. The same codes reset a
+forgotten password. A new code revokes the old one; codes work once; wrong
+codes from one address are rate-limited. Disabling a teacher signs them out at
+once and revokes their code.
 
 ### System admin sign-in
 

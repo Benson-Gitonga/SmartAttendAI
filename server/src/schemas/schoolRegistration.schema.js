@@ -73,3 +73,17 @@ export const schoolReviewSchema = {
     note: { type: 'string', maxLength: 500 },
   },
 };
+
+/** POST /api/auth/setup: set a password with a one-time code from the school admin. */
+export const setupCodeSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  $id: 'https://smartattend.example/schemas/setup-code.json',
+  title: 'SetupCode',
+  type: 'object',
+  additionalProperties: false,
+  required: ['code', 'password'],
+  properties: {
+    code: { type: 'string', minLength: 8, maxLength: 20 },
+    password: { type: 'string', minLength: PASSWORD_MIN_LENGTH, maxLength: 200 },
+  },
+};

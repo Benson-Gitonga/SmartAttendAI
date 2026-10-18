@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { generateCode, hashCode, looksLikeCode, CODE_TTL_MS } from '../auth/setupCodes.js';
 import { assessStudent, flagRank, FOLLOW_UP_FRESH_DAYS } from '../lib/riskModel.js';
 
 /** Local calendar date as YYYY-MM-DD. Matches the client's todayISO(). */
@@ -788,7 +789,12 @@ export function getTeachersForSchool(db, schoolId) {
          FROM class_groups WHERE school_id = ? AND teacher_user_id IS NOT NULL ORDER BY grade, stream`
     )
     .all(schoolId);
-  return teachers.map((t) => ({ ...t, classes: classes.filter((c) => c.teacherUserId === t.userId) }));
+  const codes = openSetupCodes(db, teachers.map((t) => t.userId));
+  return teachers.map((t) => ({
+    ...t,
+    classes: classes.filter((c) => c.teacherUserId === t.userId),
+    openCode: codes.get(t.userId) ?? null,
+  }));
 }
 
 /** A teacher account in this school that can be given a class, or null. */
@@ -1077,4 +1083,119 @@ export function getTeacherClasses(db, userId) {
       cardUid: cards.get(st.studentId)?.cardUid ?? null,
     })),
   }));
+}
+
+// Teacher invites and password resets (one-time codes, see auth/setupCodes.js).
+
+/**
+ * Make a new one-time code for a user, revoking any they had. Returns the
+ * plain code; it is not stored and cannot be shown again.
+ */
+export function issueSetupCode(db, { userId, purpose, createdBy = null, ttlMs = CODE_TTL_MS, now = Date.now() }) {
+  const code = generateCode();
+  const expiresAt = new Date(now + ttlMs).toISOString();
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE setup_codes SET revoked_at = datetime('now') WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL`
+    ).run(userId);
+    db.prepare(
+      `INSERT INTO setup_codes (user_id, code_hash, purpose, created_by, expires_at) VALUES (?, ?, ?, ?, ?)`
+    ).run(userId, hashCode(code), purpose, createdBy, expiresAt);
+    logAudit(db, { action: `user.${purpose}_code_issued`, actorId: createdBy, recordId: userId, detail: { expiresAt } });
+  })();
+  return { code, expiresAt, purpose };
+}
+
+/**
+ * What a code is for, for the "you're joining ..." page. `state` is 'ok',
+ * 'used', 'revoked', 'expired', or 'unknown' (no such code).
+ */
+export function lookupSetupCode(db, code, now = Date.now()) {
+  if (!looksLikeCode(code)) return { state: 'unknown' };
+  const row = db
+    .prepare(
+      `SELECT sc.id, sc.purpose, sc.expires_at AS expiresAt, sc.used_at AS usedAt, sc.revoked_at AS revokedAt,
+              u.user_id AS userId, u.email, u.full_name AS fullName, u.role, u.status AS userStatus,
+              s.school_id AS schoolId, s.name AS schoolName
+         FROM setup_codes sc
+         JOIN users u ON u.user_id = sc.user_id
+         JOIN schools s ON s.school_id = u.school_id
+        WHERE sc.code_hash = ?`
+    )
+    .get(hashCode(code));
+  if (!row) return { state: 'unknown' };
+  let state = 'ok';
+  if (row.usedAt) state = 'used';
+  else if (row.revokedAt) state = 'revoked';
+  else if (Date.parse(row.expiresAt) <= now) state = 'expired';
+  else if (row.userStatus === 'disabled') state = 'revoked';
+  return { state, ...row };
+}
+
+/** Set the password from a good code; the code is used up. Returns the user, or null. */
+export function redeemSetupCode(db, code, passwordHash, now = Date.now()) {
+  const found = lookupSetupCode(db, code, now);
+  if (found.state !== 'ok') return null;
+  db.transaction(() => {
+    db.prepare(`UPDATE setup_codes SET used_at = datetime('now') WHERE id = ?`).run(found.id);
+    db.prepare(`UPDATE users SET password_hash = ?, status = 'active' WHERE user_id = ?`).run(passwordHash, found.userId);
+    logAudit(db, { action: `user.${found.purpose}_code_used`, actorId: found.email, recordId: found.userId });
+  })();
+  return getUser(db, found.userId);
+}
+
+/**
+ * A school admin adds a teacher, who gets an invite code to set their own
+ * password. Throws RegistrationConflictError('email') when the email is taken.
+ */
+export function inviteTeacher(db, { schoolId, fullName, email, phone = null, createdBy = null }) {
+  return db.transaction(() => {
+    if (findUserByEmail(db, email)) {
+      throw new RegistrationConflictError('email', 'an account with this email already exists');
+    }
+    const teacher = createUser(db, { email, fullName, phone, role: 'teacher', schoolId, status: 'invited' });
+    const invite = issueSetupCode(db, { userId: teacher.userId, purpose: 'invite', createdBy });
+    return { teacher, ...invite };
+  })();
+}
+
+/** A teacher in this school (any status), or null. */
+export function getSchoolTeacher(db, schoolId, userId) {
+  const user = getUser(db, userId);
+  return user && user.schoolId === schoolId && user.role === 'teacher' ? user : null;
+}
+
+/** Disable or re-enable a teacher. Disabling also revokes any open code. */
+export function setTeacherEnabled(db, userId, enabled, { actor = null } = {}) {
+  const user = getUser(db, userId);
+  if (!user) return null;
+  const hasPassword = db.prepare(`SELECT password_hash IS NOT NULL AS has FROM users WHERE user_id = ?`).get(userId).has === 1;
+  const status = enabled ? (hasPassword ? 'active' : 'invited') : 'disabled';
+  db.transaction(() => {
+    db.prepare(`UPDATE users SET status = ? WHERE user_id = ?`).run(status, userId);
+    if (!enabled) {
+      db.prepare(`UPDATE setup_codes SET revoked_at = datetime('now') WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL`).run(userId);
+    }
+    logAudit(db, { action: enabled ? 'user.enabled' : 'user.disabled', actorId: actor, recordId: userId });
+  })();
+  return getUser(db, userId);
+}
+
+/** The newest code still waiting to be used, per user, for the Teachers page. */
+export function openSetupCodes(db, userIds, now = Date.now()) {
+  const open = new Map();
+  if (userIds.length === 0) return open;
+  const rows = db
+    .prepare(
+      `SELECT user_id AS userId, purpose, expires_at AS expiresAt, created_at AS createdAt
+         FROM setup_codes
+        WHERE used_at IS NULL AND revoked_at IS NULL AND user_id IN (${userIds.map(() => '?').join(',')})
+        ORDER BY id`
+    )
+    .all(...userIds);
+  for (const r of rows) {
+    if (Date.parse(r.expiresAt) > now) open.set(r.userId, { purpose: r.purpose, expiresAt: r.expiresAt });
+    else open.set(r.userId, { purpose: r.purpose, expiresAt: r.expiresAt, expired: true });
+  }
+  return open;
 }

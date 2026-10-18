@@ -47,6 +47,23 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_school ON users(school_id);
 
+-- One-time codes a school admin gives a teacher: to set a password for the
+-- first time ('invite') or after forgetting it ('reset'). Only a SHA-256 of
+-- the code is kept. A new code for the same person revokes the old one.
+CREATE TABLE IF NOT EXISTS setup_codes (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  code_hash   TEXT NOT NULL UNIQUE,
+  purpose     TEXT NOT NULL CHECK (purpose IN ('invite', 'reset')),
+  created_by  TEXT,                                   -- the admin's email
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at  TEXT NOT NULL,                          -- ISO 8601
+  used_at     TEXT,
+  revoked_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_setup_codes_user ON setup_codes(user_id);
+
 CREATE TABLE IF NOT EXISTS class_groups (
   class_group_id TEXT PRIMARY KEY,
   school_id      TEXT NOT NULL REFERENCES schools(school_id) ON DELETE CASCADE,

@@ -62,3 +62,17 @@ export const registerOverrideSchema = {
   if: { properties: { reason: { const: 'other' } } },
   then: { required: ['note'], properties: { note: { minLength: 3 } } },
 };
+
+/** POST /api/admin/schools/:schoolId/teachers: invite a teacher. */
+export const inviteTeacherSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  $id: 'https://smartattend.example/schemas/admin-invite-teacher.json',
+  type: 'object',
+  additionalProperties: false,
+  required: ['fullName', 'email'],
+  properties: {
+    fullName: { type: 'string', minLength: 2, maxLength: 120, pattern: NOT_BLANK },
+    email: { type: 'string', format: 'email', maxLength: 254 },
+    phone: { type: 'string', pattern: '^(\\+254|0)[17]\\d{8}$' },
+  },
+};
