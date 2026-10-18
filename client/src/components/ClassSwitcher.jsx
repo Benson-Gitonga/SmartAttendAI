@@ -2,8 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { getClasses, getStudentsByClass, classLabel } from '../db/database';
 import { useAuth } from '../auth/AuthContext';
 import CreateClassForm from './CreateClassForm';
+import { useBackToClose } from '../hooks/useBackToClose';
 
 export default function ClassSwitcher({ activeClassId, onPick, onManageRoster, onClose }) {
+  // The back button closes this sheet rather than leaving the page.
+  useBackToClose(onClose);
   const { user } = useAuth();
   const [classes, setClasses] = useState([]);
   const [counts, setCounts] = useState({});

@@ -193,12 +193,30 @@ input  { font-family: inherit; }
   color: var(--indigo-600);
   cursor: pointer;
 }
+.topbar__crumbs--deep .topbar__up { display: inline-flex; }
+.topbar__up-back { display: none; }
 @media (max-width: 899px) {
   .topbar__crumbs--deep .topbar__logo,
   .topbar__crumbs--deep .crumbs__item:not(:last-child) { display: none; }
-  .topbar__crumbs--deep .topbar__up { display: inline-flex; }
   .topbar__crumbs--deep .topbar__up::after { content: ""; width: 1px; height: 18px; margin-left: 8px; background: var(--line); }
 }
+/* desktops: a "< Back" button before the full trail */
+@media (min-width: 900px) {
+  .topbar__crumbs--deep .topbar__up {
+    margin-right: 10px;
+    padding: 5px 12px 5px 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    font-weight: 600;
+    color: var(--ink);
+  }
+  .topbar__crumbs--deep .topbar__up:hover { background: var(--canvas-in); }
+  .topbar__crumbs--deep .topbar__logo { display: none; }
+  .topbar__up-parent { display: none; }
+  .topbar__up-back { display: inline; }
+}
+.topbar__up:focus-visible { outline: 2px solid var(--indigo-600); outline-offset: 2px; }
 .topbar__right { display: flex; align-items: center; gap: 10px; }
 
 .avatar-btn {

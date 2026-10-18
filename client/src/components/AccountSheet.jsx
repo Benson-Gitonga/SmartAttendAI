@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import Avatar from './Avatar';
+import { useBackToClose } from '../hooks/useBackToClose';
 import { SyncIcon, RosterIcon, KeypadIcon, LogOutIcon } from './icons';
 
 const ROLE_LABEL = { admin: 'School admin', teacher: 'Teacher' };
@@ -16,6 +17,8 @@ export default function AccountSheet({
   onSimulateExpiry,
   onClose,
 }) {
+  // The back button closes this sheet rather than leaving the page.
+  useBackToClose(onClose);
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);

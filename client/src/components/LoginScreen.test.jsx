@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import LoginScreen from './LoginScreen';
 
@@ -17,6 +17,8 @@ function authError(code, message, extra = {}) {
 
 beforeEach(() => {
   mockOnline = true;
+  // The application lives at #/apply; every test starts on sign-in.
+  window.history.replaceState(null, '', '/#/');
   Object.assign(auth, {
     signIn: jest.fn().mockResolvedValue({}),
     registerSchool: jest.fn().mockResolvedValue({}),
@@ -166,5 +168,39 @@ describe('LoginScreen school application', () => {
     await openRegister(user);
     await user.click(screen.getByRole('button', { name: /Back to sign in/ }));
     expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
+  });
+});
+
+describe('LoginScreen back navigation', () => {
+  beforeEach(() => window.history.replaceState(null, '', '/#/'));
+
+  it('the application has its own address, and back returns to sign-in', async () => {
+    const user = userEvent.setup();
+    render(<LoginScreen />);
+    await user.click(screen.getByRole('button', { name: /Register your school/ }));
+    expect(window.location.hash).toBe('#/apply');
+    expect(screen.getByRole('heading', { name: 'Register your school' })).toBeInTheDocument();
+
+    await act(async () => {
+      window.history.back();
+      await new Promise((r) => setTimeout(r, 30));
+    });
+    expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
+  });
+
+  it('opening the app on #/apply shows the application', () => {
+    window.history.replaceState(null, '', '/#/apply');
+    render(<LoginScreen />);
+    expect(screen.getByRole('heading', { name: 'Register your school' })).toBeInTheDocument();
+  });
+
+  it('"Back to sign in" steps back instead of piling up history', async () => {
+    const user = userEvent.setup();
+    render(<LoginScreen />);
+    await user.click(screen.getByRole('button', { name: /Register your school/ }));
+    await user.click(screen.getByRole('button', { name: /Back to sign in/ }));
+    expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+    expect(window.location.hash).not.toBe('#/apply');
   });
 });

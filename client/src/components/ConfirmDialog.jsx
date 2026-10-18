@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { AlertTriangleIcon } from './icons';
+import { useBackToClose } from '../hooks/useBackToClose';
 
 /**
  * "Are you sure?" dialog. Centred on a desktop, a bottom sheet on a phone.
@@ -22,6 +23,8 @@ export default function ConfirmDialog({
   children,
 }) {
   const cancelRef = useRef(null);
+  // The back button cancels, like Escape. Not while saving.
+  useBackToClose(busy ? null : onCancel);
 
   useEffect(() => {
     // Start on Cancel, so a stray Enter never confirms something destructive.

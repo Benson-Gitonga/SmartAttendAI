@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import {
@@ -64,6 +64,11 @@ function toApplication(a) {
   };
 }
 
+// The application has its own address, so the back button returns to sign-in
+// and a refresh stays on the form. (#/register is the teachers' class register.)
+const APPLY_HASH = '#/apply';
+const viewFromHash = () => (typeof window !== 'undefined' && window.location.hash === APPLY_HASH ? 'register' : 'signin');
+
 /**
  * Views: signin (everyone, including the system admin with their username)
  * and register (a school's application to join, made by its admin).
@@ -72,7 +77,7 @@ export default function LoginScreen() {
   const { signIn, registerSchool } = useAuth();
   const online = useOnlineStatus();
 
-  const [view, setView] = useState('signin');
+  const [view, setView] = useState(viewFromHash);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [app, setApp] = useState(EMPTY_APPLICATION);
@@ -83,11 +88,37 @@ export default function LoginScreen() {
 
   const set = (field) => (e) => setApp((a) => ({ ...a, [field]: e.target.value }));
 
+  // Back and forward between sign-in and the application. Messages belong
+  // to the view they were shown on, so they go only when the view changes.
+  const viewRef = useRef(view);
+  useEffect(() => { viewRef.current = view; }, [view]);
+  useEffect(() => {
+    const onPop = () => {
+      const next = viewFromHash();
+      if (next === viewRef.current) return;
+      setView(next);
+      setError(null);
+      setNotice(null);
+      setBusy(false);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
   function switchView(next) {
+    viewRef.current = next; // before the history change below fires popstate
+    if (next === 'register' && window.location.hash !== APPLY_HASH) {
+      window.history.pushState({ fromSignIn: true }, '', APPLY_HASH);
+    } else if (next === 'signin' && window.location.hash === APPLY_HASH) {
+      // Step back if we came from sign-in, so back does not reopen the form.
+      if (window.history.state?.fromSignIn) window.history.back();
+      else window.history.replaceState(null, '', '#/');
+    }
     setView(next);
     setError(null);
     setNotice(null);
     setBusy(false);
+    window.scrollTo?.(0, 0);
   }
 
   async function handleSignIn(e) {

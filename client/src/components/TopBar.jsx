@@ -16,9 +16,11 @@ export default function TopBar({ crumbs = [], online, onAccount }) {
         <span className="topbar__logo" aria-hidden="true"><CapIcon size={16} /></span>
 
         {parent && (
-          <button type="button" className="topbar__up" onClick={parent.onClick}>
+          <button type="button" className="topbar__up" onClick={parent.onClick} aria-label={`Back to ${parent.label}`}>
             <ChevronLeftIcon size={16} />
-            {parent.label}
+            {/* Phones show where back goes; desktops keep the trail beside it. */}
+            <span className="topbar__up-parent">{parent.label}</span>
+            <span className="topbar__up-back">Back</span>
           </button>
         )}
 
