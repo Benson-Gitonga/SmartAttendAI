@@ -11,7 +11,8 @@
  * are locked out for a while.
  */
 
-import { scryptSync, randomBytes, timingSafeEqual, createHmac } from 'node:crypto';
+import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createTokenSigner, createAttemptLimiter, bearerToken, sameText } from './tokens.js';
 
 // scrypt cost settings. N = 2^14 keeps a sign-in well under 100 ms on a
 // Raspberry Pi while making each guess expensive.
@@ -42,14 +43,6 @@ export function verifyPassword(password, stored) {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-const sign = (secret, data) => createHmac('sha256', secret).update(data).digest('base64url');
-
-const sameText = (a, b) => {
-  const x = Buffer.from(String(a));
-  const y = Buffer.from(String(b));
-  return x.length === y.length && timingSafeEqual(x, y);
-};
-
 /**
  * @param {object} opts
  * @param {string} opts.username       the system admin's sign-in name (e.g. "sysadmin")
@@ -71,35 +64,14 @@ export function createSystemAdminAuth({
   now = Date.now,
 } = {}) {
   const configured = Boolean(username && passwordHash);
-  const secret = tokenSecret || randomBytes(32).toString('base64url');
   const account = username.trim().toLowerCase();
-
-  // address -> { failures, firstAt, lockedUntil }
-  const attempts = new Map();
-
-  function lockedFor(key) {
-    const entry = attempts.get(key);
-    if (!entry) return 0;
-    const left = (entry.lockedUntil ?? 0) - now();
-    if (left > 0) return left;
-    if (now() - entry.firstAt > lockoutMs) attempts.delete(key);
-    return 0;
-  }
-
-  function recordFailure(key) {
-    const t = now();
-    const entry = attempts.get(key);
-    const fresh = !entry || t - entry.firstAt > lockoutMs;
-    const next = fresh ? { failures: 1, firstAt: t } : { ...entry, failures: entry.failures + 1 };
-    if (next.failures >= maxFailures) next.lockedUntil = t + lockoutMs;
-    attempts.set(key, next);
-  }
+  const signer = createTokenSigner(tokenSecret);
+  const limiter = createAttemptLimiter({ maxFailures, lockoutMs, now });
 
   function issueToken() {
     const issuedAt = now();
-    const payload = { sub: account, role: 'system_admin', iat: issuedAt, exp: issuedAt + tokenTtlMs };
-    const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-    return { token: `${body}.${sign(secret, body)}`, username: account, expiresAt: payload.exp };
+    const claims = { sub: account, role: 'system_admin', iat: issuedAt, exp: issuedAt + tokenTtlMs };
+    return { token: signer.sign(claims), username: account, expiresAt: claims.exp };
   }
 
   /**
@@ -108,7 +80,7 @@ export function createSystemAdminAuth({
    */
   function signIn(givenUsername, password, { from = 'unknown' } = {}) {
     if (!configured) return { ok: false, reason: 'not_configured' };
-    const wait = lockedFor(from);
+    const wait = limiter.lockedFor(from);
     if (wait > 0) return { ok: false, reason: 'locked', retryAfterMs: wait };
 
     // Always run the hash check, even for a wrong username, so the reply time
@@ -116,28 +88,17 @@ export function createSystemAdminAuth({
     const passwordOk = verifyPassword(String(password ?? ''), passwordHash);
     const usernameOk = sameText(String(givenUsername ?? '').trim().toLowerCase(), account);
     if (!(passwordOk && usernameOk)) {
-      recordFailure(from);
-      const locked = lockedFor(from);
+      const locked = limiter.fail(from);
       return locked > 0 ? { ok: false, reason: 'locked', retryAfterMs: locked } : { ok: false, reason: 'wrong' };
     }
-    attempts.delete(from);
+    limiter.succeed(from);
     return { ok: true, ...issueToken() };
   }
 
   /** The token's claims, or null when it is missing, forged, for someone else or expired. */
   function verifyToken(token) {
-    if (typeof token !== 'string') return null;
-    const [body, mac, extra] = token.split('.');
-    if (!body || !mac || extra !== undefined) return null;
-    if (!sameText(mac, sign(secret, body))) return null;
-    let claims;
-    try {
-      claims = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
-    } catch {
-      return null;
-    }
+    const claims = signer.verify(token, now());
     if (claims?.role !== 'system_admin' || claims.sub !== account) return null;
-    if (typeof claims.exp !== 'number' || claims.exp <= now()) return null;
     return claims;
   }
 
@@ -146,8 +107,7 @@ export function createSystemAdminAuth({
     if (!configured) {
       return res.status(503).json({ error: 'system admin sign-in is not set up on this server (run npm run sysadmin:set)' });
     }
-    const header = req.get('authorization') ?? '';
-    const claims = verifyToken(header.startsWith('Bearer ') ? header.slice(7) : null);
+    const claims = verifyToken(bearerToken(req));
     if (!claims) return res.status(401).json({ error: 'sign in as the system admin first' });
     req.systemAdmin = claims;
     next();
