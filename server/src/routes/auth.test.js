@@ -101,6 +101,8 @@ describe('tokens', () => {
     assert.equal(res.status, 200);
     assert.equal(body.user.email, 'teacher2@school.ke');
     assert.equal(body.school.name, 'School 2');
+    assert.ok(body.school.submittedAt, 'when the school applied');
+    assert.equal(body.school.reviewedAt, null);
   });
 
   test('disabling an account stops its token at once', async () => {

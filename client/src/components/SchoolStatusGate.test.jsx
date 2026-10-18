@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import SchoolStatusGate from './SchoolStatusGate';
 import { getMyAccount } from '../services/accountService';
@@ -35,12 +35,27 @@ describe('SchoolStatusGate', () => {
     expect(getMyAccount).not.toHaveBeenCalled();
   });
 
-  it('holds a pending school on the waiting screen', async () => {
-    getMyAccount.mockResolvedValue(account('pending'));
+  it('holds a pending school on its progress page', async () => {
+    getMyAccount.mockResolvedValue(account('pending', { submittedAt: '2026-10-18 09:30:00', schoolCode: '20414001' }));
     renderGate();
-    expect(await screen.findByText('Your school is waiting for approval')).toBeInTheDocument();
-    expect(screen.getByText('Kisumu Day Secondary School, Kisumu')).toBeInTheDocument();
+    expect(await screen.findByText('Your application is being reviewed')).toBeInTheDocument();
+    expect(screen.getByText('Pending review')).toBeInTheDocument();
+    expect(screen.getByText('Kisumu Day Secondary School')).toBeInTheDocument();
+    expect(screen.getByText('Code 20414001')).toBeInTheDocument();
     expect(screen.queryByText('Admin dashboard')).not.toBeInTheDocument();
+  });
+
+  it('shows the application as three steps, the review being the current one', async () => {
+    getMyAccount.mockResolvedValue(account('pending', { submittedAt: '2026-10-18 09:30:00' }));
+    renderGate();
+    const steps = await screen.findByRole('list', { name: 'Application progress' });
+    const items = within(steps).getAllByRole('listitem');
+    expect(items.map((li) => li.className)).toEqual([
+      'ap-step ap-step--done', 'ap-step ap-step--current', 'ap-step ap-step--todo',
+    ]);
+    expect(items[0]).toHaveTextContent('Application sent');
+    expect(items[0]).toHaveTextContent('18 Oct 2026');
+    expect(items[1]).toHaveAttribute('aria-current', 'step');
   });
 
   it("holds a teacher of a school that isn't active too", async () => {
@@ -50,20 +65,23 @@ describe('SchoolStatusGate', () => {
     expect(await screen.findByText('Your school has been disabled')).toBeInTheDocument();
   });
 
-  it('opens the app when "Check again" finds the school approved, and remembers it', async () => {
+  it('shows the approval, then opens the app by itself, and remembers it', async () => {
     const user = userEvent.setup();
     getMyAccount.mockResolvedValueOnce(account('pending')).mockResolvedValueOnce(account('active'));
     renderGate();
     await user.click(await screen.findByRole('button', { name: /Check again/ }));
-    expect(await screen.findByText('Admin dashboard')).toBeInTheDocument();
+    expect(await screen.findByText('Your school is approved!')).toBeInTheDocument();
+    expect(await screen.findByText('Admin dashboard', {}, { timeout: 4000 })).toBeInTheDocument();
     expect(auth.refreshSchool).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'active' }));
   });
 
-  it('shows the rejection reason and no "Check again"', async () => {
-    getMyAccount.mockResolvedValue(account('rejected', { reviewNote: 'Could not verify the school' }));
+  it('shows the rejection, its date and reason, and no "Check again"', async () => {
+    getMyAccount.mockResolvedValue(account('rejected', { reviewNote: 'Could not verify the school', reviewedAt: '2026-10-19 07:00:00' }));
     renderGate();
-    expect(await screen.findByText('Your school registration was not approved')).toBeInTheDocument();
-    expect(screen.getByText('Could not verify the school')).toBeInTheDocument();
+    expect(await screen.findByText('Your application was not approved')).toBeInTheDocument();
+    const failed = screen.getByText('Not approved', { selector: '.ap-step__label' }).closest('li');
+    expect(failed).toHaveTextContent('Could not verify the school');
+    expect(failed).toHaveTextContent('19 Oct 2026');
     expect(screen.queryByRole('button', { name: /Check again/ })).not.toBeInTheDocument();
   });
 

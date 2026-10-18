@@ -1603,6 +1603,7 @@ div.followup-badge {
 /* ========================================================= system admin === */
 
 .sa,
+.ap,
 .sa-dialog-backdrop {
   --sa-bg: #f4f6fb;
   --sa-card: #ffffff;
@@ -2102,31 +2103,157 @@ div.followup-badge {
   .sa *, .sa-dialog-backdrop, .sa-dialog { animation: none !important; transition: none !important; }
 }
 
-/* A school admin whose school is not active yet. */
-.school-gate { max-width: 460px; text-align: center; }
-.school-gate__badge {
-  width: 52px;
-  height: 52px;
-  margin: 0 auto 14px;
-  border-radius: var(--radius-pill);
-  display: inline-flex;
+/* ====================================== application progress (SchoolStatusGate) === */
+
+.ap {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background:
+    radial-gradient(900px 360px at 50% -140px, rgba(37, 99, 235, 0.10), transparent 70%),
+    var(--sa-bg);
+}
+.ap-header {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  background: var(--risk-amber-bg);
-  color: var(--risk-amber);
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 14px 16px;
 }
-.school-gate--rejected .school-gate__badge,
-.school-gate--inactive .school-gate__badge { background: var(--absent-bg); color: var(--absent); }
-.school-gate__school { font-weight: 700; color: var(--ink); }
-.school-gate__note {
-  text-align: left;
-  font-size: 13px;
-  background: var(--canvas-in);
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin: 12px 0 0;
+.ap-main { flex: 1; display: flex; justify-content: center; padding: 8px 16px 48px; }
+.ap-card {
+  width: 100%;
+  max-width: 560px;
+  align-self: flex-start;
+  padding: 28px 20px 20px;
+  background: #fff;
+  border: 1px solid var(--sa-border);
+  border-radius: 20px;
+  box-shadow: var(--sa-shadow-hover);
+  position: relative;
+  overflow: hidden;
 }
-.school-gate__actions { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+.ap-card::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 5px; }
+.ap-card--pending::before  { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.ap-card--approved::before { background: linear-gradient(90deg, #059669, #34d399); }
+.ap-card--rejected::before { background: linear-gradient(90deg, #dc2626, #f87171); }
+
+.ap-hero { display: flex; flex-direction: column; align-items: center; text-align: center; }
+.ap-hero__icon {
+  width: 64px; height: 64px;
+  display: inline-flex; align-items: center; justify-content: center;
+  margin-bottom: 14px;
+  border-radius: 20px;
+}
+.ap-card--pending  .ap-hero__icon { background: var(--sa-pending-bg);  color: var(--sa-pending); }
+.ap-card--approved .ap-hero__icon { background: var(--sa-active-bg);   color: var(--sa-active); animation: ap-pop 0.45s ease-out; }
+.ap-card--rejected .ap-hero__icon { background: var(--sa-inactive-bg); color: var(--sa-inactive); }
+@keyframes ap-pop { 0% { transform: scale(0.6); opacity: 0; } 70% { transform: scale(1.08); } }
+.ap-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 11px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 700;
+}
+.ap-badge__dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.ap-badge--pending  { background: var(--sa-pending-bg);  color: #b45309; }
+.ap-badge--approved { background: var(--sa-active-bg);   color: #047857; }
+.ap-badge--rejected { background: var(--sa-inactive-bg); color: #b91c1c; }
+.ap-badge--pending .ap-badge__dot { animation: sa-pulse 1.8s ease-in-out infinite; }
+.ap-hero__title { margin: 12px 0 0; font-size: 22px; font-weight: 800; letter-spacing: -0.025em; line-height: 1.25; }
+.ap-hero__text { margin: 8px 0 0; max-width: 440px; font-size: 14px; line-height: 1.55; color: var(--ink-muted); }
+
+.ap-school {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 22px 0 6px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid var(--line-soft);
+}
+.ap-school__icon {
+  width: 40px; height: 40px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--indigo-600);
+  border: 1px solid var(--sa-border);
+}
+.ap-school__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ap-school__text b { font-size: 15px; overflow-wrap: anywhere; }
+.ap-school__text > span { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 12.5px; color: var(--ink-muted); }
+.ap-school__code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: #fff;
+  border: 1px solid var(--sa-border);
+}
+
+.ap-steps { list-style: none; margin: 18px 0 8px; padding: 0; }
+.ap-step { position: relative; display: flex; gap: 14px; padding-bottom: 18px; }
+.ap-step:last-child { padding-bottom: 4px; }
+/* The line joining one step to the next. */
+.ap-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 32px;
+  bottom: 2px;
+  width: 2px;
+  background: var(--sa-border);
+}
+.ap-step--done:not(:last-child)::after { background: var(--sa-active-line); }
+.ap-step__marker {
+  width: 30px; height: 30px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  border: 2px solid var(--sa-border);
+  background: #fff;
+  color: var(--ink-muted);
+}
+.ap-step--done    .ap-step__marker { border-color: var(--sa-active);   background: var(--sa-active);   color: #fff; }
+.ap-step--current .ap-step__marker { border-color: var(--sa-pending);  background: var(--sa-pending-bg); color: var(--sa-pending); box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.15); }
+.ap-step--failed  .ap-step__marker { border-color: var(--sa-inactive); background: var(--sa-inactive); color: #fff; }
+.ap-step__body { display: flex; flex-direction: column; gap: 3px; padding-top: 4px; min-width: 0; }
+.ap-step__label { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 14.5px; font-weight: 700; }
+.ap-step--todo .ap-step__label { color: var(--ink-muted); font-weight: 600; }
+.ap-step__date { font-size: 12px; font-weight: 600; color: var(--ink-muted); }
+.ap-step__detail { font-size: 13px; line-height: 1.45; color: var(--ink-soft); overflow-wrap: anywhere; }
+.ap-step--failed .ap-step__detail {
+  margin-top: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border-left: 3px solid var(--sa-inactive);
+  background: var(--sa-inactive-bg);
+}
+
+.ap-card .sa-alert--compact { margin: 10px 0 0; }
+.ap-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+.ap-footer__meta { font-size: 12px; color: var(--ink-muted); }
+
+@media (min-width: 641px) {
+  .ap-header { padding: 18px 24px; }
+  .ap-main { padding-top: 24px; }
+  .ap-card { padding: 36px 36px 24px; }
+  .ap-hero__title { font-size: 25px; }
+}
 
 /* ============================================================== side nav === */
 

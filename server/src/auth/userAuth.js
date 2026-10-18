@@ -38,6 +38,11 @@ export function describeAccount(db, user) {
       county: school.county,
       status: school.status,
       reviewNote: school.reviewNote,
+      // For the applicant's progress page: what they sent and when it was decided.
+      subCounty: school.subCounty,
+      schoolCode: school.schoolCode,
+      submittedAt: school.createdAt,
+      reviewedAt: school.reviewedAt,
     },
   };
 }
