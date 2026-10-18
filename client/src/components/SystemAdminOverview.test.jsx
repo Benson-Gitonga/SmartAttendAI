@@ -10,8 +10,9 @@ jest.mock('../services/systemAdminService', () => ({
   disableSchool: jest.fn(),
   enableSchool: jest.fn(),
 }));
+const mockSignOut = jest.fn();
 jest.mock('../auth/AuthContext', () => ({
-  useAuth: () => ({ user: { username: 'ops@smartattend.ke' }, signOut: jest.fn() }),
+  useAuth: () => ({ user: { username: 'ops@smartattend.ke' }, signOut: mockSignOut }),
 }));
 jest.mock('../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => true }));
 
@@ -74,7 +75,7 @@ describe('SystemAdminOverview', () => {
     service.getAllSchools.mockResolvedValue(listing([{ ...KISUMU, status: 'active' }, KIBERA, MOI]));
     await user.click(within(dialog).getByRole('button', { name: 'Approve' }));
 
-    expect(service.approveSchool).toHaveBeenCalledWith('school-1', { note: '', actor: 'ops@smartattend.ke' });
+    expect(service.approveSchool).toHaveBeenCalledWith('school-1', { note: '' });
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(service.getAllSchools).toHaveBeenCalledTimes(2);
   });
@@ -104,7 +105,7 @@ describe('SystemAdminOverview', () => {
     expect(confirm).toBeEnabled();
     await user.click(confirm);
     expect(service.rejectSchool).toHaveBeenCalledWith('school-1', {
-      note: 'Not on the ministry register', actor: 'ops@smartattend.ke',
+      note: 'Not on the ministry register',
     });
   });
 
@@ -141,6 +142,18 @@ describe('SystemAdminOverview', () => {
     await user.type(screen.getByLabelText('Search schools'), 'uasin');
     expect(screen.getByText(MOI.name)).toBeInTheDocument();
     expect(screen.queryByText(KIBERA.name)).not.toBeInTheDocument();
+  });
+
+  it('signs out when the server says the sign-in has ended', async () => {
+    service.getAllSchools.mockRejectedValue(Object.assign(new Error('Your system admin sign-in has ended.'), { code: 'UNAUTHORIZED' }));
+    render(<SystemAdminOverview />);
+    await waitFor(() => expect(mockSignOut).toHaveBeenCalled());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows who is signed in', async () => {
+    render(<SystemAdminOverview />);
+    expect(await screen.findByText('ops@smartattend.ke')).toBeInTheDocument();
   });
 
   it('says so when the server cannot be reached', async () => {

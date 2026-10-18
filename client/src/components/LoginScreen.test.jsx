@@ -15,6 +15,7 @@ beforeEach(() => {
   Object.assign(auth, {
     cognitoConfigured: true,
     signIn: jest.fn().mockResolvedValue({}),
+    signInSystemAdmin: jest.fn().mockResolvedValue({}),
     signUp: jest.fn(),
     confirmSignUp: jest.fn(),
     resendConfirmationCode: jest.fn().mockResolvedValue(undefined),
@@ -174,5 +175,48 @@ describe('LoginScreen school admin sign-up', () => {
     expect(auth.signUp).toHaveBeenCalledWith(expect.objectContaining({
       role: 'teacher', schoolName: null, county: null, phone: null,
     }));
+  });
+});
+
+describe('LoginScreen system admin sign-in', () => {
+  it('has no way to sign up as a system admin', async () => {
+    const user = userEvent.setup();
+    auth.cognitoConfigured = false;
+    render(<LoginScreen />);
+    await user.click(screen.getByRole('button', { name: 'Create an account' }));
+    expect(screen.getAllByRole('radio').map((r) => r.textContent)).toEqual([
+      expect.stringContaining('Teacher'),
+      expect.stringContaining('School admin'),
+    ]);
+    expect(screen.queryByText(/System admin/)).not.toBeInTheDocument();
+  });
+
+  it('signs in against the server from its own screen', async () => {
+    const user = userEvent.setup();
+    auth.cognitoConfigured = false;
+    render(<LoginScreen />);
+    await user.click(screen.getByRole('button', { name: 'SmartAttend system admin sign-in' }));
+    expect(screen.getByRole('heading', { name: 'System admin' })).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText('Email address'), 'ops@smartattend.ke');
+    await user.type(screen.getByLabelText('Password'), 'a long password');
+    await user.click(screen.getByRole('button', { name: 'Sign in as system admin' }));
+
+    expect(auth.signInSystemAdmin).toHaveBeenCalledWith('ops@smartattend.ke', 'a long password');
+    expect(auth.signIn).not.toHaveBeenCalled();
+  });
+
+  it('shows a refused sign-in and clears the password', async () => {
+    const user = userEvent.setup();
+    auth.cognitoConfigured = false;
+    auth.signInSystemAdmin.mockRejectedValue(authError('WRONG', 'Wrong email or password.'));
+    render(<LoginScreen />);
+    await user.click(screen.getByRole('button', { name: 'SmartAttend system admin sign-in' }));
+    await user.type(screen.getByLabelText('Email address'), 'ops@smartattend.ke');
+    await user.type(screen.getByLabelText('Password'), 'guess');
+    await user.click(screen.getByRole('button', { name: 'Sign in as system admin' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Wrong email or password.');
+    expect(screen.getByLabelText('Password')).toHaveValue('');
   });
 });

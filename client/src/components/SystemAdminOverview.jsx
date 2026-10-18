@@ -87,6 +87,7 @@ const matches = (school, query) => {
 /** System-admin home: approve or reject newly registered schools, and disable or enable approved ones. */
 export default function SystemAdminOverview() {
   const { user, signOut } = useAuth();
+  const signedInAs = user?.username;
   const online = useOnlineStatus();
 
   const [schools, setSchools] = useState(null);
@@ -95,6 +96,17 @@ export default function SystemAdminOverview() {
   const [filter, setFilter] = useState(null); // null until the first load picks one
   const [query, setQuery] = useState('');
   const [pendingAction, setPendingAction] = useState(null); // { school, action }
+
+  // The server's sign-in ran out (or the server restarted without a fixed
+  // token secret): back to the sign-in screen.
+  const handleError = useCallback((err) => {
+    if (err?.code === 'UNAUTHORIZED') {
+      showToast(err.message, { tone: 'error' });
+      signOut();
+      return true;
+    }
+    return false;
+  }, [signOut]);
 
   const load = useCallback(async () => {
     try {
@@ -105,9 +117,9 @@ export default function SystemAdminOverview() {
       // Open on the approval queue when something is waiting, otherwise on all schools.
       setFilter((current) => current ?? (result.counts.pending > 0 ? 'pending' : 'all'));
     } catch (err) {
-      setError(err.message ?? 'Could not reach the server');
+      if (!handleError(err)) setError(err.message ?? 'Could not reach the server');
     }
-  }, []);
+  }, [handleError]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -125,6 +137,7 @@ export default function SystemAdminOverview() {
           <h2 className="page-head__title">Schools on SmartAttend</h2>
         </div>
         <p className="card__hint" style={{ marginTop: 4 }}>
+          {signedInAs && <>Signed in as <b>{signedInAs}</b>. </>}
           New schools wait here until you approve them. Disabling a school stops the
           server accepting its records until you enable it again.
         </p>
@@ -207,7 +220,7 @@ export default function SystemAdminOverview() {
       {pendingAction && (
         <ConfirmSchoolAction
           {...pendingAction}
-          actor={user?.username ?? null}
+          onUnauthorized={handleError}
           onClose={() => setPendingAction(null)}
           onDone={async () => {
             setPendingAction(null);
@@ -280,7 +293,7 @@ function SchoolCard({ school: s, onAction }) {
 }
 
 /** "Are you sure?" sheet for one status change, with a reason box where one is wanted. */
-function ConfirmSchoolAction({ school, action, actor, onClose, onDone }) {
+function ConfirmSchoolAction({ school, action, onUnauthorized, onClose, onDone }) {
   const spec = ACTIONS[action];
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -299,10 +312,11 @@ function ConfirmSchoolAction({ school, action, actor, onClose, onDone }) {
     setBusy(true);
     setError(null);
     try {
-      await spec.run(school.schoolId, { note, actor });
+      await spec.run(school.schoolId, { note });
       showToast(spec.done(school));
       await onDone();
     } catch (err) {
+      if (onUnauthorized(err)) return;
       setError(err.message ?? 'Could not save this change');
       setBusy(false);
     }

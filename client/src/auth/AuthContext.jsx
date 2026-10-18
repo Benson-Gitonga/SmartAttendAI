@@ -9,8 +9,10 @@ import {
   isSessionValid,
   extendSessionWithPin,
   expireSessionNow,
-  isCognitoConfigured
+  isCognitoConfigured,
+  saveSystemAdminSession
 } from './cognito';
+import { loginSystemAdmin } from '../services/systemAdminService';
 import { verifyPin, setPin, hasPin, getPinStatus, clearLockout } from './pin';
 import { loadPendingSignup, savePendingSignup, clearPendingSignup } from './pendingSignup';
 import { AuthError } from './authErrors';
@@ -41,6 +43,14 @@ export function AuthProvider({ children }) {
       setStatus(AUTH_STATUS.SIGNED_OUT);
       return;
     }
+    // An expired system admin sign-in cannot be unlocked with a PIN: the
+    // server's token has run out, so they sign in again.
+    if (next.role === 'system_admin' && !isSessionValid(next)) {
+      await cognitoSignOut();
+      setSession(null);
+      setStatus(AUTH_STATUS.SIGNED_OUT);
+      return;
+    }
     await refreshPinState(next.username);
     setStatus(isSessionValid(next) ? AUTH_STATUS.READY : AUTH_STATUS.LOCKED);
   }, [refreshPinState]);
@@ -65,6 +75,14 @@ export function AuthProvider({ children }) {
     await clearLockout(username);
     await applySession(next);
     return { session: next, pinEnrolled: await hasPin(username) };
+  }, [applySession]);
+
+  /** The system admin signs in against the server, which holds the only account. */
+  const signInSystemAdmin = useCallback(async (email, password) => {
+    const result = await loginSystemAdmin(email, password);
+    const next = await saveSystemAdminSession(result);
+    await applySession(next);
+    return next;
   }, [applySession]);
 
   /**
@@ -153,6 +171,7 @@ export function AuthProvider({ children }) {
       : null,
     cognitoConfigured: isCognitoConfigured(),
     signIn,
+    signInSystemAdmin,
     signUp,
     confirmSignUp,
     resendConfirmationCode,
@@ -164,7 +183,7 @@ export function AuthProvider({ children }) {
     enrolPin,
     simulateExpiry
   }), [
-    status, session, pinState, signIn, signUp, confirmSignUp,
+    status, session, pinState, signIn, signInSystemAdmin, signUp, confirmSignUp,
     resendConfirmationCode, signOut, unlockWithPin, enrolPin, simulateExpiry
   ]);
 

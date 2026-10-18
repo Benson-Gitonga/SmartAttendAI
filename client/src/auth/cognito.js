@@ -123,7 +123,10 @@ export async function signIn(username, password) {
   const pool = userPool();
   if (!pool) {
     const account = await loadLocalAccount(username);
-    return persist(localSession(username, account?.displayName, account?.role, account?.schoolName, account?.schoolId));
+    // Older builds let anyone create a local system admin. That role now only
+    // comes from the server's sign-in, so such an account opens as a teacher.
+    const role = account?.role === 'system_admin' ? 'teacher' : account?.role;
+    return persist(localSession(username, account?.displayName, role, account?.schoolName, account?.schoolId));
   }
 
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -149,13 +152,18 @@ export async function signIn(username, password) {
  * Local mode signs in straight away. Cognito mode emails a code that must be
  * passed to confirmSignUp(), and remembers the email on the device until then.
  *
- * @param {'teacher'|'admin'|'system_admin'} [role] local mode only
+ * @param {'teacher'|'admin'} [role] local mode only. There is no system admin
+ *   sign-up: that account lives on the server (signInSystemAdmin).
  * @param {string|null} [schoolId] the school a school admin just registered
  * @throws {AuthError} INVALID_INPUT | NETWORK | ACCOUNT_EXISTS | SIGNUP_FAILED
  */
 export async function signUp({ name, email, password, role = 'teacher', schoolName = null, schoolId = null }) {
   const displayName = name?.trim();
   const username = email?.trim();
+
+  if (role !== 'teacher' && role !== 'admin') {
+    throw new AuthError('INVALID_INPUT', 'Choose teacher or school admin');
+  }
 
   if (!displayName || !username || !password) {
     throw new AuthError('INVALID_INPUT', 'Enter your name, email and a password');
@@ -233,7 +241,36 @@ export async function resendConfirmationCode(username) {
 }
 
 export async function loadStoredSession() {
-  return (await db.authState.get(SESSION_KEY)) ?? null;
+  const session = (await db.authState.get(SESSION_KEY)) ?? null;
+  // A system admin session is only real with a token from the server. One
+  // made on the device (older builds, or edited by hand) is thrown away.
+  if (session?.role === 'system_admin' && (session.mode !== 'system_admin' || !session.token)) {
+    await db.authState.delete(SESSION_KEY);
+    return null;
+  }
+  return session;
+}
+
+/**
+ * Keep the system admin's server-issued sign-in on the device. The token is
+ * what the server checks; the role here only picks which screen to show.
+ */
+export async function saveSystemAdminSession({ token, email, expiresAt }, now = Date.now()) {
+  return persist({
+    key: SESSION_KEY,
+    mode: 'system_admin',
+    username: email,
+    displayName: 'System admin',
+    roles: ['system_admin'],
+    role: 'system_admin',
+    schoolId: null,
+    schoolName: null,
+    token,
+    idToken: null,
+    refreshToken: null,
+    expiresAt,
+    issuedAt: now
+  });
 }
 
 /** Extend the session after a PIN unlock. This does not refresh the AWS token. */

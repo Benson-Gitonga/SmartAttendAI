@@ -114,6 +114,10 @@ input  { font-family: inherit; }
 .class-row__tick { color: var(--indigo-600); font-weight: 800; }
 
 /* two fields side by side */
+.auth__staff { margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--line-soft); text-align: center; font-size: 12.5px; }
+.auth__staff .linkbtn { color: var(--ink-muted); font-weight: 600; }
+.auth--split .auth__logo.auth__logo--staff { background: var(--ink); }
+
 .field-group {
   border: 1px solid var(--line);
   border-radius: var(--radius);
