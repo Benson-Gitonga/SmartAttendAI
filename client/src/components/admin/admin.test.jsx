@@ -15,9 +15,12 @@ jest.mock('../../services/adminService', () => ({
   updateClass: jest.fn(),
   getClassRegister: jest.fn(),
   saveClassRegister: jest.fn(),
+  inviteTeacher: jest.fn(),
+  newTeacherCode: jest.fn(),
+  setTeacherEnabled: jest.fn(),
 }));
 jest.mock('../../auth/AuthContext', () => ({
-  useAuth: () => ({ user: { username: 'admin@kibera.ac.ke', schoolId: 'school-1', role: 'admin' } }),
+  useAuth: () => ({ user: { username: 'admin@kibera.ac.ke', schoolId: 'school-1', schoolName: 'Kibera Secondary School', role: 'admin' } }),
 }));
 
 jest.setTimeout(20_000);
@@ -189,6 +192,11 @@ describe('AdminClassPage, taking or correcting a register', () => {
 });
 
 describe('AdminTeachers', () => {
+  const INVITED = {
+    userId: 'user-new', fullName: 'Mr. Kamau', email: 'kamau@kibera.ac.ke', phone: '0711222333', status: 'invited',
+    classes: [], openCode: { purpose: 'invite', expiresAt: new Date(Date.now() + 5 * 86_400_000).toISOString() },
+  };
+
   it('lists teachers with the classes they teach', async () => {
     const user = userEvent.setup();
     const onOpenClass = jest.fn();
@@ -197,5 +205,73 @@ describe('AdminTeachers', () => {
     expect(screen.getByText(/No classes yet/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Form 3 B' }));
     expect(onOpenClass).toHaveBeenCalledWith('class-3b');
+  });
+
+  it('invites a teacher and shows the code once, ready to send', async () => {
+    const user = userEvent.setup();
+    const expiresAt = new Date(Date.now() + 7 * 86_400_000).toISOString();
+    api.inviteTeacher.mockResolvedValue({ teacher: INVITED, code: 'K7QM-4XPA', expiresAt, purpose: 'invite' });
+    render(<AdminTeachers onOpenClass={jest.fn()} />);
+    await user.click(await screen.findByRole('button', { name: '+ Invite teacher' }));
+
+    const dialog = screen.getByRole('dialog');
+    const create = within(dialog).getByRole('button', { name: 'Create invite' });
+    expect(create).toBeDisabled();
+    await user.type(within(dialog).getByLabelText('Full name'), 'Mr. Kamau');
+    await user.type(within(dialog).getByLabelText('Email'), 'kamau@kibera.ac.ke');
+    await user.type(within(dialog).getByLabelText(/Phone/), '0711 222 333');
+    await user.click(create);
+    expect(api.inviteTeacher).toHaveBeenCalledWith('school-1', { fullName: 'Mr. Kamau', email: 'kamau@kibera.ac.ke', phone: '0711222333' });
+
+    const shown = await screen.findByRole('dialog', { name: 'Mr. Kamau is invited' });
+    expect(within(shown).getByLabelText('Invite code')).toHaveTextContent('K7QM-4XPA');
+    const wa = within(shown).getByRole('link', { name: 'WhatsApp' });
+    expect(wa.getAttribute('href').startsWith('https://wa.me/254711222333?text=')).toBe(true);
+    expect(decodeURIComponent(wa.getAttribute('href'))).toContain('K7QM-4XPA');
+    expect(within(shown).getByRole('link', { name: 'SMS' }).getAttribute('href').startsWith('sms:0711222333?&body=')).toBe(true);
+    expect(within(shown).getByRole('link', { name: 'Email' }).getAttribute('href').startsWith('mailto:kamau@kibera.ac.ke?subject=')).toBe(true);
+  });
+
+  it('says so when the email already has an account', async () => {
+    const user = userEvent.setup();
+    api.inviteTeacher.mockRejectedValue(Object.assign(new Error('exists'), { status: 409 }));
+    render(<AdminTeachers onOpenClass={jest.fn()} />);
+    await user.click(await screen.findByRole('button', { name: '+ Invite teacher' }));
+    const dialog = screen.getByRole('dialog');
+    await user.type(within(dialog).getByLabelText('Full name'), 'Ms. Otieno');
+    await user.type(within(dialog).getByLabelText('Email'), 'otieno@kibera.ac.ke');
+    await user.click(within(dialog).getByRole('button', { name: 'Create invite' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('already has a SmartAttend account');
+  });
+
+  it('shows invited teachers and gives them a new code', async () => {
+    const user = userEvent.setup();
+    api.getTeachers.mockResolvedValue([OTIENO, INVITED]);
+    api.newTeacherCode.mockResolvedValue({ teacher: INVITED, code: 'ABCD-EFGH', expiresAt: new Date().toISOString(), purpose: 'invite' });
+    render(<AdminTeachers onOpenClass={jest.fn()} />);
+    const card = (await screen.findByText('Mr. Kamau')).closest('article');
+    expect(within(card).getByText('Invited')).toBeInTheDocument();
+    expect(within(card).getByText(/Invite sent/)).toBeInTheDocument();
+    await user.click(within(card).getByRole('button', { name: /New invite code/ }));
+    expect(api.newTeacherCode).toHaveBeenCalledWith('user-new');
+    expect(await screen.findByLabelText('Invite code')).toHaveTextContent('ABCD-EFGH');
+  });
+
+  it('resets a password for a teacher who has signed in', async () => {
+    render(<AdminTeachers onOpenClass={jest.fn()} />);
+    const card = (await screen.findByText('Ms. Otieno')).closest('article');
+    expect(within(card).getByRole('button', { name: /Reset password/ })).toBeInTheDocument();
+  });
+
+  it('asks before disabling a teacher', async () => {
+    const user = userEvent.setup();
+    api.setTeacherEnabled.mockResolvedValue({});
+    render(<AdminTeachers onOpenClass={jest.fn()} />);
+    const card = (await screen.findByText('Ms. Otieno')).closest('article');
+    await user.click(within(card).getByRole('button', { name: /Disable/ }));
+    expect(screen.getByText('Are you sure you want to disable Ms. Otieno?')).toBeInTheDocument();
+    expect(api.setTeacherEnabled).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Yes, disable' }));
+    expect(api.setTeacherEnabled).toHaveBeenCalledWith('user-otieno', false);
   });
 });

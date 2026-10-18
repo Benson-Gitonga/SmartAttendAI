@@ -18,6 +18,8 @@ export default function ConfirmDialog({
   busy = false,
   error = null,
   confirmDisabled = false,
+  // For a dialog that only informs: one button, and closing it any way is fine.
+  hideCancel = false,
   onConfirm,
   onCancel,
   children,
@@ -57,9 +59,11 @@ export default function ConfirmDialog({
         {children}
 
         <div className="sa-dialog__actions">
-          <button ref={cancelRef} type="button" className="sa-btn sa-btn--ghost" onClick={onCancel} disabled={busy}>
-            {cancelLabel}
-          </button>
+          {!hideCancel && (
+            <button ref={cancelRef} type="button" className="sa-btn sa-btn--ghost" onClick={onCancel} disabled={busy}>
+              {cancelLabel}
+            </button>
+          )}
           <button type="submit" className={`sa-btn sa-btn--${tone}`} disabled={busy || confirmDisabled}>
             {busy ? 'Saving…' : confirmLabel}
           </button>

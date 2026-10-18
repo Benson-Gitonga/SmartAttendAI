@@ -84,3 +84,20 @@ export async function getSchoolFlagged(schoolId) {
   const { flagged } = await request(`${school(schoolId)}/flagged`);
   return flagged;
 }
+
+/** Invite a teacher. Returns { teacher, code, expiresAt, purpose }; the code is shown only now. */
+export function inviteTeacher(schoolId, { fullName, email, phone }) {
+  return request(`${school(schoolId)}/teachers`, {
+    method: 'POST',
+    body: { fullName, email, ...(phone ? { phone } : {}) },
+  });
+}
+
+/** A new one-time code: a fresh invite, or a password reset for a teacher who has signed in. */
+export function newTeacherCode(userId) {
+  return request(`/api/admin/teachers/${encodeURIComponent(userId)}/code`, { method: 'POST', body: {} });
+}
+
+export function setTeacherEnabled(userId, enabled) {
+  return request(`/api/admin/teachers/${encodeURIComponent(userId)}/${enabled ? 'enable' : 'disable'}`, { method: 'POST', body: {} });
+}

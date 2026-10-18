@@ -1860,6 +1860,51 @@ div.followup-badge {
 }
 .ad-class-chip:hover { background: var(--indigo-100); }
 
+/* Invites: the one-time code and ways to send it */
+.ad-code {
+  margin: 4px 0 14px;
+  padding: 16px;
+  border: 2px dashed var(--indigo-200);
+  border-radius: 14px;
+  background: var(--indigo-tint);
+  text-align: center;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+  user-select: all;
+}
+.ad-share { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 14px; }
+.ad-share__btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ink);
+  text-decoration: none;
+  cursor: pointer;
+}
+.ad-share__btn:hover { background: var(--canvas-in); }
+.ad-share__btn--wa { background: #25d366; border-color: #25d366; color: #fff; }
+.ad-share__btn--wa:hover { background: #1ebe5b; }
+.ad-person__actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.ad-person__actions .btn { gap: 6px; }
+.ad-danger-text { color: var(--absent); }
+.join-code {
+  text-align: center;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 /* A teacher with no class yet */
 .ad-noclass { max-width: 440px; text-align: center; }
 .ad-noclass .auth__logo { margin: 0 auto 14px; }

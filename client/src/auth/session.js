@@ -115,6 +115,34 @@ export async function registerSchool(application, { fetchImpl = globalThis.fetch
   throw new AuthError('FAILED', `The server could not take the application (${res.status}).`);
 }
 
+/**
+ * Who a one-time code from the school admin is for: { fullName, email,
+ * schoolName, purpose: 'invite'|'reset', expiresAt }.
+ * @throws {AuthError} CODE (with `state`: unknown|used|revoked|expired) | LOCKED | NETWORK
+ */
+export async function lookupSetupCode(code, { fetchImpl = globalThis.fetch } = {}) {
+  let res;
+  try {
+    res = await fetchImpl(`/api/auth/setup-codes/${encodeURIComponent(code.trim())}`);
+  } catch {
+    throw new AuthError('NETWORK', 'Could not reach the SmartAttend server. Check your connection and try again.');
+  }
+  const json = await res.json().catch(() => ({}));
+  if (res.ok) return json;
+  if (res.status === 429) throw new AuthError('LOCKED', json.error ?? 'Too many wrong codes. Try again in a few minutes.');
+  throw new AuthError('CODE', json.error ?? 'That code is not right.', { state: json.state ?? 'unknown' });
+}
+
+/** Set a password with the code and sign straight in. */
+export async function redeemSetupCode(code, password, { fetchImpl = globalThis.fetch } = {}) {
+  if (offline()) throw new AuthError('NETWORK', 'Connect to the internet to finish setting up your account.');
+  const { res, json } = await postJson('/api/auth/setup', { code: code.trim(), password }, fetchImpl);
+  if (res.ok) return persist(sessionFromServer(json));
+  if (res.status === 429) throw new AuthError('LOCKED', json.error ?? 'Too many wrong codes. Try again in a few minutes.');
+  if (res.status === 400) throw new AuthError('INVALID_INPUT', json.error ?? 'Choose a password of at least 8 characters.');
+  throw new AuthError('CODE', json.error ?? 'That code does not work.', { state: json.state ?? 'unknown' });
+}
+
 export async function loadStoredSession() {
   const session = (await db.authState.get(SESSION_KEY)) ?? null;
   if (!session) return null;

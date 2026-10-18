@@ -2,6 +2,7 @@ import { createContext, useContext, useCallback, useEffect, useMemo, useState } 
 import {
   signIn as serverSignIn,
   registerSchool as serverRegisterSchool,
+  redeemSetupCode,
   signOut as clearSession,
   loadStoredSession,
   isSessionValid,
@@ -92,6 +93,14 @@ export function AuthProvider({ children }) {
     return next;
   }, [applySession]);
 
+  /** A teacher sets their password with the code their school admin gave them. */
+  const joinWithCode = useCallback(async (code, password) => {
+    const next = await redeemSetupCode(code, password);
+    await clearLockout(next.username);
+    await applySession(next);
+    return next;
+  }, [applySession]);
+
   /** Keep the device's copy of the school's name and status up to date. */
   const refreshSchool = useCallback(async (school) => {
     const next = await updateStoredSchool(school);
@@ -147,13 +156,14 @@ export function AuthProvider({ children }) {
       : null,
     signIn,
     registerSchool,
+    joinWithCode,
     refreshSchool,
     signOut,
     unlockWithPin,
     enrolPin,
     simulateExpiry
   }), [
-    status, session, pinState, signIn, registerSchool, refreshSchool, signOut, unlockWithPin, enrolPin, simulateExpiry
+    status, session, pinState, signIn, registerSchool, joinWithCode, refreshSchool, signOut, unlockWithPin, enrolPin, simulateExpiry
   ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

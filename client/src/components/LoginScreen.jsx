@@ -6,6 +6,7 @@ import {
   CheckCircleIcon, SyncIcon, BellIcon, BuildingIcon, ArrowRightIcon, ChevronLeftIcon,
 } from './icons';
 import { COUNTIES_AZ } from '../lib/counties';
+import JoinWithCode from './JoinWithCode';
 
 // Same rules as the server's application schema (schemas/schoolRegistration.schema.js).
 const KENYAN_PHONE = /^(\+254|0)[17]\d{8}$/;
@@ -67,7 +68,20 @@ function toApplication(a) {
 // The application has its own address, so the back button returns to sign-in
 // and a refresh stays on the form. (#/register is the teachers' class register.)
 const APPLY_HASH = '#/apply';
-const viewFromHash = () => (typeof window !== 'undefined' && window.location.hash === APPLY_HASH ? 'register' : 'signin');
+// A teacher's invite link: #/join or #/join/K7QM-4XPA.
+const JOIN_HASH = '#/join';
+const VIEW_HASH = { register: APPLY_HASH, join: JOIN_HASH };
+const currentHash = () => (typeof window !== 'undefined' ? window.location.hash : '');
+const viewFromHash = () => {
+  const hash = currentHash();
+  if (hash === APPLY_HASH) return 'register';
+  if (hash === JOIN_HASH || hash.startsWith(`${JOIN_HASH}/`)) return 'join';
+  return 'signin';
+};
+const codeFromHash = () => {
+  const hash = currentHash();
+  return hash.startsWith(`${JOIN_HASH}/`) ? decodeURIComponent(hash.slice(JOIN_HASH.length + 1)) : '';
+};
 
 /**
  * Views: signin (everyone, including the system admin with their username)
@@ -107,9 +121,9 @@ export default function LoginScreen() {
 
   function switchView(next) {
     viewRef.current = next; // before the history change below fires popstate
-    if (next === 'register' && window.location.hash !== APPLY_HASH) {
-      window.history.pushState({ fromSignIn: true }, '', APPLY_HASH);
-    } else if (next === 'signin' && window.location.hash === APPLY_HASH) {
+    if (VIEW_HASH[next] && viewFromHash() !== next) {
+      window.history.pushState({ fromSignIn: true }, '', VIEW_HASH[next]);
+    } else if (next === 'signin' && viewFromHash() !== 'signin') {
       // Step back if we came from sign-in, so back does not reopen the form.
       if (window.history.state?.fromSignIn) window.history.back();
       else window.history.replaceState(null, '', '#/');
@@ -265,15 +279,19 @@ export default function LoginScreen() {
               </button>
             </div>
 
+            <p className="auth__switch">
+              Teacher with a code from your school?{' '}
+              <button type="button" className="linkbtn" onClick={() => switchView('join')}>I have an invite code</button>
+            </p>
+
             <p className="auth__offline">
               <KeypadIcon size={15} />
-              <span>
-                Teachers get their account from their school admin. No network? After you have signed
-                in once, you can unlock the app with your offline PIN.
-              </span>
+              <span>No network? After you have signed in once, you can unlock the app with your offline PIN.</span>
             </p>
           </form>
         )}
+
+        {view === 'join' && <JoinWithCode initialCode={codeFromHash()} onBack={() => switchView('signin')} />}
 
         {view === 'register' && (
           <form className="auth__card auth__card--wide" onSubmit={handleRegister} noValidate>
