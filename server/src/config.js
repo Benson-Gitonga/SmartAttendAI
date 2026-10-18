@@ -44,6 +44,16 @@ export const config = {
   offlineScanMaxAgeDays: num(process.env.OFFLINE_SCAN_MAX_AGE_DAYS, 7),
   deviceClockSkewMs: num(process.env.DEVICE_CLOCK_SKEW_MS, 5 * 60_000),
 
+  // The one system admin account (src/auth/systemAdminAuth.js). Set with
+  // `npm run sysadmin:set`; only a hash of the password is kept. With no email
+  // or hash, the /api/system-admin endpoints answer 503.
+  systemAdmin: {
+    email: process.env.SYSTEM_ADMIN_EMAIL || '',
+    passwordHash: process.env.SYSTEM_ADMIN_PASSWORD_HASH || '',
+    tokenSecret: process.env.SYSTEM_ADMIN_TOKEN_SECRET || '',
+    tokenTtlMs: num(process.env.SYSTEM_ADMIN_TOKEN_TTL_HOURS, 8) * 60 * 60 * 1000,
+  },
+
   // Outbound cloud sync (src/workers/syncWorker.js).
   sync: {
     workerDisabled: process.env.SYNC_WORKER_DISABLED === 'true',

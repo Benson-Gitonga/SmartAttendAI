@@ -30,6 +30,5 @@ export const schoolReviewSchema = {
   additionalProperties: false,
   properties: {
     note: { type: 'string', maxLength: 500 },
-    actor: { type: 'string', maxLength: 254 },
   },
 };

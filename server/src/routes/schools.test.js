@@ -4,15 +4,20 @@ import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { openDatabase, migrate } from '../db/index.js';
 import { createApp } from '../app.js';
+import { testSystemAdminAuth, signInSystemAdmin, TEST_ADMIN } from '../auth/testing.js';
 
 let db;
 let server;
 let base;
+let token;
+
+const auth = () => ({ authorization: `Bearer ${token}` });
+const get = (path) => fetch(`${base}${path}`, { headers: auth() });
 
 const post = (path, body) =>
   fetch(`${base}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...auth() },
     body: JSON.stringify(body ?? {}),
   });
 
@@ -31,9 +36,10 @@ async function register(overrides = {}) {
 
 beforeEach(async () => {
   db = openDatabase(':memory:');
-  server = createApp({ db, logger: false }).listen(0);
+  server = createApp({ db, logger: false, systemAdminAuth: testSystemAdminAuth() }).listen(0);
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
+  token = await signInSystemAdmin(base);
 });
 
 afterEach(async () => {
@@ -130,11 +136,11 @@ describe('approval flow', () => {
   const statusOf = () => db.prepare('SELECT status FROM schools WHERE school_id = ?').get(schoolId).status;
 
   test('approve makes a pending school active and records the reviewer', async () => {
-    const res = await post(`/api/system-admin/schools/${schoolId}/approve`, { actor: 'sysadmin@smartattend.ke' });
+    const res = await post(`/api/system-admin/schools/${schoolId}/approve`);
     const body = await res.json();
     assert.equal(res.status, 200);
     assert.equal(body.status, 'active');
-    assert.equal(body.reviewedBy, 'sysadmin@smartattend.ke');
+    assert.equal(body.reviewedBy, TEST_ADMIN.email, 'the reviewer is whoever is signed in');
     assert.ok(body.reviewedAt);
     assert.ok(db.prepare(`SELECT 1 FROM audit_log WHERE action = 'school.approved' AND record_id = ?`).get(schoolId));
   });
@@ -204,6 +210,12 @@ describe('approval flow', () => {
     assert.equal((await post('/api/system-admin/schools/school-nope/approve')).status, 404);
   });
 
+  test('the request cannot claim to be a different reviewer', async () => {
+    const res = await post(`/api/system-admin/schools/${schoolId}/approve`, { actor: 'someone-else' });
+    assert.equal(res.status, 400);
+    assert.equal(statusOf(), 'pending');
+  });
+
   test('400 for an overlong note', async () => {
     const res = await post(`/api/system-admin/schools/${schoolId}/reject`, { note: 'x'.repeat(501) });
     assert.equal(res.status, 400);
@@ -215,7 +227,7 @@ describe('GET /api/system-admin/schools', () => {
     db.prepare(`INSERT INTO schools (school_id, name, county) VALUES ('school-a', 'Alliance High', 'Kiambu')`).run();
     const { body: pending } = await register();
 
-    const res = await fetch(`${base}/api/system-admin/schools`);
+    const res = await get(`/api/system-admin/schools`);
     const { schools, counts } = await res.json();
     assert.equal(schools[0].schoolId, pending.schoolId);
     assert.equal(schools[0].adminName, 'Grace Achieng');
@@ -225,13 +237,13 @@ describe('GET /api/system-admin/schools', () => {
   test('filters by status', async () => {
     db.prepare(`INSERT INTO schools (school_id, name, county) VALUES ('school-a', 'Alliance High', 'Kiambu')`).run();
     await register();
-    const { schools } = await (await fetch(`${base}/api/system-admin/schools?status=pending`)).json();
+    const { schools } = await (await get(`/api/system-admin/schools?status=pending`)).json();
     assert.equal(schools.length, 1);
     assert.equal(schools[0].status, 'pending');
   });
 
   test('400 for an unknown status filter', async () => {
-    assert.equal((await fetch(`${base}/api/system-admin/schools?status=deleted`)).status, 400);
+    assert.equal((await get(`/api/system-admin/schools?status=deleted`)).status, 400);
   });
 });
 

@@ -12,6 +12,7 @@
     "db:seed": "node src/db/seed.js",
     "db:seed-history": "node src/db/seedHistory.js",
     "db:reset": "node src/db/init.js --reset && node src/db/seed.js && node src/db/seedHistory.js",
+    "sysadmin:set": "node src/auth/setSystemAdmin.js",
     "test": "node --test src/**/*.test.js"
   },
   "dependencies": {

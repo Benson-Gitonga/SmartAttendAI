@@ -11,6 +11,7 @@ import { createAdminRouter } from './routes/admin.js';
 import { createSystemAdminRouter } from './routes/systemAdmin.js';
 import { createSchoolsRouter } from './routes/schools.js';
 import { createGateRouter } from './routes/gate.js';
+import { createSystemAdminAuth } from './auth/systemAdminAuth.js';
 import {
   getAttendanceForDate,
   getRecentChallenges,
@@ -24,12 +25,14 @@ import {
  * @param {import('better-sqlite3').Database} opts.db
  * @param {ReturnType<typeof createCardHandler>} [opts.cardHandler]
  * @param {string} [opts.deviceApiKey] required X-Device-Key for gate scans; '' = open
+ * @param {ReturnType<typeof createSystemAdminAuth>} [opts.systemAdminAuth] sign-in for /api/system-admin
  */
 export function createApp({
   db,
   cardHandler = createCardHandler({ db }),
   logger = true,
   deviceApiKey = config.deviceApiKey,
+  systemAdminAuth = createSystemAdminAuth(config.systemAdmin),
 } = {}) {
   const app = express();
   app.use(express.json());
@@ -73,7 +76,7 @@ export function createApp({
 
   // Platform-wide school list: approve or reject new schools, disable or
   // enable approved ones. For the system-admin role.
-  app.use('/api/system-admin', createSystemAdminRouter({ db }));
+  app.use('/api/system-admin', createSystemAdminRouter({ db, auth: systemAdminAuth }));
 
   // One scan from a gate device or by hand. Body: { "cardUid": "04A1B2C3" }
   // plus, for a device with a fingerprint step, "interactive": true and later
