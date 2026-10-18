@@ -210,7 +210,7 @@ export function getStats(db, date = todayISO()) {
   const challenges = db
     .prepare(
       `SELECT result, COUNT(*) AS n FROM fingerprint_challenges
-        WHERE date(challenged_at) = ? GROUP BY result`
+        WHERE date(challenged_at, 'localtime') = ? GROUP BY result`
     )
     .all(date);
 
