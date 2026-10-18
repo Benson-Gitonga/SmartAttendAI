@@ -9,6 +9,7 @@ import { createSyncRouter } from './routes/sync.js';
 import { createRosterRouter } from './routes/roster.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createSystemAdminRouter } from './routes/systemAdmin.js';
+import { createSchoolsRouter } from './routes/schools.js';
 import { createGateRouter } from './routes/gate.js';
 import {
   getAttendanceForDate,
@@ -67,7 +68,11 @@ export function createApp({
   // PWA before roll call so the teacher only handles students who didn't scan.
   app.use('/api/gate', createGateRouter({ db }));
 
-  // Platform-wide school list + activate/deactivate, for the system-admin role.
+  // A school admin registers their school, then waits for approval.
+  app.use('/api/schools', createSchoolsRouter({ db }));
+
+  // Platform-wide school list: approve or reject new schools, disable or
+  // enable approved ones. For the system-admin role.
   app.use('/api/system-admin', createSystemAdminRouter({ db }));
 
   // One scan from a gate device or by hand. Body: { "cardUid": "04A1B2C3" }

@@ -9,6 +9,27 @@ export const DEMO_SCHOOL = {
   county: 'Nairobi',
 };
 
+// Schools that registered and are waiting for a system admin, so the approval
+// queue has something in it on a fresh database. Fixed IDs keep a re-seed safe.
+export const PENDING_SCHOOLS = [
+  {
+    school_id: 'school-demo-pending-001',
+    name: 'Kisumu Day Secondary School',
+    county: 'Kisumu',
+    admin_name: 'Grace Achieng',
+    admin_email: 'g.achieng@kisumuday.ac.ke',
+    admin_phone: '0712345678',
+  },
+  {
+    school_id: 'school-demo-pending-002',
+    name: 'Nyeri High School',
+    county: 'Nyeri',
+    admin_name: 'Peter Mwangi',
+    admin_email: 'p.mwangi@nyerihigh.ac.ke',
+    admin_phone: '0722123456',
+  },
+];
+
 export const DEMO_CLASS = {
   class_group_id: 'class-form3b-001',
   school_id: DEMO_SCHOOL.school_id,
@@ -43,6 +64,15 @@ export function seed(db) {
        ON CONFLICT(school_id) DO UPDATE SET name = excluded.name, county = excluded.county`
     ).run(DEMO_SCHOOL);
 
+    // Only inserted, never updated: once a demo school is approved or rejected
+    // a re-seed leaves that decision alone.
+    const insertPending = db.prepare(
+      `INSERT INTO schools (school_id, name, county, status, admin_name, admin_email, admin_phone)
+       VALUES (@school_id, @name, @county, 'pending', @admin_name, @admin_email, @admin_phone)
+       ON CONFLICT(school_id) DO NOTHING`
+    );
+    for (const school of PENDING_SCHOOLS) insertPending.run(school);
+
     db.prepare(
       `INSERT INTO class_groups (class_group_id, school_id, grade, stream, academic_year)
        VALUES (@class_group_id, @school_id, @grade, @stream, @academic_year)
@@ -66,6 +96,7 @@ export function seed(db) {
 
   return {
     school: DEMO_SCHOOL.school_id,
+    pendingSchools: PENDING_SCHOOLS.length,
     classGroup: DEMO_CLASS.class_group_id,
     students: DEMO_STUDENTS.length,
   };

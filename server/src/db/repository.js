@@ -233,37 +233,176 @@ export function getStats(db, date = todayISO()) {
 export function upsertSchool(db, { schoolId, name, county = null }) {
   db.prepare(
     `INSERT INTO schools (school_id, name, county) VALUES (@schoolId, @name, @county)
-     ON CONFLICT(school_id) DO UPDATE SET name = excluded.name, county = excluded.county`
+     -- A registered school keeps the name and county its admin gave; the PWA
+     -- only knows a placeholder name for it.
+     ON CONFLICT(school_id) DO UPDATE SET
+       name   = CASE WHEN schools.admin_email IS NULL THEN excluded.name ELSE schools.name END,
+       county = CASE WHEN schools.admin_email IS NULL THEN excluded.county ELSE coalesce(schools.county, excluded.county) END`
   ).run({ schoolId, name, county });
   return { schoolId, name, county };
 }
 
-// System admin. The school status flag is not enforced on sign-in yet.
+// Schools: registration by a school admin, review and enable/disable by a
+// system admin. A school that is not 'active' cannot push roster changes or
+// attendance (see findInactiveSchool).
 
-export function getAllSchools(db) {
+export const SCHOOL_STATUSES = ['pending', 'active', 'inactive', 'rejected'];
+
+const SCHOOL_COLUMNS = `s.school_id AS schoolId, s.name, s.county, s.status,
+  s.admin_name AS adminName, s.admin_email AS adminEmail, s.admin_phone AS adminPhone,
+  s.review_note AS reviewNote, s.reviewed_by AS reviewedBy, s.reviewed_at AS reviewedAt,
+  s.created_at AS createdAt`;
+
+export class SchoolTransitionError extends Error {
+  constructor(from, to) {
+    super(`a ${from} school cannot be made ${to}`);
+    this.name = 'SchoolTransitionError';
+    this.from = from;
+    this.to = to;
+  }
+}
+
+/** Another school with the same name (any case) in the same county, ignoring rejected ones. */
+export function findSchoolByName(db, name, county = null) {
+  return (
+    db
+      .prepare(
+        `SELECT ${SCHOOL_COLUMNS} FROM schools s
+          WHERE lower(trim(s.name)) = lower(trim(?))
+            AND coalesce(lower(s.county), '') = coalesce(lower(?), '')
+            AND s.status <> 'rejected'`
+      )
+      .get(name, county) ?? null
+  );
+}
+
+/** A school admin registers a school. It waits as 'pending' for a system admin. */
+export function registerSchool(db, { name, county = null, adminName, adminEmail, adminPhone = null }) {
+  const schoolId = `school-${randomUUID()}`;
+  db.prepare(
+    `INSERT INTO schools (school_id, name, county, status, admin_name, admin_email, admin_phone)
+     VALUES (@schoolId, @name, @county, 'pending', @adminName, @adminEmail, @adminPhone)`
+  ).run({
+    schoolId,
+    name: name.trim(),
+    county: county?.trim() || null,
+    adminName: adminName.trim(),
+    adminEmail: adminEmail.trim().toLowerCase(),
+    adminPhone: adminPhone?.trim() || null,
+  });
+  logAudit(db, { action: 'school.registered', actorId: adminEmail, recordId: schoolId, detail: { name, county } });
+  return getSchool(db, schoolId);
+}
+
+export function getSchool(db, schoolId) {
+  return db.prepare(`SELECT ${SCHOOL_COLUMNS} FROM schools s WHERE s.school_id = ?`).get(schoolId) ?? null;
+}
+
+export function getAllSchools(db, { status } = {}) {
   return db
     .prepare(
-      `SELECT s.school_id AS schoolId, s.name, s.county, s.status, s.created_at AS createdAt,
+      `SELECT ${SCHOOL_COLUMNS},
               (SELECT COUNT(*) FROM class_groups c WHERE c.school_id = s.school_id) AS classCount,
               (SELECT COUNT(*) FROM students st
                  JOIN class_groups c ON c.class_group_id = st.class_group_id
                 WHERE c.school_id = s.school_id AND st.active = 1) AS studentCount
          FROM schools s
-        ORDER BY s.name`
+        WHERE @status IS NULL OR s.status = @status
+        -- Waiting schools first, oldest first, so the queue reads top to bottom.
+        ORDER BY CASE s.status WHEN 'pending' THEN 0 ELSE 1 END,
+                 CASE s.status WHEN 'pending' THEN s.created_at END,
+                 s.name`
     )
-    .all();
+    .all({ status: status ?? null });
 }
 
-export function setSchoolStatus(db, schoolId, status) {
+/** How many schools are in each status, for the system admin's filter tabs. */
+export function countSchoolsByStatus(db) {
+  const counts = Object.fromEntries(SCHOOL_STATUSES.map((s) => [s, 0]));
+  for (const row of db.prepare(`SELECT status, COUNT(*) AS n FROM schools GROUP BY status`).all()) {
+    counts[row.status] = row.n;
+  }
+  return counts;
+}
+
+// Which status changes a system admin may make, by current status.
+const SCHOOL_TRANSITIONS = {
+  pending: ['active', 'rejected'],
+  active: ['inactive'],
+  inactive: ['active'],
+  rejected: [],
+};
+
+const TRANSITION_ACTIONS = {
+  'pending>active': 'school.approved',
+  'pending>rejected': 'school.rejected',
+  'active>inactive': 'school.disabled',
+  'inactive>active': 'school.enabled',
+};
+
+/**
+ * Move a school to a new status. Returns null for an unknown school and throws
+ * SchoolTransitionError for a change that is not allowed (e.g. enabling a
+ * school that was never approved).
+ */
+export function changeSchoolStatus(db, schoolId, status, { actor = null, note = null } = {}) {
+  if (!SCHOOL_STATUSES.includes(status)) throw new Error(`invalid status: ${status}`);
+  const school = getSchool(db, schoolId);
+  if (!school) return null;
+  if (!SCHOOL_TRANSITIONS[school.status].includes(status)) {
+    throw new SchoolTransitionError(school.status, status);
+  }
+
+  db.prepare(
+    `UPDATE schools
+        SET status = @status, review_note = @note, reviewed_by = @actor, reviewed_at = datetime('now')
+      WHERE school_id = @schoolId`
+  ).run({ schoolId, status, note: note?.trim() || null, actor });
+  logAudit(db, {
+    action: TRANSITION_ACTIONS[`${school.status}>${status}`],
+    actorId: actor,
+    recordId: schoolId,
+    detail: { from: school.status, to: status, note: note?.trim() || null },
+  });
+  return getSchool(db, schoolId);
+}
+
+export const approveSchool = (db, schoolId, opts) => changeSchoolStatus(db, schoolId, 'active', opts);
+export const rejectSchool = (db, schoolId, opts) => changeSchoolStatus(db, schoolId, 'rejected', opts);
+
+/** Kept for the original /status endpoint: enable or disable an approved school. */
+export function setSchoolStatus(db, schoolId, status, opts) {
   if (status !== 'active' && status !== 'inactive') {
     throw new Error(`invalid status: ${status}`);
   }
-  const info = db.prepare(`UPDATE schools SET status = ? WHERE school_id = ?`).run(status, schoolId);
-  if (info.changes === 0) return null;
-  logAudit(db, { action: 'school.status_changed', actorId: null, recordId: schoolId, detail: { status } });
-  return db
-    .prepare(`SELECT school_id AS schoolId, name, county, status, created_at AS createdAt FROM schools WHERE school_id = ?`)
-    .get(schoolId);
+  return changeSchoolStatus(db, schoolId, status, opts);
+}
+
+/**
+ * The first school that is not active among those that own the given rows,
+ * or null when every one is active (or unknown, which callers report on
+ * their own). Pass any of schoolIds, classGroupIds or studentIds.
+ */
+export function findInactiveSchool(db, { schoolIds = [], classGroupIds = [], studentIds = [] } = {}) {
+  const lookups = [
+    [schoolIds, `SELECT school_id AS schoolId, name, status FROM schools WHERE school_id = ?`],
+    [classGroupIds, `SELECT s.school_id AS schoolId, s.name, s.status FROM class_groups c
+                       JOIN schools s ON s.school_id = c.school_id WHERE c.class_group_id = ?`],
+    [studentIds, `SELECT s.school_id AS schoolId, s.name, s.status FROM students st
+                    JOIN class_groups c ON c.class_group_id = st.class_group_id
+                    JOIN schools s ON s.school_id = c.school_id WHERE st.student_id = ?`],
+  ];
+  for (const [ids, sql] of lookups) {
+    const stmt = db.prepare(sql);
+    const seen = new Set();
+    for (const id of ids) {
+      if (id == null || seen.has(id)) continue;
+      seen.add(id);
+      const row = stmt.get(id);
+      if (row && row.status !== 'active') return row;
+    }
+  }
+  return null;
 }
 
 export function upsertClassGroup(db, { classGroupId, schoolId, grade, stream = null, academicYear, teacherName = null }) {

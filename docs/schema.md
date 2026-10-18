@@ -13,8 +13,14 @@ dates as `TEXT` `YYYY-MM-DD` in school-local time.
 ## The 8 tables
 
 ### 1. `schools`
-`school_id` (PK, text), `name`, `county`, `created_at`.
-Top of the roster hierarchy.
+`school_id` (PK, text), `name`, `county`, `status`, `admin_name`,
+`admin_email`, `admin_phone`, `review_note`, `reviewed_by`, `reviewed_at`,
+`created_at`.
+Top of the roster hierarchy. `status` is `pending` (registered, waiting for a
+system admin), `active`, `inactive` (disabled) or `rejected`; only an `active`
+school's roster and attendance are accepted. The `admin_*` columns hold who
+registered the school, and the `review*` columns the last approval, rejection
+or enable/disable.
 
 ### 2. `class_groups`
 `class_group_id` (PK, text), `school_id` (FK → schools), `grade`, `stream`,

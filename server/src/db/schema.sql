@@ -3,11 +3,22 @@
 
 PRAGMA foreign_keys = ON;
 
+-- A school registered by its admin starts 'pending' until a system admin
+-- approves ('active') or rejects ('rejected') it. An approved school can be
+-- disabled ('inactive') and enabled again. Rows pushed by the PWA roster
+-- default to 'active' so local-mode schools keep working.
 CREATE TABLE IF NOT EXISTS schools (
   school_id   TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
   county      TEXT,
-  status      TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+  status      TEXT NOT NULL DEFAULT 'active'
+              CHECK (status IN ('pending', 'active', 'inactive', 'rejected')),
+  admin_name  TEXT,                                   -- who registered the school
+  admin_email TEXT,
+  admin_phone TEXT,
+  review_note TEXT,                                   -- rejection reason, or why it was disabled
+  reviewed_by TEXT,                                   -- system admin username
+  reviewed_at TEXT,
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
