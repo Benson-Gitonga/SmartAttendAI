@@ -47,6 +47,22 @@ export function migrate(db) {
     db.exec(`ALTER TABLE attendance_events ADD COLUMN reason TEXT CHECK (reason IN ('fee', 'health', 'other', 'unknown'))`);
   }
   rebuildSchoolsForApproval(db);
+
+  // School application details. Added after the rebuild above, which only
+  // copies the columns it knows about.
+  const applicationColumns = {
+    sub_county: 'TEXT',
+    school_code: 'TEXT',
+    school_type: "TEXT CHECK (school_type IN ('public', 'private'))",
+    boarding: "TEXT CHECK (boarding IN ('day', 'boarding', 'mixed'))",
+    student_estimate: 'INTEGER CHECK (student_estimate IS NULL OR student_estimate >= 0)',
+  };
+  for (const [column, type] of Object.entries(applicationColumns)) {
+    if (!hasColumn('schools', column)) db.exec(`ALTER TABLE schools ADD COLUMN ${column} ${type}`);
+  }
+  // One school per code, except that a rejected school may apply again.
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_schools_code
+             ON schools(upper(school_code)) WHERE school_code IS NOT NULL AND status <> 'rejected'`);
 }
 
 /**

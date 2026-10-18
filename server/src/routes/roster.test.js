@@ -2,14 +2,29 @@ import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../db/index.js';
 import { createApp } from '../app.js';
+import { testUserAuth, staffHeaders } from '../auth/testing.js';
 
 let db;
 let server;
 let base;
+let userAuth;
+let headers; // made on the first request of each test
+
+// Requests from a signed-in teacher of school-1.
+const SCHOOL = 'school-1';
+const api = (p, init = {}) => {
+  if (!headers) {
+    db.prepare('INSERT OR IGNORE INTO schools (school_id, name) VALUES (?, ?)').run(SCHOOL, 'Test School');
+    headers = staffHeaders(db, userAuth, { schoolId: SCHOOL, role: 'teacher' });
+  }
+  return fetch(`${base}${p}`, { ...init, headers: { ...headers, ...init.headers } });
+};
 
 beforeEach(async () => {
   db = openDatabase(':memory:');
-  server = createApp({ db, logger: false }).listen(0);
+  userAuth = testUserAuth(db);
+  headers = undefined;
+  server = createApp({ db, userAuth, logger: false }).listen(0);
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
 });
@@ -19,10 +34,8 @@ afterEach(async () => {
   db.close();
 });
 
-const post = (path, body) =>
-  fetch(`${base}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-const patch = (path, body) =>
-  fetch(`${base}${path}`, { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body) });
+const patch = (path, body) => api(path, { method: 'PATCH', body: JSON.stringify(body) });
 
 async function pushSchoolAndClass() {
   await post('/api/roster/schools', { schoolId: 'school-1', name: 'Test School' });
@@ -52,9 +65,10 @@ describe('POST /api/roster/classes', () => {
     assert.equal(db.prepare('SELECT teacher_name FROM class_groups WHERE class_group_id = ?').get('class-1').teacher_name, 'Ms. Otieno');
   });
 
-  test('409 when the school does not exist', async () => {
+  test("403 for a class in a school that is not the sender's", async () => {
     const res = await post('/api/roster/classes', { classGroupId: 'class-1', schoolId: 'nope', grade: 'Form 3' });
-    assert.equal(res.status, 409);
+    assert.equal(res.status, 403);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM class_groups').get().n, 0);
   });
 
   test('PATCH updates fields in place', async () => {
@@ -112,5 +126,28 @@ describe('POST /api/roster/students/:id/card', () => {
     const active = db.prepare('SELECT card_uid FROM rfid_cards WHERE student_id = ? AND active = 1').all('stu-1');
     assert.equal(active.length, 1);
     assert.equal(active[0].card_uid, 'BBBBBBBB');
+  });
+});
+
+describe('roster sign-in and school boundaries', () => {
+  test('401 without signing in', async () => {
+    const res = await fetch(`${base}/api/roster/schools`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ schoolId: 'school-1', name: 'x' }),
+    });
+    assert.equal(res.status, 401);
+  });
+
+  test("a teacher from another school cannot change this school's students", async () => {
+    await pushSchoolAndClass();
+    await post('/api/roster/students', { studentId: 'stu-1', classGroupId: 'class-1', fullName: 'Amina' });
+
+    db.prepare(`INSERT INTO schools (school_id, name) VALUES ('school-2', 'Other School')`).run();
+    const outsider = staffHeaders(db, userAuth, { schoolId: 'school-2', role: 'teacher' });
+    const send = (path, method, body) => fetch(`${base}${path}`, { method, headers: outsider, body: JSON.stringify(body) });
+
+    assert.equal((await send('/api/roster/students/stu-1', 'PATCH', { fullName: 'Changed' })).status, 403);
+    assert.equal((await send('/api/roster/students/stu-1/card', 'POST', { cardUid: '04AABBCC' })).status, 403);
+    assert.equal((await send('/api/roster/students', 'POST', { studentId: 'stu-x', classGroupId: 'class-1', fullName: 'Spy' })).status, 403);
+    assert.equal(db.prepare(`SELECT full_name FROM students WHERE student_id = 'stu-1'`).get().full_name, 'Amina');
   });
 });

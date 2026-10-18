@@ -73,7 +73,9 @@ All optional. Copy `.env.example` to `.env` to override.
 | GET | `/api/gate/classes/:id/attendance?date=YYYY-MM-DD` | one class's records for a day (default today) plus `gate.lastScanAt` - the PWA pulls this before roll call (see below) |
 | * | `/api/roster/*` | roster upserts pushed from the PWA (schools, classes, students, cards) |
 | * | `/api/admin/*` | per-school reporting: overview, classes, flagged students, follow-ups |
-| POST | `/api/schools/register` | a school admin registers their school; it starts `pending` (see below) |
+| POST | `/api/auth/login` | school staff sign-in, body `{ "email", "password" }`, returns a token, the user and their school |
+| GET | `/api/auth/me` | the signed-in user and their school's current status |
+| POST | `/api/schools/register` | a school's application: the school (`pending`) and its admin account (see below) |
 | GET | `/api/schools/:id` | a school's status and any review note, for the admin's waiting screen |
 | POST | `/api/system-admin/login` | system admin sign-in, body `{ "username", "password" }`, returns a token (see below) |
 | GET | `/api/system-admin/schools?status=` | every school, waiting ones first, plus a count per status |
@@ -101,6 +103,36 @@ how late it arrived.
 Set `DEVICE_API_KEY` and gate devices must send it as the `X-Device-Key`
 header, otherwise they get a `401`. The rest of the API is unaffected.
 
+### Staff sign-in
+
+School admins and teachers have accounts on this server (the `users` table),
+with scrypt-hashed passwords; there is no Cognito. `POST /api/auth/login`
+returns a token signed with `AUTH_TOKEN_SECRET` that lasts
+`AUTH_TOKEN_TTL_DAYS` (30). Every staff endpoint needs it as
+`Authorization: Bearer <token>` and is limited to the user's own school:
+
+| Endpoint | Who | Notes |
+|---|---|---|
+| `/api/admin/*` | school admin | another school's id, class or student is a `404` |
+| `/api/roster/*` | admin or teacher | another school's row is a `403` |
+| `/api/sync` | admin or teacher | a batch with another school's student is a `403` |
+| `/api/gate/classes/:id/attendance` | admin or teacher | another school's class is a `404` |
+| `/api/students`, `/attendance`, `/challenges`, `/stats` | system admin | platform-wide debug lists |
+
+All of them also answer `403` while the school is pending, rejected or
+disabled. The user is re-read on every request, so disabling an account or a
+school takes effect at once. Five wrong passwords for one email from one
+address lock that pair out for 15 minutes.
+
+`npm run db:seed` adds demo accounts, all with the password `demo1234`:
+
+| Email | Role | School |
+|---|---|---|
+| `admin@kibera.ac.ke` | school admin | Kibera Secondary (active, with the demo class) |
+| `teacher@kibera.ac.ke` | teacher | Kibera Secondary |
+| `g.achieng@kisumuday.ac.ke` | school admin | Kisumu Day (pending) |
+| `p.mwangi@nyerihigh.ac.ke` | school admin | Nyeri High (pending) |
+
 ### System admin sign-in
 
 There is one system admin account, and it lives only on the server. Set it with
@@ -126,9 +158,11 @@ endpoints answer `503`.
 
 ### School approval
 
-A school admin's sign-up registers the school with `POST /api/schools/register`
-(`name`, `county`, `adminName`, `adminEmail`, optional Kenyan `adminPhone`).
-It waits as `pending` until a system admin acts on it:
+A school applies with `POST /api/schools/register`: `school` (`name`,
+`county`, optional `subCounty`, `schoolCode`, `schoolType`, `boarding`,
+`studentEstimate`) and `applicant` (`fullName`, `email`, `password`, optional
+`phone`, `jobTitle`). The applicant becomes the school's admin and is signed in
+straight away. The school waits as `pending` until a system admin acts on it:
 
 ```
 pending --approve--> active --disable--> inactive
@@ -138,8 +172,10 @@ pending --approve--> active --disable--> inactive
 
 Any other change is a `409` (a rejected school registers again instead). Each
 change records who made it, when, and the note, and leaves a `school.*` audit
-row. A second registration of the same name in the same county is a `409`,
-unless it comes from the same admin email, which gets the existing school back.
+row. An application is refused with a `409` (and `field`) when the email
+already has an account, the school code is already registered, or the same
+name is already registered in that county. Nothing is saved from a refused
+application.
 
 A school that is not `active` cannot write: `/api/roster/*` and `/api/sync`
 answer `403` for its classes and students, so the PWA keeps those changes
@@ -226,6 +262,5 @@ risk model, and the sync worker's backoff / batching / cloud-response handling.
 
 - Absence reasons in the risk score: `src/lib/riskModel.js` still sets the fee
   and illness features to 0
-- Real Cognito-verified requests
 - Real AWS: `syncWorker.js` targets `SYNC_API_GATEWAY_URL`; until that's a
   deployed endpoint, point it at a local shim around `../aws/lambda/syncHandler.js`

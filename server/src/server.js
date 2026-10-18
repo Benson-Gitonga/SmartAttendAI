@@ -16,6 +16,7 @@ const server = app.listen(config.port, () => {
   console.log(`SmartAttend server listening on http://localhost:${config.port}`);
   console.log(`  DB: ${config.dbPath}`);
   console.log(`  Gate device key: ${config.deviceApiKey ? 'required (DEVICE_API_KEY)' : 'off, /api/rfid/scan is open'}`);
+  console.log(`  Staff sign-in: ${config.auth.tokenSecret ? 'on' : 'on (no AUTH_TOKEN_SECRET, sign-ins end on restart)'}`);
   console.log(`  System admin: ${
     config.systemAdmin.username && config.systemAdmin.passwordHash
       ? `${config.systemAdmin.username}${config.systemAdmin.tokenSecret ? '' : ' (no SYSTEM_ADMIN_TOKEN_SECRET, sign-ins end on restart)'}`

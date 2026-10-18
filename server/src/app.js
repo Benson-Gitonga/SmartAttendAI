@@ -12,6 +12,8 @@ import { createSystemAdminRouter } from './routes/systemAdmin.js';
 import { createSchoolsRouter } from './routes/schools.js';
 import { createGateRouter } from './routes/gate.js';
 import { createSystemAdminAuth } from './auth/systemAdminAuth.js';
+import { createUserAuth } from './auth/userAuth.js';
+import { createAuthRouter } from './routes/auth.js';
 import {
   getAttendanceForDate,
   getRecentChallenges,
@@ -26,6 +28,7 @@ import {
  * @param {ReturnType<typeof createCardHandler>} [opts.cardHandler]
  * @param {string} [opts.deviceApiKey] required X-Device-Key for gate scans; '' = open
  * @param {ReturnType<typeof createSystemAdminAuth>} [opts.systemAdminAuth] sign-in for /api/system-admin
+ * @param {ReturnType<typeof createUserAuth>} [opts.userAuth] sign-in for school staff
  */
 export function createApp({
   db,
@@ -33,6 +36,7 @@ export function createApp({
   logger = true,
   deviceApiKey = config.deviceApiKey,
   systemAdminAuth = createSystemAdminAuth(config.systemAdmin),
+  userAuth = createUserAuth({ db, ...config.auth }),
 } = {}) {
   const app = express();
   app.use(express.json());
@@ -45,34 +49,39 @@ export function createApp({
     res.json({ status: 'ok', uptime: process.uptime(), tables, pendingSync: countPendingSync(db) });
   });
 
-  app.get('/api/students', (req, res) => {
+  // Platform-wide debugging views over every school: system admin only.
+  const platformOnly = systemAdminAuth.requireSystemAdmin;
+
+  app.get('/api/students', platformOnly, (req, res) => {
     res.json(db.prepare('SELECT * FROM students ORDER BY full_name').all());
   });
 
-  app.get('/api/attendance', (req, res) => {
+  app.get('/api/attendance', platformOnly, (req, res) => {
     const date = req.query.date || todayISO();
     res.json({ date, records: getAttendanceForDate(db, date) });
   });
 
-  app.get('/api/challenges', (req, res) => {
+  app.get('/api/challenges', platformOnly, (req, res) => {
     res.json({ challenges: getRecentChallenges(db, Number(req.query.limit) || 50) });
   });
 
-  app.get('/api/stats', (req, res) => {
+  app.get('/api/stats', platformOnly, (req, res) => {
     res.json(getStats(db, req.query.date || todayISO()));
   });
 
-  app.use('/api/sync', createSyncRouter({ db }));
+  app.use('/api/auth', createAuthRouter({ db, userAuth }));
 
-  app.use('/api/roster', createRosterRouter({ db }));
-  app.use('/api/admin', createAdminRouter({ db }));
+  app.use('/api/sync', createSyncRouter({ db, userAuth }));
+
+  app.use('/api/roster', createRosterRouter({ db, userAuth }));
+  app.use('/api/admin', createAdminRouter({ db, userAuth }));
 
   // Today's gate scans (and any teacher marks) for one class, pulled by the
   // PWA before roll call so the teacher only handles students who didn't scan.
-  app.use('/api/gate', createGateRouter({ db }));
+  app.use('/api/gate', createGateRouter({ db, userAuth }));
 
-  // A school admin registers their school, then waits for approval.
-  app.use('/api/schools', createSchoolsRouter({ db }));
+  // A school applies to join, and its applicant waits for approval.
+  app.use('/api/schools', createSchoolsRouter({ db, userAuth }));
 
   // Platform-wide school list: approve or reject new schools, disable or
   // enable approved ones. For the system-admin role.

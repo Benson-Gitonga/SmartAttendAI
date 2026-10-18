@@ -2,6 +2,7 @@
 import { openDatabase } from './index.js';
 import { config } from '../config.js';
 import { upsertCard } from './repository.js';
+import { hashPassword } from '../auth/systemAdminAuth.js';
 
 export const DEMO_SCHOOL = {
   school_id: 'school-kibera-001',
@@ -28,6 +29,16 @@ export const PENDING_SCHOOLS = [
     admin_email: 'p.mwangi@nyerihigh.ac.ke',
     admin_phone: '0722123456',
   },
+];
+
+// Demo sign-ins, one per role, so a fresh database can be tried straight away.
+// Every demo account uses DEMO_PASSWORD. Only for local demos.
+export const DEMO_PASSWORD = 'demo1234';
+export const DEMO_USERS = [
+  { email: 'admin@kibera.ac.ke', full_name: 'Esther Wanjiru', job_title: 'Principal', role: 'admin', school_id: 'school-kibera-001' },
+  { email: 'teacher@kibera.ac.ke', full_name: 'Ms. Otieno', job_title: 'Class teacher, Form 3 B', role: 'teacher', school_id: 'school-kibera-001' },
+  { email: 'g.achieng@kisumuday.ac.ke', full_name: 'Grace Achieng', job_title: 'Principal', role: 'admin', school_id: 'school-demo-pending-001' },
+  { email: 'p.mwangi@nyerihigh.ac.ke', full_name: 'Peter Mwangi', job_title: 'Deputy Principal', role: 'admin', school_id: 'school-demo-pending-002' },
 ];
 
 export const DEMO_CLASS = {
@@ -73,6 +84,25 @@ export function seed(db) {
     );
     for (const school of PENDING_SCHOOLS) insertPending.run(school);
 
+    // Inserted once; a re-seed never resets a password someone changed.
+    const insertUser = db.prepare(
+      `INSERT INTO users (user_id, email, full_name, job_title, role, school_id, password_hash)
+       VALUES (@user_id, @email, @full_name, @job_title, @role, @school_id, @password_hash)
+       ON CONFLICT(email) DO NOTHING`
+    );
+    const passwordHash = hashPassword(DEMO_PASSWORD);
+    for (const user of DEMO_USERS) {
+      insertUser.run({ ...user, user_id: `user-demo-${user.email.split('@')[0]}-${user.school_id}`, password_hash: passwordHash });
+    }
+
+    // The system admin's school card shows who runs each school; fill it in
+    // for the demo school, which was never registered through the form.
+    const kiberaAdmin = DEMO_USERS.find((u) => u.school_id === DEMO_SCHOOL.school_id && u.role === 'admin');
+    db.prepare(
+      `UPDATE schools SET admin_name = @full_name, admin_email = @email
+        WHERE school_id = @school_id AND admin_email IS NULL`
+    ).run(kiberaAdmin);
+
     db.prepare(
       `INSERT INTO class_groups (class_group_id, school_id, grade, stream, academic_year)
        VALUES (@class_group_id, @school_id, @grade, @stream, @academic_year)
@@ -97,6 +127,7 @@ export function seed(db) {
   return {
     school: DEMO_SCHOOL.school_id,
     pendingSchools: PENDING_SCHOOLS.length,
+    users: DEMO_USERS.map((u) => `${u.email} (${u.role})`),
     classGroup: DEMO_CLASS.class_group_id,
     students: DEMO_STUDENTS.length,
   };

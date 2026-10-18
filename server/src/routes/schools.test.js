@@ -4,39 +4,52 @@ import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { openDatabase, migrate } from '../db/index.js';
 import { createApp } from '../app.js';
-import { testSystemAdminAuth, signInSystemAdmin, TEST_ADMIN } from '../auth/testing.js';
+import { testSystemAdminAuth, signInSystemAdmin, testUserAuth, TEST_ADMIN } from '../auth/testing.js';
 
 let db;
 let server;
 let base;
-let token;
+let token; // the system admin's
 
 const auth = () => ({ authorization: `Bearer ${token}` });
 const get = (path) => fetch(`${base}${path}`, { headers: auth() });
 
-const post = (path, body) =>
+const post = (path, body, headers = auth()) =>
   fetch(`${base}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', ...auth() },
+    headers: { 'content-type': 'application/json', ...headers },
     body: JSON.stringify(body ?? {}),
   });
 
-const REGISTRATION = {
+const SCHOOL = {
   name: 'Kisumu Day Secondary School',
   county: 'Kisumu',
-  adminName: 'Grace Achieng',
-  adminEmail: 'G.Achieng@KisumuDay.ac.ke',
-  adminPhone: '0712345678',
+  subCounty: 'Kisumu Central',
+  schoolCode: '20414001',
+  schoolType: 'public',
+  boarding: 'mixed',
+  studentEstimate: 640,
+};
+const APPLICANT = {
+  fullName: 'Grace Achieng',
+  email: 'G.Achieng@KisumuDay.ac.ke',
+  phone: '0712345678',
+  jobTitle: 'Principal',
+  password: 'kisumu-day-2026',
 };
 
-async function register(overrides = {}) {
-  const res = await post('/api/schools/register', { ...REGISTRATION, ...overrides });
+/** Apply, with any school or applicant fields changed. The body has the new token, user and school. */
+async function register(school = {}, applicant = {}) {
+  const res = await post('/api/schools/register', {
+    school: { ...SCHOOL, ...school },
+    applicant: { ...APPLICANT, ...applicant },
+  }, {});
   return { res, body: await res.json() };
 }
 
 beforeEach(async () => {
   db = openDatabase(':memory:');
-  server = createApp({ db, logger: false, systemAdminAuth: testSystemAdminAuth() }).listen(0);
+  server = createApp({ db, logger: false, systemAdminAuth: testSystemAdminAuth(), userAuth: testUserAuth(db) }).listen(0);
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
   token = await signInSystemAdmin(base);
@@ -48,24 +61,48 @@ afterEach(async () => {
 });
 
 describe('POST /api/schools/register', () => {
-  test('creates a pending school and records who registered it', async () => {
+  test('creates a pending school and an admin account, and signs the applicant in', async () => {
     const { res, body } = await register();
     assert.equal(res.status, 201);
-    assert.match(body.schoolId, /^school-[0-9a-f-]{36}$/);
-    assert.equal(body.status, 'pending');
-    assert.equal(body.name, REGISTRATION.name);
+    assert.match(body.school.schoolId, /^school-[0-9a-f-]{36}$/);
+    assert.equal(body.school.status, 'pending');
+    assert.equal(body.user.role, 'admin');
+    assert.equal(body.user.email, 'g.achieng@kisumuday.ac.ke');
+    assert.equal(body.user.schoolId, body.school.schoolId);
+    assert.ok(body.token);
 
-    const row = db.prepare('SELECT * FROM schools WHERE school_id = ?').get(body.schoolId);
+    const row = db.prepare('SELECT * FROM schools WHERE school_id = ?').get(body.school.schoolId);
+    assert.equal(row.school_code, '20414001');
+    assert.equal(row.sub_county, 'Kisumu Central');
+    assert.equal(row.school_type, 'public');
+    assert.equal(row.boarding, 'mixed');
+    assert.equal(row.student_estimate, 640);
     assert.equal(row.admin_email, 'g.achieng@kisumuday.ac.ke');
-    assert.equal(row.admin_phone, '0712345678');
 
-    const audit = db.prepare(`SELECT * FROM audit_log WHERE action = 'school.registered'`).get();
-    assert.equal(audit.record_id, body.schoolId);
+    const user = db.prepare('SELECT * FROM users WHERE email = ?').get('g.achieng@kisumuday.ac.ke');
+    assert.equal(user.job_title, 'Principal');
+    assert.match(user.password_hash, /^scrypt:/);
+    assert.ok(db.prepare(`SELECT 1 FROM audit_log WHERE action = 'school.registered' AND record_id = ?`).get(body.school.schoolId));
   });
 
-  test('does not hand the admin contact details back to the public status call', async () => {
+  test('never stores or returns the password', async () => {
     const { body } = await register();
-    const res = await fetch(`${base}/api/schools/${body.schoolId}`);
+    assert.doesNotMatch(JSON.stringify(body), /kisumu-day-2026|scrypt/);
+    const row = db.prepare('SELECT password_hash FROM users').get();
+    assert.doesNotMatch(row.password_hash, /kisumu-day-2026/);
+  });
+
+  test('the applicant can sign in with the password they chose', async () => {
+    await register();
+    const res = await post('/api/auth/login', { email: 'g.achieng@kisumuday.ac.ke', password: APPLICANT.password }, {});
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.equal(body.school.status, 'pending');
+  });
+
+  test('the public status call does not hand out contact details', async () => {
+    const { body } = await register();
+    const res = await fetch(`${base}/api/schools/${body.school.schoolId}`);
     const status = await res.json();
     assert.equal(res.status, 200);
     assert.equal(status.status, 'pending');
@@ -73,51 +110,79 @@ describe('POST /api/schools/register', () => {
     assert.equal(status.adminPhone, undefined);
   });
 
-  test('the same admin registering again gets the same school back', async () => {
-    const first = await register();
-    const again = await register({ name: '  kisumu day secondary school ', adminEmail: 'g.achieng@kisumuday.ac.ke' });
-    assert.equal(again.res.status, 200);
-    assert.equal(again.body.schoolId, first.body.schoolId);
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM schools').get().n, 1);
+  test('409 for an email that already has an account', async () => {
+    await register();
+    const { res, body } = await register({ name: 'Another School', schoolCode: '99999999' }, { email: 'g.achieng@kisumuday.ac.ke' });
+    assert.equal(res.status, 409);
+    assert.equal(body.field, 'email');
   });
 
-  test('a different admin registering the same school in the same county is a 409', async () => {
+  test('409 for a school code that is already registered', async () => {
     await register();
-    const { res, body } = await register({ adminEmail: 'someone.else@example.com' });
+    const { res, body } = await register({ name: 'Renamed School' }, { email: 'other@example.com' });
     assert.equal(res.status, 409);
-    assert.equal(body.status, 'pending');
+    assert.equal(body.field, 'school_code');
+  });
+
+  test('409 for the same name in the same county', async () => {
+    await register();
+    const { res, body } = await register({ name: ' kisumu day secondary school ', schoolCode: undefined }, { email: 'other@example.com' });
+    assert.equal(res.status, 409);
+    assert.equal(body.field, 'school_name');
   });
 
   test('the same name in another county is a different school', async () => {
     await register();
-    const { res } = await register({ county: 'Nakuru', adminEmail: 'other@example.com' });
+    const { res } = await register({ county: 'Nakuru', schoolCode: '30000001' }, { email: 'other@example.com' });
     assert.equal(res.status, 201);
   });
 
-  test('a rejected school can register again', async () => {
+  test('a rejected school can apply again, code and all', async () => {
     const first = await register();
-    await post(`/api/system-admin/schools/${first.body.schoolId}/reject`, { note: 'Not a registered school' });
-    const { res, body } = await register({ adminEmail: 'new.admin@example.com' });
+    await post(`/api/system-admin/schools/${first.body.school.schoolId}/reject`, { note: 'Not a registered school' });
+    const { res, body } = await register({}, { email: 'new.admin@example.com' });
     assert.equal(res.status, 201);
-    assert.notEqual(body.schoolId, first.body.schoolId);
+    assert.notEqual(body.school.schoolId, first.body.school.schoolId);
   });
 
-  for (const [label, overrides] of [
-    ['a missing name', { name: undefined }],
-    ['a blank name', { name: '   ' }],
-    ['a bad email', { adminEmail: 'not-an-email' }],
-    ['a bad phone number', { adminPhone: '12345' }],
-    ['an unexpected field', { status: 'active' }],
+  test('a failed application leaves nothing behind', async () => {
+    await register();
+    await register({ name: 'Renamed School' }, { email: 'other@example.com' }); // 409 on the code
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM schools').get().n, 1);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM users').get().n, 1);
+  });
+
+  for (const [label, school, applicant] of [
+    ['a missing school name', { name: undefined }, {}],
+    ['a missing county', { county: undefined }, {}],
+    ['a blank school name', { name: '   ' }, {}],
+    ['a school code with spaces', { schoolCode: '204 140' }, {}],
+    ['an unknown school type', { schoolType: 'charter' }, {}],
+    ['a student estimate of zero', { studentEstimate: 0 }, {}],
+    ['a bad email', {}, { email: 'not-an-email' }],
+    ['a bad phone number', {}, { phone: '12345' }],
+    ['a short password', {}, { password: 'short' }],
+    ['a missing password', {}, { password: undefined }],
+    ['an unexpected field', { status: 'active' }, {}],
   ]) {
     test(`400 for ${label}`, async () => {
-      const { res } = await register(overrides);
+      const { res } = await register(school, applicant);
       assert.equal(res.status, 400);
       assert.equal(db.prepare('SELECT COUNT(*) AS n FROM schools').get().n, 0);
+      assert.equal(db.prepare('SELECT COUNT(*) AS n FROM users').get().n, 0);
     });
   }
 
+  test('only the name and county are required for the school', async () => {
+    const { res } = await register(
+      { subCounty: undefined, schoolCode: undefined, schoolType: undefined, boarding: undefined, studentEstimate: undefined },
+      { phone: undefined, jobTitle: undefined }
+    );
+    assert.equal(res.status, 201);
+  });
+
   test('accepts an international +254 phone number', async () => {
-    const { res } = await register({ adminPhone: '+254712345678' });
+    const { res } = await register({}, { phone: '+254712345678' });
     assert.equal(res.status, 201);
   });
 
@@ -130,7 +195,7 @@ describe('POST /api/schools/register', () => {
 describe('approval flow', () => {
   let schoolId;
   beforeEach(async () => {
-    ({ body: { schoolId } } = await register());
+    ({ body: { school: { schoolId } } } = await register());
   });
 
   const statusOf = () => db.prepare('SELECT status FROM schools WHERE school_id = ?').get(schoolId).status;
@@ -229,7 +294,9 @@ describe('GET /api/system-admin/schools', () => {
 
     const res = await get(`/api/system-admin/schools`);
     const { schools, counts } = await res.json();
-    assert.equal(schools[0].schoolId, pending.schoolId);
+    assert.equal(schools[0].schoolId, pending.school.schoolId);
+    assert.equal(schools[0].schoolCode, '20414001');
+    assert.equal(schools[0].studentEstimate, 640);
     assert.equal(schools[0].adminName, 'Grace Achieng');
     assert.deepEqual(counts, { pending: 1, active: 1, inactive: 0, rejected: 0 });
   });
@@ -249,24 +316,25 @@ describe('GET /api/system-admin/schools', () => {
 
 describe('a school that is not active cannot write', () => {
   let schoolId;
+  let staff; // the applicant's own sign-in
   beforeEach(async () => {
-    ({ body: { schoolId } } = await register());
+    const { body } = await register();
+    schoolId = body.school.schoolId;
+    staff = { authorization: `Bearer ${body.token}` };
   });
 
-  const pushClass = () =>
-    post('/api/roster/classes', { classGroupId: 'class-1', schoolId, grade: 'Form 1', academicYear: 2026 });
+  const asStaff = (path, body, method = 'POST') =>
+    fetch(`${base}${path}`, { method, headers: { 'content-type': 'application/json', ...staff }, body: JSON.stringify(body) });
+  const pushClass = () => asStaff('/api/roster/classes', { classGroupId: 'class-1', schoolId, grade: 'Form 1', academicYear: 2026 });
 
   const seedApprovedRoster = async () => {
     await post(`/api/system-admin/schools/${schoolId}/approve`);
     assert.equal((await pushClass()).status, 200);
-    assert.equal(
-      (await post('/api/roster/students', { studentId: 'stu-1', classGroupId: 'class-1', fullName: 'Amina Hassan' })).status,
-      200
-    );
+    assert.equal((await asStaff('/api/roster/students', { studentId: 'stu-1', classGroupId: 'class-1', fullName: 'Amina Hassan' })).status, 200);
   };
 
   const syncOne = () =>
-    post('/api/sync', {
+    asStaff('/api/sync', {
       deviceId: 'phone-1',
       records: [{
         eventId: randomUUID(), studentId: 'stu-1', date: '2026-10-19', status: 'present',
@@ -282,16 +350,18 @@ describe('a school that is not active cannot write', () => {
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM class_groups').get().n, 0);
   });
 
+  test('a pending school admin cannot read the school dashboard yet', async () => {
+    const res = await fetch(`${base}/api/admin/schools/${schoolId}/overview`, { headers: staff });
+    assert.equal(res.status, 403);
+  });
+
   test('a disabled school cannot change its roster or sync, and can again once enabled', async () => {
     await seedApprovedRoster();
     await post(`/api/system-admin/schools/${schoolId}/disable`);
 
-    assert.equal((await post('/api/roster/students', { studentId: 'stu-2', classGroupId: 'class-1', fullName: 'Brian Kip' })).status, 403);
-    const patch = await fetch(`${base}/api/roster/students/stu-1`, {
-      method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fullName: 'Changed' }),
-    });
-    assert.equal(patch.status, 403);
-    assert.equal((await post('/api/roster/students/stu-1/card', { cardUid: '04AABBCC' })).status, 403);
+    assert.equal((await asStaff('/api/roster/students', { studentId: 'stu-2', classGroupId: 'class-1', fullName: 'Brian Kip' })).status, 403);
+    assert.equal((await asStaff('/api/roster/students/stu-1', { fullName: 'Changed' }, 'PATCH')).status, 403);
+    assert.equal((await asStaff('/api/roster/students/stu-1/card', { cardUid: '04AABBCC' })).status, 403);
 
     const blocked = await syncOne();
     assert.equal(blocked.status, 403);
@@ -305,9 +375,9 @@ describe('a school that is not active cannot write', () => {
 
   test('a roster push cannot rename a registered school', async () => {
     await post(`/api/system-admin/schools/${schoolId}/approve`);
-    const res = await post('/api/roster/schools', { schoolId, name: 'My School' });
+    const res = await asStaff('/api/roster/schools', { schoolId, name: 'My School' });
     assert.equal(res.status, 200);
-    assert.equal(db.prepare('SELECT name FROM schools WHERE school_id = ?').get(schoolId).name, REGISTRATION.name);
+    assert.equal(db.prepare('SELECT name FROM schools WHERE school_id = ?').get(schoolId).name, SCHOOL.name);
   });
 });
 

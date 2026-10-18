@@ -44,6 +44,14 @@ export const config = {
   offlineScanMaxAgeDays: num(process.env.OFFLINE_SCAN_MAX_AGE_DAYS, 7),
   deviceClockSkewMs: num(process.env.DEVICE_CLOCK_SKEW_MS, 5 * 60_000),
 
+  // School staff sign-in (src/auth/userAuth.js). Tokens are long-lived so a
+  // teacher who works offline for days can still send their queued records.
+  // Without a secret, a random one is made per boot and sign-ins end on restart.
+  auth: {
+    tokenSecret: process.env.AUTH_TOKEN_SECRET || '',
+    tokenTtlMs: num(process.env.AUTH_TOKEN_TTL_DAYS, 30) * 24 * 60 * 60 * 1000,
+  },
+
   // The one system admin account (src/auth/systemAdminAuth.js). Set with
   // `npm run sysadmin:set`; only a hash of the password is kept. With no username
   // or hash, the /api/system-admin endpoints answer 503.

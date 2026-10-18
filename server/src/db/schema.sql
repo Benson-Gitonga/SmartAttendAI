@@ -19,8 +19,33 @@ CREATE TABLE IF NOT EXISTS schools (
   review_note TEXT,                                   -- rejection reason, or why it was disabled
   reviewed_by TEXT,                                   -- system admin username
   reviewed_at TEXT,
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  -- From the school's application, for the system admin's review.
+  sub_county      TEXT,
+  school_code     TEXT,                               -- Ministry of Education / KNEC code
+  school_type     TEXT CHECK (school_type IN ('public', 'private')),
+  boarding        TEXT CHECK (boarding IN ('day', 'boarding', 'mixed')),
+  student_estimate INTEGER CHECK (student_estimate IS NULL OR student_estimate >= 0)
 );
+
+-- Everyone who signs in to a school: its admin (who applied for the school)
+-- and its teachers. Passwords are scrypt hashes (src/auth/systemAdminAuth.js
+-- hashPassword). The system admin is not here; that account lives in .env.
+CREATE TABLE IF NOT EXISTS users (
+  user_id         TEXT PRIMARY KEY,
+  email           TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  full_name       TEXT NOT NULL,
+  phone           TEXT,
+  job_title       TEXT,                               -- e.g. Principal, Deputy Principal
+  role            TEXT NOT NULL CHECK (role IN ('admin', 'teacher')),
+  school_id       TEXT NOT NULL REFERENCES schools(school_id) ON DELETE CASCADE,
+  password_hash   TEXT,                               -- NULL until an invited teacher sets one
+  status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'invited', 'disabled')),
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  last_sign_in_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_school ON users(school_id);
 
 CREATE TABLE IF NOT EXISTS class_groups (
   class_group_id TEXT PRIMARY KEY,

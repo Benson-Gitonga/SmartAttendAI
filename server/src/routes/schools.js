@@ -1,42 +1,54 @@
 /**
- * /api/schools/*: a school admin registers their school and checks whether a
- * system admin has approved it yet. No auth check yet, like the other routes.
+ * /api/schools/*: a school applies to join SmartAttend, and anyone can look
+ * up a school's status (name, status and review note only).
  */
 
 import { Router } from 'express';
 import { validate } from '../lib/validate.js';
 import { schoolRegistrationSchema } from '../schemas/schoolRegistration.schema.js';
-import { registerSchool, getSchool, findSchoolByName } from '../db/repository.js';
+import { registerSchoolApplication, getSchool, RegistrationConflictError } from '../db/repository.js';
+import { hashPassword } from '../auth/systemAdminAuth.js';
+import { describeAccount } from '../auth/userAuth.js';
 
-/** What a school admin is allowed to see about their own school. */
+/** What anyone may see about a school. */
 export function publicSchool(school) {
   const { schoolId, name, county, status, reviewNote, reviewedAt, createdAt } = school;
   return { schoolId, name, county, status, reviewNote, reviewedAt, createdAt };
 }
 
-export function createSchoolsRouter({ db }) {
+const CONFLICT_MESSAGES = {
+  email: 'An account with this email already exists. Sign in instead.',
+  school_code: 'A school with this code is already registered on SmartAttend.',
+  school_name: 'A school with this name is already registered in this county.',
+};
+
+/**
+ * @param {object} opts
+ * @param {import('better-sqlite3').Database} opts.db
+ * @param {ReturnType<import('../auth/userAuth.js').createUserAuth>} opts.userAuth
+ */
+export function createSchoolsRouter({ db, userAuth }) {
   if (!db) throw new Error('createSchoolsRouter needs a db');
+  if (!userAuth) throw new Error('createSchoolsRouter needs userAuth');
   const router = Router();
 
+  // The application. The applicant is signed in straight away (as the
+  // school's admin) so they can follow the review from the app.
   router.post('/register', (req, res) => {
     const { valid, errors } = validate(schoolRegistrationSchema, req.body ?? {});
-    if (!valid) return res.status(400).json({ error: 'invalid registration', errors });
+    if (!valid) return res.status(400).json({ error: 'invalid application', errors });
 
-    const existing = findSchoolByName(db, req.body.name, req.body.county ?? null);
-    // The same admin sending again (e.g. the first reply was lost) gets their
-    // school back instead of a clash.
-    if (existing && existing.adminEmail === req.body.adminEmail.trim().toLowerCase()) {
-      return res.status(200).json(publicSchool(existing));
+    const { school, applicant } = req.body;
+    const { password, ...person } = applicant;
+    try {
+      const { user } = registerSchoolApplication(db, school, { ...person, passwordHash: hashPassword(password) });
+      res.status(201).json({ ...userAuth.issueToken(user), ...describeAccount(db, user) });
+    } catch (err) {
+      if (err instanceof RegistrationConflictError) {
+        return res.status(409).json({ error: CONFLICT_MESSAGES[err.field], field: err.field });
+      }
+      throw err;
     }
-    if (existing) {
-      return res.status(409).json({
-        error: 'a school with this name is already registered in this county',
-        schoolId: existing.schoolId,
-        status: existing.status,
-      });
-    }
-
-    res.status(201).json(publicSchool(registerSchool(db, req.body)));
   });
 
   router.get('/:id', (req, res) => {

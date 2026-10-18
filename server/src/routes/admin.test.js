@@ -2,11 +2,24 @@ import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from '../db/index.js';
 import { createApp } from '../app.js';
+import { testUserAuth, staffHeaders } from '../auth/testing.js';
 import { recordAttendance } from '../db/repository.js';
 
 let db;
 let server;
 let base;
+let userAuth;
+let headers; // made on the first request of each test
+
+// Requests from a signed-in admin of school-1.
+const SCHOOL = 'school-1';
+const api = (p, init = {}) => {
+  if (!headers) {
+    db.prepare('INSERT OR IGNORE INTO schools (school_id, name) VALUES (?, ?)').run(SCHOOL, 'Test School');
+    headers = staffHeaders(db, userAuth, { schoolId: SCHOOL, role: 'admin' });
+  }
+  return fetch(`${base}${p}`, { ...init, headers: { ...headers, ...init.headers } });
+};
 
 function isoAddDays(iso, n) {
   const [y, m, d] = iso.split('-').map(Number);
@@ -16,7 +29,9 @@ function isoAddDays(iso, n) {
 
 beforeEach(async () => {
   db = openDatabase(':memory:');
-  server = createApp({ db, logger: false }).listen(0);
+  userAuth = testUserAuth(db);
+  headers = undefined;
+  server = createApp({ db, userAuth, logger: false }).listen(0);
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
 
@@ -55,7 +70,7 @@ function seedTwoMonthsHistory() {
 describe('GET /api/admin/schools/:id/overview', () => {
   test('aggregates across every class in the school', async () => {
     seedTwoMonthsHistory();
-    const res = await fetch(`${base}/api/admin/schools/school-1/overview`);
+    const res = await api(`/api/admin/schools/school-1/overview`);
     const body = await res.json();
     assert.equal(res.status, 200);
     assert.equal(body.classCount, 2);
@@ -66,7 +81,7 @@ describe('GET /api/admin/schools/:id/overview', () => {
 
 describe('GET /api/admin/schools/:id/classes', () => {
   test('lists classes with teacher and roster size', async () => {
-    const res = await fetch(`${base}/api/admin/schools/school-1/classes`);
+    const res = await api(`/api/admin/schools/school-1/classes`);
     const { classes } = await res.json();
     assert.equal(classes.length, 2);
     const a = classes.find((c) => c.classGroupId === 'class-a');
@@ -78,7 +93,7 @@ describe('GET /api/admin/schools/:id/classes', () => {
 describe('GET /api/admin/schools/:id/flagged', () => {
   test('flags the chronic absentee as red, clearly above the steady student', async () => {
     seedTwoMonthsHistory();
-    const res = await fetch(`${base}/api/admin/schools/school-1/flagged`);
+    const res = await api(`/api/admin/schools/school-1/flagged`);
     const { flagged } = await res.json();
     const chronic = flagged.find((f) => f.studentId === 'stu-chronic');
     const steady = flagged.find((f) => f.studentId === 'stu-steady');
@@ -94,25 +109,25 @@ describe('GET /api/admin/schools/:id/flagged', () => {
 describe('follow-ups', () => {
   test('logging a follow-up clears needsFollowUp until it goes stale', async () => {
     seedTwoMonthsHistory();
-    const logRes = await fetch(`${base}/api/admin/students/stu-chronic/follow-ups`, {
+    const logRes = await api(`/api/admin/students/stu-chronic/follow-ups`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ flag: 'red', method: 'parent_call', note: 'Spoke to guardian', actor: 'admin@school' }),
     });
     assert.equal(logRes.status, 201);
 
-    const flaggedRes = await fetch(`${base}/api/admin/schools/school-1/flagged`);
+    const flaggedRes = await api(`/api/admin/schools/school-1/flagged`);
     const { flagged } = await flaggedRes.json();
     assert.equal(flagged.find((f) => f.studentId === 'stu-chronic').needsFollowUp, false);
 
-    const historyRes = await fetch(`${base}/api/admin/students/stu-chronic/follow-ups`);
+    const historyRes = await api(`/api/admin/students/stu-chronic/follow-ups`);
     const { followUps } = await historyRes.json();
     assert.equal(followUps.length, 1);
     assert.equal(followUps[0].method, 'parent_call');
   });
 
   test('400 when flag or method is missing', async () => {
-    const res = await fetch(`${base}/api/admin/students/stu-chronic/follow-ups`, {
+    const res = await api(`/api/admin/students/stu-chronic/follow-ups`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ note: 'no flag or method' }),

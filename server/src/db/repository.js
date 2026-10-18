@@ -251,7 +251,8 @@ export const SCHOOL_STATUSES = ['pending', 'active', 'inactive', 'rejected'];
 const SCHOOL_COLUMNS = `s.school_id AS schoolId, s.name, s.county, s.status,
   s.admin_name AS adminName, s.admin_email AS adminEmail, s.admin_phone AS adminPhone,
   s.review_note AS reviewNote, s.reviewed_by AS reviewedBy, s.reviewed_at AS reviewedAt,
-  s.created_at AS createdAt`;
+  s.created_at AS createdAt, s.sub_county AS subCounty, s.school_code AS schoolCode,
+  s.school_type AS schoolType, s.boarding, s.student_estimate AS studentEstimate`;
 
 export class SchoolTransitionError extends Error {
   constructor(from, to) {
@@ -276,22 +277,155 @@ export function findSchoolByName(db, name, county = null) {
   );
 }
 
-/** A school admin registers a school. It waits as 'pending' for a system admin. */
-export function registerSchool(db, { name, county = null, adminName, adminEmail, adminPhone = null }) {
-  const schoolId = `school-${randomUUID()}`;
+export class RegistrationConflictError extends Error {
+  /** @param {'email'|'school_code'|'school_name'} field */
+  constructor(field, message) {
+    super(message);
+    this.name = 'RegistrationConflictError';
+    this.field = field;
+  }
+}
+
+/** A non-rejected school with this Ministry of Education code, or null. */
+export function findSchoolByCode(db, schoolCode) {
+  if (!schoolCode) return null;
+  return (
+    db
+      .prepare(`SELECT ${SCHOOL_COLUMNS} FROM schools s
+                 WHERE upper(s.school_code) = upper(trim(?)) AND s.status <> 'rejected'`)
+      .get(schoolCode) ?? null
+  );
+}
+
+/**
+ * A school's application: the school waits as 'pending' for a system admin,
+ * and the person applying gets an admin account for it straight away, so they
+ * can sign in and watch for the decision. Throws RegistrationConflictError when
+ * the email already has an account, or the school is already registered.
+ *
+ * @param {object} school     name, county, subCounty, schoolCode, schoolType, boarding, studentEstimate
+ * @param {object} applicant  fullName, email, phone, jobTitle, passwordHash
+ */
+export function registerSchoolApplication(db, school, applicant) {
+  const email = applicant.email.trim().toLowerCase();
+  const code = school.schoolCode?.trim().toUpperCase() || null;
+
+  return db.transaction(() => {
+    if (findUserByEmail(db, email)) {
+      throw new RegistrationConflictError('email', 'an account with this email already exists');
+    }
+    if (code && findSchoolByCode(db, code)) {
+      throw new RegistrationConflictError('school_code', 'a school with this code is already registered');
+    }
+    if (findSchoolByName(db, school.name, school.county ?? null)) {
+      throw new RegistrationConflictError('school_name', 'a school with this name is already registered in this county');
+    }
+
+    const schoolId = `school-${randomUUID()}`;
+    db.prepare(
+      `INSERT INTO schools (school_id, name, county, sub_county, school_code, school_type, boarding,
+                            student_estimate, status, admin_name, admin_email, admin_phone)
+       VALUES (@schoolId, @name, @county, @subCounty, @code, @schoolType, @boarding,
+               @studentEstimate, 'pending', @adminName, @adminEmail, @adminPhone)`
+    ).run({
+      schoolId,
+      name: school.name.trim(),
+      county: school.county?.trim() || null,
+      subCounty: school.subCounty?.trim() || null,
+      code,
+      schoolType: school.schoolType ?? null,
+      boarding: school.boarding ?? null,
+      studentEstimate: school.studentEstimate ?? null,
+      adminName: applicant.fullName.trim(),
+      adminEmail: email,
+      adminPhone: applicant.phone?.trim() || null,
+    });
+
+    const user = createUser(db, {
+      email,
+      fullName: applicant.fullName,
+      phone: applicant.phone,
+      jobTitle: applicant.jobTitle,
+      role: 'admin',
+      schoolId,
+      passwordHash: applicant.passwordHash,
+    });
+
+    logAudit(db, {
+      action: 'school.registered',
+      actorId: email,
+      recordId: schoolId,
+      detail: { name: school.name, county: school.county ?? null, schoolCode: code },
+    });
+    return { school: getSchool(db, schoolId), user };
+  })();
+}
+
+// School staff accounts. Password hashes never leave this file except to the
+// sign-in check (findUserForSignIn).
+
+const USER_COLUMNS = `u.user_id AS userId, u.email, u.full_name AS fullName, u.phone,
+  u.job_title AS jobTitle, u.role, u.school_id AS schoolId, u.status,
+  u.created_at AS createdAt, u.last_sign_in_at AS lastSignInAt`;
+
+export function createUser(db, { email, fullName, phone = null, jobTitle = null, role, schoolId, passwordHash = null, status = 'active' }) {
+  const userId = `user-${randomUUID()}`;
   db.prepare(
-    `INSERT INTO schools (school_id, name, county, status, admin_name, admin_email, admin_phone)
-     VALUES (@schoolId, @name, @county, 'pending', @adminName, @adminEmail, @adminPhone)`
+    `INSERT INTO users (user_id, email, full_name, phone, job_title, role, school_id, password_hash, status)
+     VALUES (@userId, @email, @fullName, @phone, @jobTitle, @role, @schoolId, @passwordHash, @status)`
   ).run({
+    userId,
+    email: email.trim().toLowerCase(),
+    fullName: fullName.trim(),
+    phone: phone?.trim() || null,
+    jobTitle: jobTitle?.trim() || null,
+    role,
     schoolId,
-    name: name.trim(),
-    county: county?.trim() || null,
-    adminName: adminName.trim(),
-    adminEmail: adminEmail.trim().toLowerCase(),
-    adminPhone: adminPhone?.trim() || null,
+    passwordHash,
+    status,
   });
-  logAudit(db, { action: 'school.registered', actorId: adminEmail, recordId: schoolId, detail: { name, county } });
-  return getSchool(db, schoolId);
+  return getUser(db, userId);
+}
+
+export function getUser(db, userId) {
+  return db.prepare(`SELECT ${USER_COLUMNS} FROM users u WHERE u.user_id = ?`).get(userId) ?? null;
+}
+
+export function findUserByEmail(db, email) {
+  return db.prepare(`SELECT ${USER_COLUMNS} FROM users u WHERE u.email = trim(?)`).get(String(email)) ?? null;
+}
+
+/** The user plus their password hash, for checking a sign-in only. */
+export function findUserForSignIn(db, email) {
+  return (
+    db
+      .prepare(`SELECT ${USER_COLUMNS}, u.password_hash AS passwordHash FROM users u WHERE u.email = trim(?)`)
+      .get(String(email)) ?? null
+  );
+}
+
+export function recordSignIn(db, userId) {
+  db.prepare(`UPDATE users SET last_sign_in_at = datetime('now') WHERE user_id = ?`).run(userId);
+}
+
+export function getUsersForSchool(db, schoolId) {
+  return db.prepare(`SELECT ${USER_COLUMNS} FROM users u WHERE u.school_id = ? ORDER BY u.role, u.full_name`).all(schoolId);
+}
+
+/** Which school a class or student belongs to, or null when it is unknown. */
+export function schoolIdOf(db, { classGroupId, studentId } = {}) {
+  if (classGroupId) {
+    return db.prepare(`SELECT school_id AS schoolId FROM class_groups WHERE class_group_id = ?`).get(classGroupId)?.schoolId ?? null;
+  }
+  if (studentId) {
+    return (
+      db
+        .prepare(`SELECT c.school_id AS schoolId FROM students st
+                   JOIN class_groups c ON c.class_group_id = st.class_group_id WHERE st.student_id = ?`)
+        .get(studentId)?.schoolId ?? null
+    );
+  }
+  return null;
 }
 
 export function getSchool(db, schoolId) {
