@@ -4,7 +4,7 @@
  * the token the server returned.
  */
 
-import { loadStoredSession } from '../auth/cognito';
+import { loadStoredSession } from '../auth/session';
 
 export class SystemAdminError extends Error {
   constructor(code, message) {

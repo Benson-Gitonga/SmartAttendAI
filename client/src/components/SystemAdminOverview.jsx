@@ -98,10 +98,20 @@ const initials = (name = '') => {
   return (source.length > 1 ? source[0][0] + source[1][0] : (source[0] ?? '?').slice(0, 2)).toUpperCase();
 };
 
+const BOARDING = { day: 'Day', boarding: 'Boarding', mixed: 'Day and boarding' };
+const TYPE = { public: 'Public', private: 'Private' };
+
+/** "Public · Day and boarding · about 640 students", from whatever the school gave. */
+const profileLine = (s) => [
+  TYPE[s.schoolType],
+  BOARDING[s.boarding],
+  s.studentEstimate ? `about ${s.studentEstimate.toLocaleString('en-KE')} students` : null,
+].filter(Boolean).join(' · ');
+
 const matches = (school, query) => {
   if (!query) return true;
   const q = query.toLowerCase();
-  return [school.name, school.county, school.adminName, school.adminEmail]
+  return [school.name, school.county, school.subCounty, school.schoolCode, school.adminName, school.adminEmail]
     .some((v) => v && v.toLowerCase().includes(q));
 };
 
@@ -346,13 +356,23 @@ function SchoolCard({ school: s, onAction }) {
         <div className="sa-card__id">
           <h3 className="sa-card__name">{s.name}</h3>
           <p className="sa-card__place">
-            <MapPinIcon size={13} /> {s.county ? `${s.county} County` : 'No county given'}
+            <MapPinIcon size={13} /> {[s.subCounty, s.county ? `${s.county} County` : null].filter(Boolean).join(', ') || 'No county given'}
           </p>
         </div>
         <span className={`sa-badge sa-badge--${s.status}`}><span className="sa-badge__dot" />{label}</span>
       </header>
 
       <dl className="sa-card__facts">
+        {(s.schoolCode || profileLine(s)) && (
+          <div>
+            <dt><BuildingIcon size={14} /> School</dt>
+            <dd>
+              {s.schoolCode && <span className="sa-card__code">Code {s.schoolCode}</span>}
+              {s.schoolCode && profileLine(s) && ' · '}
+              {profileLine(s)}
+            </dd>
+          </div>
+        )}
         <div>
           <dt><UserIcon size={14} /> Admin</dt>
           <dd>{s.adminName || 'Not recorded'}</dd>

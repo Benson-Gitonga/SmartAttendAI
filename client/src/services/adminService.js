@@ -1,7 +1,9 @@
 /** Fetch wrappers for server/src/routes/admin.js. Admin data is always fetched live. */
 
+import { authHeaders } from '../auth/session';
+
 async function getJson(path) {
-  const res = await fetch(path);
+  const res = await fetch(path, { headers: await authHeaders() });
   if (!res.ok) throw new Error(`${path} responded ${res.status}`);
   return res.json();
 }

@@ -30,30 +30,33 @@ Chosen at sign-up (`components/LoginScreen.jsx`), stored on the session:
 | Role | Screen(s) | What they see |
 |---|---|---|
 | `teacher` | Attendance / Heatmap / Alerts / Student Profile | Their own class(es), full attendance editing |
-| `admin` (school admin) | Overview + read-only class drill-down | Every class/teacher in their school, cross-class flagged students, follow-up logging (`components/AdminOverview.jsx`). Sign-up registers their school, and they wait on `components/SchoolStatusGate.jsx` until a system admin approves it |
+| `admin` (school admin) | Overview + read-only class drill-down | Every class/teacher in their school, cross-class flagged students, follow-up logging (`components/AdminOverview.jsx`). Created by "Register your school", the school's application; they wait on `components/SchoolStatusGate.jsx` until a system admin approves it |
 | `system_admin` | System Admin | Every school on the platform: approve or reject new ones, disable or enable approved ones, with a confirmation for each (`components/SystemAdminOverview.jsx`). Not a sign-up option: there is one account, set on the server (`npm run sysadmin:set` in `server/`). Its username (no `@`) goes in the normal sign-in, and the PWA checks it with the server instead of on the device. The server's token is what grants access; skips class setup and the offline PIN, and an expired sign-in goes back to the sign-in screen |
 
-## Configuration
+## Sign-in
 
-No `.env` is required for local development (see **Local authentication
-mode** below). Two optional Vite env vars switch auth to real AWS Cognito:
+Accounts live on the Tier 2 server (`server/src/auth/userAuth.js`), not on the
+device, so no `.env` is needed here. `auth/session.js`:
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `VITE_COGNITO_USER_POOL_ID` | *(unset)* | Cognito user pool ID |
-| `VITE_COGNITO_CLIENT_ID` | *(unset)* | Cognito app client ID |
-
-### Local authentication mode
-
-With neither Cognito variable set (the default), `auth/cognito.js` creates a
-device-local session for any email and password, with no credential check.
-Sign-up stores a display name, role and (for `admin`) a school name in
-IndexedDB. See `../PROJECT_CONTEXT.md` for the plan to move to Cognito.
+- **Sign in** sends the email and password to `POST /api/auth/login`. The
+  server checks the password and returns a signed token (30 days) plus the
+  user and their school. Every API call sends it as `Authorization: Bearer`.
+  A name without an `@` is the system admin's and goes to
+  `/api/system-admin/login` instead.
+- **Register your school** sends `POST /api/schools/register`: the school's
+  details and the applicant, who becomes its admin and is signed in to wait.
+- The app locks itself on the device after an hour; the **offline PIN**
+  unlocks it without the network. That never extends the server token, so
+  the first sign-in on a device needs a connection.
+- Teachers do not sign up. Their school admin will invite them (next step).
+- Sessions from older builds that were never issued by the server are
+  dropped on load.
 
 ## What's in `src/`
 
-- `auth/`: `cognito.js` (local-mode/Cognito auth), `pin.js` (offline PIN,
-  hashed with `bcryptjs`), `AuthContext.jsx`
+- `auth/`: `session.js` (server sign-in, school application, the stored
+  session and `authHeaders()`), `pin.js` (offline PIN, hashed with
+  `bcryptjs`), `AuthContext.jsx`
 - `db/database.js`: the Dexie (IndexedDB) schema: classes, students, roster,
   attendance, `syncQueue`, `rosterSyncQueue`, `riskScores`, `followUps`
 - `components/`: screens: `AttendanceForm`, `Heatmap`, `Alerts`,
@@ -90,6 +93,6 @@ rule-based risk model, the heatmap grid, and both sync-queue drain services.
 - A configurable API base URL. `services/*.js` call relative paths
   (`/api/sync`, `/api/admin/...`), so the app must be served from the same
   origin as Tier 2 or behind a proxy that routes `/api` there.
-- Real Cognito-verified sign-in (see **Configuration** above)
+- Teacher invites and password resets (the school admin will manage these)
 - Risk scoring in a Web Worker (`lib/riskModel.js` has no React or Dexie
   dependencies, so it is ready for this)

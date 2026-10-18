@@ -1,31 +1,26 @@
 import { createContext, useContext, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  signIn as cognitoSignIn,
-  signUp as cognitoSignUp,
-  confirmSignUp as cognitoConfirmSignUp,
-  resendConfirmationCode as cognitoResendCode,
-  signOut as cognitoSignOut,
+  signIn as serverSignIn,
+  registerSchool as serverRegisterSchool,
+  signOut as clearSession,
   loadStoredSession,
   isSessionValid,
   extendSessionWithPin,
   expireSessionNow,
-  isCognitoConfigured,
-  saveSystemAdminSession
-} from './cognito';
+  saveSystemAdminSession,
+  updateStoredSchool,
+} from './session';
 import { loginSystemAdmin } from '../services/systemAdminService';
 import { verifyPin, setPin, hasPin, getPinStatus, clearLockout } from './pin';
-import { loadPendingSignup, savePendingSignup, clearPendingSignup } from './pendingSignup';
-import { AuthError } from './authErrors';
-import { registerSchool } from '../services/schoolService';
 
 const AuthContext = createContext(null);
 
-// Teacher and school admin accounts are emails; the system admin's is a plain name.
+// School staff sign in with an email; the system admin's name has no @.
 const isSystemAdminName = (username) => Boolean(username?.trim()) && !username.includes('@');
 
 /**
  *   signedOut: no session on the device.
- *   locked:    the session expired; the PIN unlocks it offline.
+ *   locked:    the app locked itself after an hour; the PIN unlocks it offline.
  *   ready:     signed in.
  */
 export const AUTH_STATUS = { LOADING: 'loading', SIGNED_OUT: 'signedOut', LOCKED: 'locked', READY: 'ready' };
@@ -49,7 +44,7 @@ export function AuthProvider({ children }) {
     // An expired system admin sign-in cannot be unlocked with a PIN: the
     // server's token has run out, so they sign in again.
     if (next.role === 'system_admin' && !isSessionValid(next)) {
-      await cognitoSignOut();
+      await clearSession();
       setSession(null);
       setStatus(AUTH_STATUS.SIGNED_OUT);
       return;
@@ -73,8 +68,8 @@ export function AuthProvider({ children }) {
   }, [applySession]);
 
   /**
-   * One sign-in for everyone. Teachers and school admins use their email; a
-   * name without an @ is the system admin's, which only the server can check.
+   * One sign-in for everyone, always checked by the server. School staff use
+   * their email; a name without an @ is the system admin's.
    */
   const signIn = useCallback(async (username, password) => {
     if (isSystemAdminName(username)) {
@@ -82,51 +77,26 @@ export function AuthProvider({ children }) {
       await applySession(next);
       return { session: next, pinEnrolled: false };
     }
-    const next = await cognitoSignIn(username, password);
-    // An online login outranks an offline lockout.
-    await clearLockout(username);
+    const next = await serverSignIn(username, password);
+    // A sign-in the server accepted outranks an offline PIN lockout.
+    await clearLockout(next.username);
     await applySession(next);
-    return { session: next, pinEnrolled: await hasPin(username) };
+    return { session: next, pinEnrolled: await hasPin(next.username) };
   }, [applySession]);
 
-  /**
-   * A school admin's sign-up also registers their school, which then waits for
-   * a system admin to approve it. The account is only created once the server
-   * has the school, so nobody ends up with an admin account and no school.
-   */
-  const signUp = useCallback(async ({ name, email, password, role, schoolName, county, phone }) => {
-    let schoolId = null;
-    if (role === 'admin') {
-      if (!name?.trim() || !email?.trim() || !password) {
-        throw new AuthError('INVALID_INPUT', 'Enter your name, email and a password');
-      }
-      if (password.length < 8) throw new AuthError('INVALID_INPUT', 'Password must be at least 8 characters');
-      if (!schoolName?.trim()) throw new AuthError('INVALID_INPUT', 'Enter the name of your school');
-      try {
-        const school = await registerSchool({
-          name: schoolName.trim(), county, adminName: name.trim(), adminEmail: email.trim(), adminPhone: phone,
-        });
-        schoolId = school.schoolId;
-      } catch (err) {
-        throw new AuthError('SCHOOL_REGISTRATION', err.message ?? 'Could not register the school');
-      }
-    }
-    const result = await cognitoSignUp({ name, email, password, role, schoolName, schoolId });
-    await clearLockout(email.trim());
-    if (!result.needsConfirmation) await applySession(result.session);
-    return result;
-  }, [applySession]);
-
-  const confirmSignUp = useCallback(async (username, code, password) => {
-    const next = await cognitoConfirmSignUp(username, code, password);
-    if (next) await applySession(next);
+  /** A school's application. The applicant is signed in as its admin while it waits. */
+  const registerSchool = useCallback(async (application) => {
+    const next = await serverRegisterSchool(application);
+    await clearLockout(next.username);
+    await applySession(next);
     return next;
   }, [applySession]);
 
-  const resendConfirmationCode = useCallback(
-    (username) => cognitoResendCode(username),
-    []
-  );
+  /** Keep the device's copy of the school's name and status up to date. */
+  const refreshSchool = useCallback(async (school) => {
+    const next = await updateStoredSchool(school);
+    if (next) setSession(next);
+  }, []);
 
   const unlockWithPin = useCallback(async (pin) => {
     if (!session) throw new Error('No session to unlock');
@@ -148,7 +118,7 @@ export function AuthProvider({ children }) {
   }, [session, refreshPinState]);
 
   const signOut = useCallback(async () => {
-    await cognitoSignOut();
+    await clearSession();
     setSession(null);
     setPinState({ enrolled: false, locked: false, attemptsRemaining: 3 });
     setStatus(AUTH_STATUS.SIGNED_OUT);
@@ -167,27 +137,23 @@ export function AuthProvider({ children }) {
       ? {
           username: session.username,
           displayName: session.displayName,
+          jobTitle: session.jobTitle ?? null,
           roles: session.roles ?? [],
           role: session.role ?? 'teacher',
           schoolId: session.schoolId ?? null,
           schoolName: session.schoolName ?? null,
+          schoolStatus: session.schoolStatus ?? null,
         }
       : null,
-    cognitoConfigured: isCognitoConfigured(),
     signIn,
-    signUp,
-    confirmSignUp,
-    resendConfirmationCode,
-    loadPendingSignup,
-    savePendingSignup,
-    clearPendingSignup,
+    registerSchool,
+    refreshSchool,
     signOut,
     unlockWithPin,
     enrolPin,
     simulateExpiry
   }), [
-    status, session, pinState, signIn, signUp, confirmSignUp,
-    resendConfirmationCode, signOut, unlockWithPin, enrolPin, simulateExpiry
+    status, session, pinState, signIn, registerSchool, refreshSchool, signOut, unlockWithPin, enrolPin, simulateExpiry
   ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

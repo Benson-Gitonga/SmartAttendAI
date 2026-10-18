@@ -116,7 +116,7 @@ teacher link with absence reasons, and the risk model inside both.
 
 Not done yet:
 
-- Login is local-only; the server's API has no authentication yet (AWS Cognito planned).
+- Teacher accounts: the server checks every sign-in now, but school admins cannot invite teachers yet (next step). The demo seed has a teacher account.
 - The cloud tier is written but not deployed.
 - The gate is simulated; real Raspberry Pi, RFID reader and fingerprint drivers are still to come.
 - Absence reasons are recorded but not yet used in the risk score (the fee and illness features are still 0).

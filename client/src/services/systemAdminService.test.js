@@ -1,6 +1,6 @@
 import { loginSystemAdmin, getAllSchools, approveSchool } from './systemAdminService';
 
-jest.mock('../auth/cognito', () => ({
+jest.mock('../auth/session', () => ({
   loadStoredSession: jest.fn().mockResolvedValue({ role: 'system_admin', token: 'signed.token' }),
 }));
 

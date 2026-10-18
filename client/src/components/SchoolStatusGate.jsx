@@ -2,61 +2,58 @@ import { useCallback, useEffect, useState } from 'react';
 import ConfirmDialog from './ConfirmDialog';
 import { useAuth } from '../auth/AuthContext';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
-import { getSchoolStatus } from '../services/schoolService';
-import { LOCAL_SCHOOL_ID } from '../db/database';
+import { getMyAccount } from '../services/accountService';
 import { CapIcon, AlertTriangleIcon, SyncIcon, LogOutIcon } from './icons';
 
-// While a school waits for approval, check again this often so the admin is
-// let in soon after the system admin approves it.
+// While a school is not active, check again this often so its staff are let
+// in soon after the system admin approves or enables it.
 const RECHECK_MS = 30_000;
 
-const cacheKey = (schoolId) => `smartattend:school-status:${schoolId}`;
-const readCached = (schoolId) => {
-  try { return JSON.parse(localStorage.getItem(cacheKey(schoolId))); } catch { return null; }
-};
-const writeCached = (schoolId, school) => {
-  try { localStorage.setItem(cacheKey(schoolId), JSON.stringify(school)); } catch { /* private mode */ }
-};
-
-/** Does this signed-in user belong to a registered school whose status matters? */
-const needsSchoolCheck = (user) =>
-  user?.role === 'admin' && Boolean(user.schoolId) && user.schoolId !== LOCAL_SCHOOL_ID;
+const STAFF_ROLES = ['admin', 'teacher'];
 
 /**
- * The registered school's status for a school admin: fetched from the server,
- * remembered on the device so an approved school still opens offline, and
- * re-checked while it is not active.
+ * The signed-in person's school, as the server sees it now. Starts from what
+ * the device remembers (so an approved school still opens offline), asks the
+ * server whenever online, and keeps asking while the school is not active.
  */
-function useSchoolStatus(schoolId) {
+function useSchoolStatus(enabled) {
+  const { user, refreshSchool, signOut } = useAuth();
   const online = useOnlineStatus();
-  const [school, setSchool] = useState(() => (schoolId ? readCached(schoolId) : null));
+  const [school, setSchool] = useState(() =>
+    user?.schoolStatus ? { schoolId: user.schoolId, name: user.schoolName, status: user.schoolStatus } : null
+  );
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState(null);
 
   const check = useCallback(async () => {
-    if (!schoolId) return;
+    if (!enabled) return;
     setChecking(true);
     try {
-      const fresh = await getSchoolStatus(schoolId);
-      const next = fresh ?? { schoolId, status: 'missing' };
+      const account = await getMyAccount();
+      const next = account.school ?? { status: 'missing' };
       setSchool(next);
-      writeCached(schoolId, next);
       setError(null);
+      await refreshSchool(next);
     } catch (err) {
+      // Disabled or signed out on the server: the token is no good any more.
+      if (err.code === 'UNAUTHORIZED') {
+        signOut();
+        return;
+      }
       setError(err.message ?? 'Could not reach the server');
     } finally {
       setChecking(false);
     }
-  }, [schoolId]);
+  }, [enabled, refreshSchool, signOut]);
 
   useEffect(() => { if (online) check(); }, [check, online]);
 
   const active = school?.status === 'active';
   useEffect(() => {
-    if (active || !online) return undefined;
+    if (!enabled || active || !online) return undefined;
     const timer = setInterval(check, RECHECK_MS);
     return () => clearInterval(timer);
-  }, [active, online, check]);
+  }, [enabled, active, online, check]);
 
   return { school, checking, error, online, check };
 }
@@ -64,7 +61,7 @@ function useSchoolStatus(schoolId) {
 const COPY = {
   pending: {
     title: 'Your school is waiting for approval',
-    text: 'The SmartAttend team reviews every new school before it goes live. This page opens your dashboard by itself once the school is approved.',
+    text: 'The SmartAttend team reviews every new school before it goes live. This page opens the app by itself once the school is approved.',
   },
   rejected: {
     title: 'Your school registration was not approved',
@@ -84,11 +81,11 @@ const COPY = {
   },
 };
 
-/** Shows the dashboard to a school admin only once their school is active. */
+/** Lets school staff into the app only once their school is active. */
 export default function SchoolStatusGate({ children }) {
   const { user, signOut } = useAuth();
-  const checkNeeded = needsSchoolCheck(user);
-  const { school, checking, error, online, check } = useSchoolStatus(checkNeeded ? user.schoolId : null);
+  const checkNeeded = STAFF_ROLES.includes(user?.role);
+  const { school, checking, error, online, check } = useSchoolStatus(checkNeeded);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
 
   if (!checkNeeded || school?.status === 'active') return children;

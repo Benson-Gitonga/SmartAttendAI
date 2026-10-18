@@ -5,6 +5,7 @@
  */
 
 import { db } from '../db/database';
+import { authHeaders } from '../auth/session';
 
 let inFlight = null;
 
@@ -33,7 +34,7 @@ async function runDrain({ fetchImpl = globalThis.fetch } = {}) {
     try {
       response = await fetchImpl(row.path, {
         method: row.method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify(row.body),
       });
     } catch (err) {
@@ -42,6 +43,20 @@ async function runDrain({ fetchImpl = globalThis.fetch } = {}) {
       });
       summary.failed += 1;
       break; // probably offline
+    }
+
+    // Refused for good: it belongs to a school this account is not in (left
+    // over from before sign-in moved to the server). Setting it aside keeps it
+    // from blocking everything queued after it.
+    if (response.status === 403) {
+      const body = await response.json().catch(() => ({}));
+      if (body.error === 'that belongs to another school') {
+        await db.rosterSyncQueue.update(row.id, {
+          status: 'rejected', attemptCount: (row.attemptCount ?? 0) + 1, lastError: body.error,
+        });
+        summary.failed += 1;
+        continue;
+      }
     }
 
     if (!response.ok) {

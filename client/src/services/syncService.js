@@ -4,6 +4,7 @@
  */
 
 import { db } from '../db/database';
+import { authHeaders } from '../auth/session';
 
 export const SYNC_ENDPOINT = '/api/sync';
 
@@ -166,7 +167,7 @@ async function runDrain({
     try {
       response = await fetchImpl(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify(body),
       });
     } catch (err) {
