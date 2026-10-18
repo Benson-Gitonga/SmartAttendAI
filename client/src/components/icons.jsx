@@ -203,3 +203,47 @@ export const ChevronRightIcon = (p) => (
     <path d="m9 18 6-6-6-6" />
   </Svg>
 );
+
+export const ShieldIcon = (p) => (
+  <Svg {...p}>
+    <path d="M12 3 4.5 6v5.5c0 4.5 3.2 8.2 7.5 9.5 4.3-1.3 7.5-5 7.5-9.5V6L12 3Z" />
+    <path d="m9 12 2 2 4-4" />
+  </Svg>
+);
+
+export const BuildingIcon = (p) => (
+  <Svg {...p}>
+    <path d="M4 21V8l8-5 8 5v13" />
+    <path d="M9 21v-5h6v5" />
+    <path d="M3 21h18" />
+    <path d="M9 10h.01M15 10h.01M12 10h.01" />
+  </Svg>
+);
+
+export const ClockIcon = (p) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  </Svg>
+);
+
+export const XCircleIcon = (p) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="m9 9 6 6M15 9l-6 6" />
+  </Svg>
+);
+
+export const PowerIcon = (p) => (
+  <Svg {...p}>
+    <path d="M12 3v8" />
+    <path d="M6.3 6.8a8 8 0 1 0 11.4 0" />
+  </Svg>
+);
+
+export const MapPinIcon = (p) => (
+  <Svg {...p}>
+    <path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z" />
+    <circle cx="12" cy="10" r="2.3" />
+  </Svg>
+);

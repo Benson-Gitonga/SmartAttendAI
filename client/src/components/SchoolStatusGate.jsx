@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import ConfirmDialog from './ConfirmDialog';
 import { useAuth } from '../auth/AuthContext';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { getSchoolStatus } from '../services/schoolService';
@@ -88,6 +89,7 @@ export default function SchoolStatusGate({ children }) {
   const { user, signOut } = useAuth();
   const checkNeeded = needsSchoolCheck(user);
   const { school, checking, error, online, check } = useSchoolStatus(checkNeeded ? user.schoolId : null);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
 
   if (!checkNeeded || school?.status === 'active') return children;
 
@@ -116,11 +118,23 @@ export default function SchoolStatusGate({ children }) {
               <SyncIcon size={16} /> {checking ? 'Checking…' : 'Check again'}
             </button>
           )}
-          <button type="button" className="btn btn--ghost" onClick={signOut}>
+          <button type="button" className="btn btn--ghost" onClick={() => setConfirmSignOut(true)}>
             <LogOutIcon size={16} /> Sign out
           </button>
         </div>
       </div>
+
+      {confirmSignOut && (
+        <ConfirmDialog
+          tone="danger"
+          Icon={LogOutIcon}
+          title="Are you sure you want to sign out?"
+          body="You can sign back in at any time to check whether your school has been approved."
+          confirmLabel="Yes, sign out"
+          onCancel={() => setConfirmSignOut(false)}
+          onConfirm={() => { setConfirmSignOut(false); signOut(); }}
+        />
+      )}
     </div>
   );
 }

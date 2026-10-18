@@ -69,11 +69,11 @@ describe('SystemAdminOverview', () => {
     await screen.findByText(KISUMU.name);
     await user.click(within(card(KISUMU.name)).getByRole('button', { name: 'Approve' }));
     const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByText(`Approve ${KISUMU.name}?`)).toBeInTheDocument();
+    expect(within(dialog).getByText(`Are you sure you want to approve ${KISUMU.name}?`)).toBeInTheDocument();
     expect(service.approveSchool).not.toHaveBeenCalled();
 
     service.getAllSchools.mockResolvedValue(listing([{ ...KISUMU, status: 'active' }, KIBERA, MOI]));
-    await user.click(within(dialog).getByRole('button', { name: 'Approve' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Yes, approve' }));
 
     expect(service.approveSchool).toHaveBeenCalledWith('school-1', { note: '' });
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
@@ -98,7 +98,7 @@ describe('SystemAdminOverview', () => {
     await user.click(within(card(KISUMU.name)).getByRole('button', { name: 'Reject' }));
 
     const dialog = screen.getByRole('dialog');
-    const confirm = within(dialog).getByRole('button', { name: 'Reject' });
+    const confirm = within(dialog).getByRole('button', { name: 'Yes, reject' });
     expect(confirm).toBeDisabled();
 
     await user.type(within(dialog).getByLabelText('Reason for rejecting'), 'Not on the ministry register');
@@ -128,7 +128,7 @@ describe('SystemAdminOverview', () => {
     await screen.findByText(KISUMU.name);
     await user.click(screen.getByRole('tab', { name: /Active/ }));
     await user.click(within(card(KIBERA.name)).getByRole('button', { name: 'Disable' }));
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Disable' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Yes, disable' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent('changed since the list loaded');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -142,6 +142,51 @@ describe('SystemAdminOverview', () => {
     await user.type(screen.getByLabelText('Search schools'), 'uasin');
     expect(screen.getByText(MOI.name)).toBeInTheDocument();
     expect(screen.queryByText(KIBERA.name)).not.toBeInTheDocument();
+  });
+
+  it('asks before disabling a school, with a red confirm button', async () => {
+    const user = userEvent.setup();
+    service.disableSchool.mockResolvedValue({ ...KIBERA, status: 'inactive' });
+    render(<SystemAdminOverview />);
+    await screen.findByText(KISUMU.name);
+    await user.click(screen.getByRole('tab', { name: /Active/ }));
+
+    const disable = within(card(KIBERA.name)).getByRole('button', { name: 'Disable' });
+    expect(disable).toHaveClass('sa-btn--danger');
+    await user.click(disable);
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText(`Are you sure you want to disable ${KIBERA.name}?`)).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Yes, disable' })).toHaveClass('sa-btn--danger');
+    expect(service.disableSchool).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Yes, disable' }));
+    expect(service.disableSchool).toHaveBeenCalledWith('school-2', { note: '' });
+  });
+
+  it('asks before signing out, and stays signed in on cancel', async () => {
+    const user = userEvent.setup();
+    render(<SystemAdminOverview />);
+    await screen.findByText(KISUMU.name);
+
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+    expect(screen.getByText('Are you sure you want to sign out?')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(mockSignOut).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Sign out' }));
+    await user.click(screen.getByRole('button', { name: 'Yes, sign out' }));
+    expect(mockSignOut).toHaveBeenCalled();
+  });
+
+  it('Escape closes the dialog without doing anything', async () => {
+    const user = userEvent.setup();
+    render(<SystemAdminOverview />);
+    await screen.findByText(KISUMU.name);
+    await user.click(within(card(KISUMU.name)).getByRole('button', { name: 'Approve' }));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(service.approveSchool).not.toHaveBeenCalled();
   });
 
   it('signs out when the server says the sign-in has ended', async () => {

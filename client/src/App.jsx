@@ -20,6 +20,8 @@ import SchoolStatusGate from './components/SchoolStatusGate';
 import TopBar from './components/TopBar';
 import AccountSheet from './components/AccountSheet';
 import Toaster from './components/Toaster';
+import ConfirmDialog from './components/ConfirmDialog';
+import { LogOutIcon } from './components/icons';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { useHashRoute } from './hooks/useHashRoute';
 import {
@@ -53,6 +55,7 @@ function TeacherApp() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [pending, setPending] = useState(0);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [pinSetupOpen, setPinSetupOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [studentNames, setStudentNames] = useState({});
@@ -264,13 +267,27 @@ function TeacherApp() {
           pinEnrolled={pinState.enrolled}
           onManagePin={() => { setSheetOpen(false); setPinSetupOpen(true); }}
           onManageRoster={role !== 'admin' ? () => { setSheetOpen(false); goTab('students'); } : undefined}
-          onSignOut={() => { setSheetOpen(false); signOut(); }}
+          onSignOut={() => { setSheetOpen(false); setConfirmSignOut(true); }}
           onSimulateExpiry={
             import.meta.env.DEV
               ? () => { setSheetOpen(false); simulateExpiry(); }
               : undefined
           }
           onClose={() => setSheetOpen(false)}
+        />
+      )}
+
+      {confirmSignOut && (
+        <ConfirmDialog
+          tone="danger"
+          Icon={LogOutIcon}
+          title="Are you sure you want to sign out?"
+          body={pending > 0
+            ? `${pending} attendance record${pending === 1 ? ' has' : 's have'} not reached the server yet. They stay on this device and sync after you sign back in.`
+            : 'You will need your email and password to sign back in. Your offline PIN will not open the app until then.'}
+          confirmLabel="Yes, sign out"
+          onCancel={() => setConfirmSignOut(false)}
+          onConfirm={() => { setConfirmSignOut(false); signOut(); }}
         />
       )}
     </div>

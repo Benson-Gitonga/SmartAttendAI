@@ -85,11 +85,13 @@ describe('SchoolStatusGate', () => {
     expect(screen.getByRole('button', { name: /Check again/ })).toBeDisabled();
   });
 
-  it('signs out from the waiting screen', async () => {
+  it('asks before signing out from the waiting screen', async () => {
     const user = userEvent.setup();
     getSchoolStatus.mockResolvedValue(school('pending'));
     renderGate();
     await user.click(await screen.findByRole('button', { name: /Sign out/ }));
+    expect(auth.signOut).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Yes, sign out' }));
     expect(auth.signOut).toHaveBeenCalled();
   });
 });
