@@ -62,8 +62,12 @@ function sessionFromCognito(cognitoSession, username) {
   };
 }
 
-/** @param {'teacher'|'admin'|'system_admin'} role */
-function localSession(username, displayName, role = 'teacher', schoolName = null, now = Date.now()) {
+/**
+ * @param {'teacher'|'admin'|'system_admin'} role
+ * @param {string|null} schoolId a school admin's registered school; everyone
+ *   else shares the single local school.
+ */
+function localSession(username, displayName, role = 'teacher', schoolName = null, schoolId = null, now = Date.now()) {
   return {
     key: SESSION_KEY,
     mode: 'local',
@@ -71,8 +75,7 @@ function localSession(username, displayName, role = 'teacher', schoolName = null
     displayName: displayName || username,
     roles: [role],
     role,
-    // Local mode is single-school.
-    schoolId: LOCAL_SCHOOL_ID,
+    schoolId: schoolId || LOCAL_SCHOOL_ID,
     schoolName: schoolName || null,
     idToken: null,
     refreshToken: null,
@@ -84,13 +87,14 @@ function localSession(username, displayName, role = 'teacher', schoolName = null
 // Local-mode profiles (name, role, school) keyed by email. No passwords are stored.
 const accountKey = (email) => `account:${String(email).trim().toLowerCase()}`;
 
-async function saveLocalAccount(email, displayName, role = 'teacher', schoolName = null) {
+async function saveLocalAccount(email, displayName, role = 'teacher', schoolName = null, schoolId = null) {
   await db.authState.put({
     key: accountKey(email),
     email: String(email).trim().toLowerCase(),
     displayName,
     role,
     schoolName,
+    schoolId,
     createdAt: new Date().toISOString()
   });
 }
@@ -119,7 +123,7 @@ export async function signIn(username, password) {
   const pool = userPool();
   if (!pool) {
     const account = await loadLocalAccount(username);
-    return persist(localSession(username, account?.displayName, account?.role, account?.schoolName));
+    return persist(localSession(username, account?.displayName, account?.role, account?.schoolName, account?.schoolId));
   }
 
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
@@ -146,9 +150,10 @@ export async function signIn(username, password) {
  * passed to confirmSignUp(), and remembers the email on the device until then.
  *
  * @param {'teacher'|'admin'|'system_admin'} [role] local mode only
+ * @param {string|null} [schoolId] the school a school admin just registered
  * @throws {AuthError} INVALID_INPUT | NETWORK | ACCOUNT_EXISTS | SIGNUP_FAILED
  */
-export async function signUp({ name, email, password, role = 'teacher', schoolName = null }) {
+export async function signUp({ name, email, password, role = 'teacher', schoolName = null, schoolId = null }) {
   const displayName = name?.trim();
   const username = email?.trim();
 
@@ -161,8 +166,8 @@ export async function signUp({ name, email, password, role = 'teacher', schoolNa
 
   const pool = userPool();
   if (!pool) {
-    await saveLocalAccount(username, displayName, role, schoolName);
-    const session = await persist(localSession(username, displayName, role, schoolName));
+    await saveLocalAccount(username, displayName, role, schoolName, schoolId);
+    const session = await persist(localSession(username, displayName, role, schoolName, schoolId));
     return { needsConfirmation: false, session };
   }
 

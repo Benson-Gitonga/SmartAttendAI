@@ -13,6 +13,8 @@ import {
 } from './cognito';
 import { verifyPin, setPin, hasPin, getPinStatus, clearLockout } from './pin';
 import { loadPendingSignup, savePendingSignup, clearPendingSignup } from './pendingSignup';
+import { AuthError } from './authErrors';
+import { registerSchool } from '../services/schoolService';
 
 const AuthContext = createContext(null);
 
@@ -65,8 +67,29 @@ export function AuthProvider({ children }) {
     return { session: next, pinEnrolled: await hasPin(username) };
   }, [applySession]);
 
-  const signUp = useCallback(async ({ name, email, password, role, schoolName }) => {
-    const result = await cognitoSignUp({ name, email, password, role, schoolName });
+  /**
+   * A school admin's sign-up also registers their school, which then waits for
+   * a system admin to approve it. The account is only created once the server
+   * has the school, so nobody ends up with an admin account and no school.
+   */
+  const signUp = useCallback(async ({ name, email, password, role, schoolName, county, phone }) => {
+    let schoolId = null;
+    if (role === 'admin') {
+      if (!name?.trim() || !email?.trim() || !password) {
+        throw new AuthError('INVALID_INPUT', 'Enter your name, email and a password');
+      }
+      if (password.length < 8) throw new AuthError('INVALID_INPUT', 'Password must be at least 8 characters');
+      if (!schoolName?.trim()) throw new AuthError('INVALID_INPUT', 'Enter the name of your school');
+      try {
+        const school = await registerSchool({
+          name: schoolName.trim(), county, adminName: name.trim(), adminEmail: email.trim(), adminPhone: phone,
+        });
+        schoolId = school.schoolId;
+      } catch (err) {
+        throw new AuthError('SCHOOL_REGISTRATION', err.message ?? 'Could not register the school');
+      }
+    }
+    const result = await cognitoSignUp({ name, email, password, role, schoolName, schoolId });
     await clearLockout(email.trim());
     if (!result.needsConfirmation) await applySession(result.session);
     return result;

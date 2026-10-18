@@ -87,3 +87,92 @@ describe('LoginScreen email verification', () => {
     expect(auth.loadPendingSignup).not.toHaveBeenCalled();
   });
 });
+
+describe('LoginScreen school admin sign-up', () => {
+  async function openAdminSignUp(user) {
+    auth.cognitoConfigured = false;
+    render(<LoginScreen />);
+    await user.click(screen.getByRole('button', { name: 'Create an account' }));
+    await user.click(screen.getByRole('radio', { name: /School admin/ }));
+  }
+
+  async function fillAccount(user) {
+    await user.type(screen.getByLabelText('Full name'), 'Grace Achieng');
+    await user.type(screen.getByLabelText('Email address'), 'g.achieng@kisumuday.ac.ke');
+    await user.type(screen.getByLabelText('Password'), 'password123');
+    await user.type(screen.getByLabelText('Confirm password'), 'password123');
+  }
+
+  it('only asks for school details when signing up as a school admin', async () => {
+    const user = userEvent.setup();
+    auth.cognitoConfigured = false;
+    render(<LoginScreen />);
+    await user.click(screen.getByRole('button', { name: 'Create an account' }));
+    expect(screen.queryByLabelText('School name')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('radio', { name: /School admin/ }));
+    expect(screen.getByLabelText('School name')).toBeRequired();
+    expect(screen.getByLabelText('County')).toBeRequired();
+    expect(screen.getByText(/reviewed by the SmartAttend team/)).toBeInTheDocument();
+  });
+
+  it('sends the school, county and a cleaned-up phone number with the sign-up', async () => {
+    const user = userEvent.setup();
+    auth.signUp.mockResolvedValue({ needsConfirmation: false });
+    await openAdminSignUp(user);
+    await user.type(screen.getByLabelText('School name'), 'Kisumu Day Secondary School');
+    await user.selectOptions(screen.getByLabelText('County'), 'Kisumu');
+    await user.type(screen.getByLabelText(/Phone/), '0712 345 678');
+    await fillAccount(user);
+    await user.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(auth.signUp).toHaveBeenCalledWith({
+      name: 'Grace Achieng',
+      email: 'g.achieng@kisumuday.ac.ke',
+      password: 'password123',
+      role: 'admin',
+      schoolName: 'Kisumu Day Secondary School',
+      county: 'Kisumu',
+      phone: '0712345678',
+    });
+  });
+
+  it('refuses a phone number that is not a Kenyan mobile', async () => {
+    const user = userEvent.setup();
+    await openAdminSignUp(user);
+    await user.type(screen.getByLabelText('School name'), 'Kisumu Day Secondary School');
+    await user.selectOptions(screen.getByLabelText('County'), 'Kisumu');
+    await user.type(screen.getByLabelText(/Phone/), '12345');
+    await fillAccount(user);
+    await user.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Kenyan mobile number');
+    expect(auth.signUp).not.toHaveBeenCalled();
+  });
+
+  it('shows why the school could not be registered', async () => {
+    const user = userEvent.setup();
+    auth.signUp.mockRejectedValue(authError('SCHOOL_REGISTRATION', 'This school is already registered.'));
+    await openAdminSignUp(user);
+    await user.type(screen.getByLabelText('School name'), 'Kisumu Day Secondary School');
+    await user.selectOptions(screen.getByLabelText('County'), 'Kisumu');
+    await fillAccount(user);
+    await user.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('This school is already registered.');
+  });
+
+  it('a teacher sign-up carries no school details', async () => {
+    const user = userEvent.setup();
+    auth.cognitoConfigured = false;
+    auth.signUp.mockResolvedValue({ needsConfirmation: false });
+    render(<LoginScreen />);
+    await user.click(screen.getByRole('button', { name: 'Create an account' }));
+    await fillAccount(user);
+    await user.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(auth.signUp).toHaveBeenCalledWith(expect.objectContaining({
+      role: 'teacher', schoolName: null, county: null, phone: null,
+    }));
+  });
+});

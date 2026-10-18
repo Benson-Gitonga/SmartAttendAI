@@ -30,8 +30,8 @@ Chosen at sign-up (`components/LoginScreen.jsx`), stored on the session:
 | Role | Screen(s) | What they see |
 |---|---|---|
 | `teacher` | Attendance / Heatmap / Alerts / Student Profile | Their own class(es), full attendance editing |
-| `admin` (school admin) | Overview + read-only class drill-down | Every class/teacher in their school, cross-class flagged students, follow-up logging (`components/AdminOverview.jsx`) |
-| `system_admin` | System Admin | Every school on the platform, activate/deactivate (`components/SystemAdminOverview.jsx`). Skips class setup and the offline PIN |
+| `admin` (school admin) | Overview + read-only class drill-down | Every class/teacher in their school, cross-class flagged students, follow-up logging (`components/AdminOverview.jsx`). Sign-up registers their school, and they wait on `components/SchoolStatusGate.jsx` until a system admin approves it |
+| `system_admin` | System Admin | Every school on the platform: approve or reject new ones, disable or enable approved ones, with a confirmation for each (`components/SystemAdminOverview.jsx`). Skips class setup and the offline PIN |
 
 ## Configuration
 

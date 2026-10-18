@@ -5,6 +5,10 @@ import {
   CapIcon, MailIcon, LockIcon, EyeIcon, EyeOffIcon, KeypadIcon, UserIcon,
   CheckCircleIcon, SyncIcon, BellIcon,
 } from './icons';
+import { COUNTIES_AZ } from '../lib/counties';
+
+// Same rule as the server's school registration schema.
+const KENYAN_PHONE = /^(\+254|0)[17]\d{8}$/;
 
 const FEATURES = [
   { Icon: CheckCircleIcon, title: 'One-tap class register', text: 'Everyone starts present. Untick who is absent and save.' },
@@ -32,6 +36,8 @@ export default function LoginScreen() {
   const [code, setCode] = useState('');
   const [role, setRole] = useState('teacher');
   const [schoolName, setSchoolName] = useState('');
+  const [county, setCounty] = useState('');
+  const [phone, setPhone] = useState('');
   const [reveal, setReveal] = useState(false);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -94,9 +100,22 @@ export default function LoginScreen() {
       setError('The two passwords do not match.');
       return;
     }
+    const cleanPhone = phone.replace(/[\s-]/g, '');
+    if (role === 'admin' && cleanPhone && !KENYAN_PHONE.test(cleanPhone)) {
+      setError('Enter a Kenyan mobile number like 0712 345 678, or leave the phone empty.');
+      return;
+    }
     setBusy(true);
     try {
-      const result = await signUp({ name, email, password, role, schoolName: schoolName.trim() || null });
+      const result = await signUp({
+        name,
+        email,
+        password,
+        role,
+        schoolName: role === 'admin' ? schoolName.trim() : null,
+        county: role === 'admin' ? county || null : null,
+        phone: role === 'admin' ? cleanPhone || null : null,
+      });
       if (result?.needsConfirmation) {
         switchView('confirm');
         setNotice(`We emailed a verification code to ${email.trim()}.`);
@@ -310,25 +329,64 @@ export default function LoginScreen() {
                 disabled={busy || blocked}
               >
                 <strong>System admin</strong>
-                <span>Activate or deactivate schools platform-wide</span>
+                <span>Approve new schools and enable or disable them</span>
               </button>
             </div>
           </div>
 
           {role === 'admin' && (
-            <div className="field">
-              <label className="field__label" htmlFor="su-school">School name <span style={{ fontWeight: 400 }}>(optional)</span></label>
-              <input
-                id="su-school"
-                className="field__input"
-                type="text"
-                autoComplete="organization"
-                placeholder="e.g. Kibera Secondary School"
-                value={schoolName}
-                onChange={(e) => setSchoolName(e.target.value)}
-                disabled={busy || blocked}
-              />
-            </div>
+            <fieldset className="field-group">
+              <legend className="field__label">Your school</legend>
+              <p className="field-group__hint">
+                Your school is reviewed by the SmartAttend team before it goes live. You can sign in
+                straight away and will see when it is approved.
+              </p>
+              <div className="field">
+                <label className="field__label" htmlFor="su-school">School name</label>
+                <input
+                  id="su-school"
+                  className="field__input"
+                  type="text"
+                  autoComplete="organization"
+                  placeholder="e.g. Kibera Secondary School"
+                  value={schoolName}
+                  onChange={(e) => setSchoolName(e.target.value)}
+                  disabled={busy || blocked}
+                  minLength={3}
+                  required
+                />
+              </div>
+              <div className="field-row">
+                <div className="field">
+                  <label className="field__label" htmlFor="su-county">County</label>
+                  <select
+                    id="su-county"
+                    className="field__input"
+                    value={county}
+                    onChange={(e) => setCounty(e.target.value)}
+                    disabled={busy || blocked}
+                    required
+                  >
+                    <option value="" disabled>Choose…</option>
+                    {COUNTIES_AZ.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="field__label" htmlFor="su-phone">Phone <span className="field__opt">(optional)</span></label>
+                  <input
+                    id="su-phone"
+                    className="field__input"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    placeholder="07XX XXX XXX"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    disabled={busy || blocked}
+                  />
+                </div>
+              </div>
+            </fieldset>
           )}
 
           <div className="field">

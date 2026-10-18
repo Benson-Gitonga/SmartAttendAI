@@ -16,6 +16,7 @@ import SideNav from './components/SideNav';
 import AdminOverview from './components/AdminOverview';
 import AdminClassDetail from './components/AdminClassDetail';
 import SystemAdminOverview from './components/SystemAdminOverview';
+import SchoolStatusGate from './components/SchoolStatusGate';
 import TopBar from './components/TopBar';
 import AccountSheet from './components/AccountSheet';
 import Toaster from './components/Toaster';
@@ -297,11 +298,15 @@ function AuthGate() {
   // System admins skip the PIN and class-setup gates.
   if (user?.role === 'system_admin') return <SystemAdminOverview />;
 
-  if (!pinState.enrolled && !pinSetupSkipped && !readPinSkipped(user)) {
-    return <PinSetup onDone={() => setPinSetupSkipped(true)} onSkip={skipPinSetup} />;
-  }
-
-  return <TeacherApp />;
+  // A school admin's registered school must be approved (and not disabled)
+  // before they get past this point.
+  return (
+    <SchoolStatusGate>
+      {!pinState.enrolled && !pinSetupSkipped && !readPinSkipped(user)
+        ? <PinSetup onDone={() => setPinSetupSkipped(true)} onSkip={skipPinSetup} />
+        : <TeacherApp />}
+    </SchoolStatusGate>
+  );
 }
 
 export default function App() {

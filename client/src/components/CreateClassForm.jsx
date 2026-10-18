@@ -30,6 +30,8 @@ export default function CreateClassForm({ onCreated, onCancel, submitLabel = 'Cr
         academicYear: Number(year) || undefined,
         teacherName: user?.displayName || user?.username || undefined,
         schoolName: user?.schoolName || undefined,
+        // A school admin's classes belong to the school they registered.
+        schoolId: user?.schoolId || undefined,
         ownerUsername: user?.username || undefined,
       });
       onCreated?.(cls);
