@@ -114,6 +114,15 @@ input  { font-family: inherit; }
 .class-row__tick { color: var(--indigo-600); font-weight: 800; }
 
 /* two fields side by side */
+.field-group {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px 2px;
+  margin: 0 0 14px;
+  background: var(--canvas);
+}
+.field-group legend { padding: 0 6px; margin-left: -6px; margin-bottom: 0; }
+.field-group__hint { font-size: 12px; color: var(--ink-muted); margin: 0 0 10px; line-height: 1.45; }
 .field-row { display: flex; gap: 10px; }
 .field-row .field { flex: 1; min-width: 0; }
 
@@ -1546,6 +1555,109 @@ div.followup-badge {
 .admin-table__meta { font-size: 12px; white-space: nowrap; }
 
 .admin-grid { display: flex; flex-direction: column; }
+
+/* ========================================================= system admin === */
+
+.school-stats { margin-top: 14px; }
+.stat-card--button {
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.stat-card--button:hover { border-color: var(--indigo-200); }
+.stat-card--button[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.stat-card--attention .stat-card__value { color: var(--risk-amber); }
+.stat-card--attention { background: var(--risk-amber-bg); border-color: #fcd34d; }
+
+.school-toolbar { display: flex; flex-direction: column; gap: 10px; margin: 16px 0 12px; }
+
+.school-list { display: flex; flex-direction: column; gap: 10px; }
+.school-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.school-card--pending  { border-left-color: var(--late); }
+.school-card--active   { border-left-color: var(--present); }
+.school-card--inactive { border-left-color: var(--absent); }
+.school-card--rejected { border-left-color: var(--ink-muted); opacity: 0.85; }
+.school-card__head { display: flex; align-items: flex-start; gap: 10px; }
+.school-card__id { flex: 1; min-width: 0; }
+.school-card__name { font-size: 15px; font-weight: 800; color: var(--ink); overflow-wrap: anywhere; }
+.school-card__meta { font-size: 12px; color: var(--ink-muted); }
+.school-card__label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-muted);
+}
+.school-card__admin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.school-card__admin a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--indigo-600);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.school-card__note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink-soft);
+  background: var(--canvas-in);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.school-card__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
+
+.field__input--area { min-height: 84px; padding-top: 10px; padding-bottom: 10px; resize: vertical; font: inherit; }
+.sheet__actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+
+/* A school admin whose school is not active yet. */
+.school-gate { max-width: 460px; text-align: center; }
+.school-gate__badge {
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 14px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--risk-amber-bg);
+  color: var(--risk-amber);
+}
+.school-gate--rejected .school-gate__badge,
+.school-gate--inactive .school-gate__badge { background: var(--absent-bg); color: var(--absent); }
+.school-gate__school { font-weight: 700; color: var(--ink); }
+.school-gate__note {
+  text-align: left;
+  font-size: 13px;
+  background: var(--canvas-in);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 12px 0 0;
+}
+.school-gate__actions { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+
+@media (min-width: 641px) {
+  .school-stats { grid-template-columns: repeat(4, 1fr); }
+  .school-toolbar { flex-direction: row; align-items: center; justify-content: space-between; }
+  .school-toolbar .search { width: 280px; }
+}
 
 /* ============================================================== side nav === */
 
