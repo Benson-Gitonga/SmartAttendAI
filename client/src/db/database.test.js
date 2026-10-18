@@ -28,6 +28,7 @@ import {
   getFollowUpsForStudent,
   getFollowUpSummary,
   applyGateRecords,
+  applyAssignedClasses,
 } from './database';
 
 const DATE = '2026-08-27';
@@ -629,5 +630,48 @@ describe("applyGateRecords - merging the gate server's records", () => {
     // the replaced mark will never be sent
     expect(await db.syncQueue.where('eventId').equals(local.eventId).count()).toBe(0);
     expect(await countPendingSync()).toBe(0);
+  });
+});
+
+describe('classes assigned by the school admin', () => {
+  const ASSIGNED = [{
+    classGroupId: 'class-srv-1', schoolId: 'school-1', grade: 'Form 2', stream: 'East', academicYear: 2026, teacherName: 'Ms. Otieno',
+    students: [
+      { studentId: 'stu-srv-1', fullName: 'Zawadi Njeri', admissionNo: '2E/001', active: true, cardUid: 'AABBCCDD' },
+      { studentId: 'stu-srv-2', fullName: 'Yusuf Ali', admissionNo: '2E/002', active: true, cardUid: null },
+    ],
+  }];
+
+  it('saves the classes and students on the device, without queueing anything back up', async () => {
+    const result = await applyAssignedClasses(ASSIGNED, 'otieno@school.ke');
+    expect(result).toEqual({ classes: 1, students: 2, removed: 0 });
+
+    const list = await getClasses({ ownerUsername: 'otieno@school.ke', assignedOnly: true });
+    expect(list.map((c) => c.name)).toEqual(['Form 2 East']);
+    expect((await getStudentsByClass('class-srv-1')).map((s) => s.fullName)).toEqual(['Yusuf Ali', 'Zawadi Njeri']);
+    expect(await db.rosterSyncQueue.count()).toBe(0);
+  });
+
+  it('only shows a teacher the classes assigned to them, never the demo class', async () => {
+    await db.classGroups.add({ classGroupId: 'class-demo-x', name: 'Demo', demo: true, active: true, createdAt: new Date().toISOString() });
+    await applyAssignedClasses(ASSIGNED, 'otieno@school.ke');
+    expect((await getClasses({ ownerUsername: 'someone@school.ke', assignedOnly: true }))).toEqual([]);
+    expect((await getClasses({ ownerUsername: 'otieno@school.ke', assignedOnly: true })).map((c) => c.classGroupId)).toEqual(['class-srv-1']);
+  });
+
+  it('archives a class that is no longer assigned, keeping its history', async () => {
+    await applyAssignedClasses(ASSIGNED, 'otieno@school.ke');
+    const result = await applyAssignedClasses([], 'otieno@school.ke');
+    expect(result.removed).toBe(1);
+    expect(await getClasses({ ownerUsername: 'otieno@school.ke', assignedOnly: true })).toEqual([]);
+    expect(await getStudentsByClass('class-srv-1')).toHaveLength(2);
+  });
+
+  it('updates a class and its students in place on the next download', async () => {
+    await applyAssignedClasses(ASSIGNED, 'otieno@school.ke');
+    await applyAssignedClasses([{ ...ASSIGNED[0], stream: 'West', students: [{ ...ASSIGNED[0].students[0], fullName: 'Zawadi N. Kamau' }] }], 'otieno@school.ke');
+    expect(await db.classGroups.where('classGroupId').equals('class-srv-1').count()).toBe(1);
+    expect((await getClassById('class-srv-1')).name).toBe('Form 2 West');
+    expect((await db.students.where('studentId').equals('stu-srv-1').first()).fullName).toBe('Zawadi N. Kamau');
   });
 });

@@ -29,8 +29,8 @@ Chosen at sign-up (`components/LoginScreen.jsx`), stored on the session:
 
 | Role | Screen(s) | What they see |
 |---|---|---|
-| `teacher` | Attendance / Heatmap / Alerts / Student Profile | Their own class(es), full attendance editing |
-| `admin` (school admin) | Overview + read-only class drill-down | Every class/teacher in their school, cross-class flagged students, follow-up logging (`components/AdminOverview.jsx`). Created by "Register your school", the school's application; they wait on `components/SchoolStatusGate.jsx` until a system admin approves it |
+| `teacher` | Attendance / Heatmap / Alerts / Student Profile | The classes the school admin assigned them, downloaded from the server on sign-in (`services/teacherService.js`) and kept on the device for offline use. Teachers do not create classes |
+| `admin` (school admin) | `components/admin/`: Today, Classes, Teachers, At-risk | Supervises the school, live from the server: the day's register for every class, creating classes and assigning teachers, taking or correcting any class's register on any day (a reason is required and every change is logged), school-wide at-risk students and follow-ups. Created by "Register your school", the school's application; they wait on `components/SchoolStatusGate.jsx` until a system admin approves it |
 | `system_admin` | System Admin | Every school on the platform: approve or reject new ones, disable or enable approved ones, with a confirmation for each (`components/SystemAdminOverview.jsx`). Not a sign-up option: there is one account, set on the server (`npm run sysadmin:set` in `server/`). Its username (no `@`) goes in the normal sign-in, and the PWA checks it with the server instead of on the device. The server's token is what grants access; skips class setup and the offline PIN, and an expired sign-in goes back to the sign-in screen |
 
 ## Sign-in

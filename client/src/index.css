@@ -1618,6 +1618,271 @@ div.followup-badge {
 
 .admin-grid { display: flex; flex-direction: column; }
 
+/* =========================================================== school admin === */
+
+.ad-page { display: flex; flex-direction: column; gap: 14px; padding-bottom: 96px; }
+.ad-page .page-head { margin-bottom: 0; }
+.ad-hint { font-size: 13px; color: var(--ink-muted); margin: 0; }
+
+/* Today: totals strip */
+.ad-totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.ad-total {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.ad-total--hero { grid-column: 1 / -1; background: linear-gradient(135deg, #1e3a8a, #2563eb); color: #fff; border: none; }
+.ad-total__value { font-size: 26px; font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.ad-total__value small { font-size: 16px; font-weight: 700; opacity: 0.7; }
+.ad-total__label { font-size: 12.5px; color: var(--ink-muted); }
+.ad-total--hero .ad-total__label { color: rgba(255, 255, 255, 0.8); }
+.ad-total--ok .ad-total__value { color: var(--present); }
+.ad-total--bad .ad-total__value { color: var(--absent); }
+.ad-total--warn .ad-total__value { color: var(--late); }
+.ad-meter { display: block; height: 6px; margin-top: 8px; border-radius: 999px; background: var(--canvas-in); overflow: hidden; }
+.ad-meter > span { display: block; height: 100%; border-radius: inherit; background: var(--present); transition: width 0.3s; }
+.ad-total--hero .ad-meter { background: rgba(255, 255, 255, 0.22); }
+.ad-total--hero .ad-meter > span { background: #fff; }
+
+.ad-filters { margin-top: 4px; }
+
+/* Today: one tile per class */
+.ad-board { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.ad-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.ad-tile:hover { box-shadow: 0 6px 20px rgba(15, 23, 42, 0.08); transform: translateY(-1px); }
+.ad-tile:focus-visible { outline: 2px solid var(--indigo-600); outline-offset: 2px; }
+.ad-tile--done { border-left-color: var(--present); }
+.ad-tile--partial { border-left-color: var(--late); }
+.ad-tile--missing { border-left-color: var(--absent); background: #fffafa; }
+.ad-tile--empty { border-left-color: var(--line); opacity: 0.8; }
+.ad-tile__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ad-tile__name { font-size: 16px; font-weight: 800; letter-spacing: -0.01em; }
+.ad-tile__teacher { font-size: 13px; color: var(--ink-soft); }
+.ad-tile__counts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12.5px; color: var(--ink-muted); }
+.ad-tile__absent { color: var(--absent); font-weight: 600; }
+.ad-tile__go { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 13px; font-weight: 700; color: var(--indigo-600); }
+.ad-status {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.ad-status--done { background: var(--present-bg); color: #15803d; }
+.ad-status--partial { background: var(--late-bg); color: #b45309; }
+.ad-status--missing { background: var(--absent-bg); color: #b91c1c; }
+.ad-status--empty { background: var(--canvas-in); color: var(--ink-muted); }
+
+.ad-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 36px 20px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px dashed #cfd6e4;
+  border-radius: 14px;
+}
+.ad-empty__icon {
+  width: 48px; height: 48px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 14px;
+  background: var(--indigo-tint);
+  color: var(--indigo-600);
+}
+.ad-empty__title { margin: 0; font-size: 15px; font-weight: 800; }
+.ad-empty__text { margin: 0 0 8px; font-size: 13.5px; color: var(--ink-muted); }
+
+/* Classes list */
+.ad-list { display: flex; flex-direction: column; gap: 8px; }
+.ad-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.ad-row__main {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 2px 0;
+  text-align: left; font: inherit; color: inherit;
+  background: none; border: 0; cursor: pointer;
+}
+.ad-row__name { font-size: 15px; font-weight: 700; }
+.ad-row__meta { font-size: 12.5px; color: var(--ink-muted); }
+.ad-row__teacher, .ad-teacher-pick {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 10px;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--canvas);
+  color: var(--ink-muted);
+}
+.ad-row__teacher select, .ad-teacher-pick select {
+  max-width: 180px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+}
+.ad-row__teacher select:focus, .ad-teacher-pick select:focus { outline: none; }
+.ad-row__teacher:focus-within, .ad-teacher-pick:focus-within { border-color: var(--indigo-600); box-shadow: 0 0 0 3px var(--indigo-100); }
+.ad-row__go {
+  width: 36px; height: 36px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: 10px;
+  background: none; color: var(--ink-muted); cursor: pointer;
+}
+.ad-row__go:hover { background: var(--canvas-in); color: var(--ink); }
+
+/* Class page: register summary and rows */
+.ad-register-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ad-chip { padding: 4px 10px; border-radius: 999px; font-size: 12.5px; font-weight: 700; }
+.ad-chip--present { background: var(--present-bg); color: #15803d; }
+.ad-chip--late { background: var(--late-bg); color: #b45309; }
+.ad-chip--absent { background: var(--absent-bg); color: #b91c1c; }
+.ad-chip--unmarked { background: var(--canvas-in); color: var(--ink-muted); }
+.ad-register-summary .btn { margin-left: auto; gap: 6px; }
+
+.ad-register { list-style: none; margin: 0; padding: 0; }
+.ad-mark {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line-soft);
+}
+.ad-mark--absent { box-shadow: inset 3px 0 0 var(--absent); }
+.ad-mark--late { box-shadow: inset 3px 0 0 var(--late); }
+.ad-mark--none { background: #fffdf5; }
+.ad-mark--edited { background: var(--indigo-tint); box-shadow: inset 3px 0 0 var(--indigo-600); }
+.ad-mark .student-cell { min-width: 0; flex: 1 1 140px; }
+.ad-mark__controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ad-src { margin-left: 8px; font-size: 11.5px; font-weight: 600; }
+.ad-src--gate { color: #0369a1; }
+.ad-src--teacher { color: var(--ink-muted); }
+.ad-src--admin { color: #7c3aed; }
+.ad-src--edited { color: var(--indigo-600); }
+.ad-src--none { color: #b45309; }
+
+.ad-seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 10px; background: var(--canvas-in); }
+.ad-seg__btn {
+  min-width: 40px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+.ad-seg__btn:hover { color: var(--ink); background: rgba(255, 255, 255, 0.6); }
+.ad-seg__btn:focus-visible { outline: 2px solid var(--indigo-600); outline-offset: 1px; }
+.ad-seg__btn--present[aria-pressed="true"] { background: var(--present); color: #fff; }
+.ad-seg__btn--late[aria-pressed="true"] { background: var(--late); color: #fff; }
+.ad-seg__btn--absent[aria-pressed="true"] { background: var(--absent); color: #fff; }
+.ad-seg__short { display: none; }
+
+/* Save dialog reasons */
+.ad-reasons { border: 0; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ad-reasons legend { margin-bottom: 8px; }
+.ad-reason {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.ad-reason:hover { background: var(--canvas); }
+.ad-reason--on { border-color: var(--indigo-600); background: var(--indigo-tint); }
+.ad-reason input { accent-color: var(--indigo-600); }
+.ad-dialog-row { margin-bottom: 12px; }
+.sa-field__input--line { min-height: 44px; resize: none; }
+
+/* Teachers */
+.ad-people { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+.ad-person {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+.ad-person--off { opacity: 0.6; }
+.ad-person__head { display: flex; align-items: center; gap: 12px; }
+.ad-person__id { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ad-person__name { font-size: 15px; font-weight: 800; }
+.ad-person__meta { font-size: 12.5px; color: var(--ink-muted); }
+.ad-person__contact { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
+.ad-person__contact a { display: inline-flex; align-items: center; gap: 4px; color: var(--indigo-600); text-decoration: none; overflow-wrap: anywhere; }
+.ad-person__classes { display: flex; flex-wrap: wrap; gap: 6px; }
+.ad-person__none { font-size: 13px; color: var(--ink-muted); }
+.ad-class-chip {
+  padding: 5px 11px;
+  border: 1px solid var(--indigo-200);
+  border-radius: 999px;
+  background: var(--indigo-tint);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--indigo-600);
+  cursor: pointer;
+}
+.ad-class-chip:hover { background: var(--indigo-100); }
+
+/* A teacher with no class yet */
+.ad-noclass { max-width: 440px; text-align: center; }
+.ad-noclass .auth__logo { margin: 0 auto 14px; }
+.ad-noclass__actions { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+.sheet__hint { margin: 12px 0 0; font-size: 12.5px; color: var(--ink-muted); text-align: center; }
+
+@media (max-width: 520px) {
+  .ad-seg__long { display: none; }
+  .ad-seg__short { display: inline; }
+  .ad-row { flex-wrap: wrap; }
+  .ad-row__teacher { order: 3; width: 100%; }
+  .ad-row__teacher select { max-width: none; flex: 1; }
+}
+@media (min-width: 641px) {
+  .ad-totals { grid-template-columns: 1.6fr repeat(4, minmax(0, 1fr)); }
+  .ad-total--hero { grid-column: auto; }
+  .ad-board { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ad-people { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1100px) {
+  .ad-board { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
 /* ========================================================= system admin === */
 
 .sa,

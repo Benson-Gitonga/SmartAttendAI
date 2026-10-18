@@ -4,7 +4,6 @@ import LoginScreen from './components/LoginScreen';
 import PinUnlock from './components/PinUnlock';
 import PinSetup from './components/PinSetup';
 import RosterManager from './components/RosterManager';
-import SetupWizard from './components/SetupWizard';
 import ClassSwitcher from './components/ClassSwitcher';
 import AttendanceForm from './components/AttendanceForm';
 import Heatmap from './components/Heatmap';
@@ -13,15 +12,14 @@ import Dashboard from './components/Dashboard';
 import StudentProfile from './components/StudentProfile';
 import BottomNav from './components/BottomNav';
 import SideNav from './components/SideNav';
-import AdminOverview from './components/AdminOverview';
-import AdminClassDetail from './components/AdminClassDetail';
+import AdminApp from './components/admin/AdminApp';
 import SystemAdminOverview from './components/SystemAdminOverview';
 import SchoolStatusGate from './components/SchoolStatusGate';
 import TopBar from './components/TopBar';
 import AccountSheet from './components/AccountSheet';
 import Toaster from './components/Toaster';
 import ConfirmDialog from './components/ConfirmDialog';
-import { LogOutIcon } from './components/icons';
+import { LogOutIcon, SyncIcon, RosterIcon } from './components/icons';
 import { useOnlineStatus } from './hooks/useOnlineStatus';
 import { useHashRoute } from './hooks/useHashRoute';
 import {
@@ -29,6 +27,7 @@ import {
 } from './db/database';
 import { isSchoolDay } from './lib/riskModel';
 import { requestBackgroundSync } from './services/syncService';
+import { syncAssignedClasses } from './services/teacherService';
 
 const TITLES = {
   dashboard: 'Dashboard',
@@ -36,7 +35,6 @@ const TITLES = {
   heatmap: 'Reports',
   alerts: 'At-risk Students',
   students: 'Students',
-  overview: 'School Overview',
 };
 
 const ACTIVE_CLASS_KEY = 'smartattend:activeClass';
@@ -62,13 +60,30 @@ function TeacherApp() {
   const [registerStatus, setRegisterStatus] = useState(null); // 'done' | 'due' | null
   const registerDirty = useRef(false);
   const setRegisterDirty = useCallback((dirty) => { registerDirty.current = dirty; }, []);
-  const role = user?.role ?? 'teacher';
+  const role = 'teacher';
 
   const [classes, setClasses] = useState(null); // null = still loading
   const [activeClassId, setActiveClassId] = useState(null);
 
+  // The school admin assigns classes; download them whenever online, then
+  // read them from the device so the app works offline.
+  const [classSync, setClassSync] = useState('idle'); // idle | syncing | done | offline | error
+  const username = user?.username;
+  const syncClasses = useCallback(async () => {
+    if (!username) return;
+    setClassSync('syncing');
+    const result = await syncAssignedClasses(username);
+    if (result.status === 'unauthorized') {
+      signOut();
+      return;
+    }
+    setClassSync(result.status === 'ok' ? 'done' : result.status);
+    setRefreshKey((k) => k + 1);
+  }, [username, signOut]);
+  useEffect(() => { if (online) syncClasses(); }, [online, syncClasses]);
+
   const loadClasses = useCallback(async () => {
-    const list = await getClasses({ ownerUsername: user?.username });
+    const list = await getClasses({ ownerUsername: user?.username, assignedOnly: true });
     setClasses(list);
     setActiveClassId((current) => {
       const stored = current ?? readActiveClass();
@@ -116,9 +131,7 @@ function TeacherApp() {
     requestBackgroundSync().catch(() => {});
   }, [bump]);
 
-  // Admins have no roster page; teachers have no school overview.
-  const allowed = (tab) => (tab === 'students' ? role !== 'admin' : tab === 'overview' ? role === 'admin' : true);
-  const tab = allowed(route.tab) ? route.tab : 'dashboard';
+  const tab = TITLES[route.tab] ? route.tab : 'dashboard';
 
   // Leaving the register with unsaved ticks asks first.
   const go = useCallback((next, opts) => {
@@ -146,7 +159,7 @@ function TeacherApp() {
   if (classes === null) return <div className="centered">Loading classes…</div>;
 
   if (classes.length === 0) {
-    return <SetupWizard onDone={(id) => { writeActiveClass(id); bump(); }} />;
+    return <NoClassesYet syncing={classSync === 'syncing' || classSync === 'idle'} offline={classSync === 'offline'} onRetry={syncClasses} onSignOut={signOut} />;
   }
 
   const activeClass = classes.find((c) => c.classGroupId === activeClassId) ?? classes[0];
@@ -176,9 +189,6 @@ function TeacherApp() {
       />
     );
     detail = studentNames[route.studentId] ?? 'Student';
-  } else if (tab === 'overview' && route.classId) {
-    body = <AdminClassDetail classGroupId={route.classId} />;
-    detail = 'Class';
   } else if (tab === 'dashboard') {
     body = (
       <Dashboard
@@ -190,8 +200,6 @@ function TeacherApp() {
         onOpenProfile={openProfile}
       />
     );
-  } else if (tab === 'overview') {
-    body = <AdminOverview onOpenClass={(id) => go({ tab: 'overview', classId: id })} />;
   } else if (tab === 'heatmap') {
     body = <Heatmap key={activeClassId} classGroupId={activeClassId} className={activeLabel} />;
   } else if (tab === 'alerts') {
@@ -266,7 +274,7 @@ function TeacherApp() {
           pinSession={Boolean(session?.pinVerified)}
           pinEnrolled={pinState.enrolled}
           onManagePin={() => { setSheetOpen(false); setPinSetupOpen(true); }}
-          onManageRoster={role !== 'admin' ? () => { setSheetOpen(false); goTab('students'); } : undefined}
+          onManageRoster={() => { setSheetOpen(false); goTab('students'); }}
           onSignOut={() => { setSheetOpen(false); setConfirmSignOut(true); }}
           onSimulateExpiry={
             import.meta.env.DEV
@@ -294,6 +302,29 @@ function TeacherApp() {
   );
 }
 
+/** A teacher with no class yet: the school admin assigns classes. */
+function NoClassesYet({ syncing, offline, onRetry, onSignOut }) {
+  return (
+    <div className="centered">
+      <div className="auth__card ad-noclass">
+        <div className="auth__logo"><RosterIcon size={24} /></div>
+        <h1 className="auth__brand">{syncing ? 'Getting your classes…' : 'No class assigned yet'}</h1>
+        <p className="auth__tagline">
+          {offline
+            ? 'You are offline. Connect once so SmartAttend can download the classes your school admin gave you.'
+            : 'Your school admin sets up the classes and chooses who teaches each one. Ask them to assign you a class, then check again.'}
+        </p>
+        <div className="ad-noclass__actions">
+          <button type="button" className="btn" onClick={onRetry} disabled={syncing}>
+            <SyncIcon size={16} /> {syncing ? 'Checking…' : 'Check again'}
+          </button>
+          <button type="button" className="btn btn--ghost" onClick={onSignOut}>Sign out</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // "Not now" on the PIN prompt is remembered per user so it does not reappear on every reload.
 const pinSkipKey = (user) => `smartattend:pin-skipped:${user?.username ?? ''}`;
 const readPinSkipped = (user) => {
@@ -315,13 +346,13 @@ function AuthGate() {
   // System admins skip the PIN and class-setup gates.
   if (user?.role === 'system_admin') return <SystemAdminOverview />;
 
-  // A school admin's registered school must be approved (and not disabled)
-  // before they get past this point.
+  // School staff get in once their school is approved (and not disabled).
+  // The school admin supervises the school; teachers run their classes.
   return (
     <SchoolStatusGate>
       {!pinState.enrolled && !pinSetupSkipped && !readPinSkipped(user)
         ? <PinSetup onDone={() => setPinSetupSkipped(true)} onSkip={skipPinSetup} />
-        : <TeacherApp />}
+        : user?.role === 'admin' ? <AdminApp /> : <TeacherApp />}
     </SchoolStatusGate>
   );
 }

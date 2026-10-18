@@ -9,6 +9,10 @@ const SLUGS = {
   alerts: 'at-risk',
   students: 'students',
   overview: 'school',
+  // School admin pages
+  today: 'today',
+  classes: 'classes',
+  teachers: 'teachers',
 };
 const TAB_BY_SLUG = Object.fromEntries(Object.entries(SLUGS).map(([tab, slug]) => [slug, tab]));
 

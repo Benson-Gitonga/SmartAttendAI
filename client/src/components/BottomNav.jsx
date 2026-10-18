@@ -1,15 +1,23 @@
-import { RosterIcon, GridIcon, BellIcon, ChartIcon, HomeIcon, UsersIcon } from './icons';
+import { RosterIcon, GridIcon, BellIcon, HomeIcon, UsersIcon, CalendarIcon, BuildingIcon } from './icons';
 
 /** Nav items for the signed-in role. Shared by BottomNav (phone) and SideNav (desktop). */
 export function navItems(role) {
+  // The school admin supervises the whole school rather than teaching a class.
+  if (role === 'admin') {
+    return [
+      { id: 'today', label: 'Today', short: 'Today', Icon: CalendarIcon },
+      { id: 'classes', label: 'Classes', short: 'Classes', Icon: BuildingIcon },
+      { id: 'teachers', label: 'Teachers', short: 'Teachers', Icon: UsersIcon },
+      { id: 'overview', label: 'At-risk students', short: 'At-risk', Icon: BellIcon },
+    ];
+  }
   const items = [
     { id: 'dashboard', label: 'Dashboard', short: 'Home', Icon: HomeIcon },
     { id: 'attendance', label: 'Take Attendance', short: 'Register', Icon: RosterIcon },
     { id: 'heatmap', label: 'Reports', short: 'Reports', Icon: GridIcon },
     { id: 'alerts', label: 'At-risk Students', short: 'At-risk', Icon: BellIcon },
   ];
-  if (role === 'admin') items.push({ id: 'overview', label: 'School Overview', short: 'School', Icon: ChartIcon });
-  else items.push({ id: 'students', label: 'Students', short: 'Students', Icon: UsersIcon, section: 'Manage' });
+  items.push({ id: 'students', label: 'Students', short: 'Students', Icon: UsersIcon, section: 'Manage' });
   return items;
 }
 
