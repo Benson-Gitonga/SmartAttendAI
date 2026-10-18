@@ -25,6 +25,7 @@
 import { Router } from 'express';
 import { validate } from '../lib/validate.js';
 import { attendanceSyncSchema } from '../schemas/attendanceSync.schema.js';
+import { findInactiveSchool } from '../db/repository.js';
 
 /**
  * @param {object} opts
@@ -117,6 +118,15 @@ export function createSyncRouter({ db }) {
     }
 
     const { records, deviceId } = req.body;
+
+    // A school that is not active (waiting for approval, rejected or disabled)
+    // cannot send attendance. 403 rather than per-record skips, so the PWA keeps
+    // the batch queued and sends it once the school is enabled.
+    const inactive = findInactiveSchool(db, { studentIds: records.map((r) => r.studentId) });
+    if (inactive) {
+      return res.status(403).json({ error: 'school is not active', schoolId: inactive.schoolId, status: inactive.status });
+    }
+
     const inserted = [];
     const skipped = [];
 

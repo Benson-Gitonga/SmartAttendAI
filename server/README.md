@@ -73,7 +73,10 @@ All optional. Copy `.env.example` to `.env` to override.
 | GET | `/api/gate/classes/:id/attendance?date=YYYY-MM-DD` | one class's records for a day (default today) plus `gate.lastScanAt` - the PWA pulls this before roll call (see below) |
 | * | `/api/roster/*` | roster upserts pushed from the PWA (schools, classes, students, cards) |
 | * | `/api/admin/*` | per-school reporting: overview, classes, flagged students, follow-ups |
-| * | `/api/system-admin/*` | platform-wide school list + activate/deactivate |
+| POST | `/api/schools/register` | a school admin registers their school; it starts `pending` (see below) |
+| GET | `/api/schools/:id` | a school's status and any review note, for the admin's waiting screen |
+| GET | `/api/system-admin/schools?status=` | every school, waiting ones first, plus a count per status |
+| POST | `/api/system-admin/schools/:id/{approve,reject,disable,enable}` | review a school; body `{ "note", "actor" }`, `note` required to reject |
 
 Valid `cardUid` values are the 10 seeded cards: `04A1B2C3`, `04D4E5F6`,
 `0417A8B9`, `04C2D3E4`, `0455667788`, `01020304`, `11223344`, `55667788`,
@@ -96,6 +99,29 @@ how late it arrived.
 
 Set `DEVICE_API_KEY` and gate devices must send it as the `X-Device-Key`
 header, otherwise they get a `401`. The rest of the API is unaffected.
+
+### School approval
+
+A school admin's sign-up registers the school with `POST /api/schools/register`
+(`name`, `county`, `adminName`, `adminEmail`, optional Kenyan `adminPhone`).
+It waits as `pending` until a system admin acts on it:
+
+```
+pending --approve--> active --disable--> inactive
+   |                   ^                    |
+   +--reject--> rejected  +-----enable------+
+```
+
+Any other change is a `409` (a rejected school registers again instead). Each
+change records who made it, when, and the note, and leaves a `school.*` audit
+row. A second registration of the same name in the same county is a `409`,
+unless it comes from the same admin email, which gets the existing school back.
+
+A school that is not `active` cannot write: `/api/roster/*` and `/api/sync`
+answer `403` for its classes and students, so the PWA keeps those changes
+queued and sends them once the school is approved or enabled. Schools pushed
+by the PWA roster (local mode) are `active` by default. `npm run db:seed` adds
+two pending demo schools so the approval queue is not empty.
 
 ## How a scan becomes a record
 
