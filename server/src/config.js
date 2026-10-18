@@ -45,10 +45,10 @@ export const config = {
   deviceClockSkewMs: num(process.env.DEVICE_CLOCK_SKEW_MS, 5 * 60_000),
 
   // The one system admin account (src/auth/systemAdminAuth.js). Set with
-  // `npm run sysadmin:set`; only a hash of the password is kept. With no email
+  // `npm run sysadmin:set`; only a hash of the password is kept. With no username
   // or hash, the /api/system-admin endpoints answer 503.
   systemAdmin: {
-    email: process.env.SYSTEM_ADMIN_EMAIL || '',
+    username: process.env.SYSTEM_ADMIN_USERNAME || '',
     passwordHash: process.env.SYSTEM_ADMIN_PASSWORD_HASH || '',
     tokenSecret: process.env.SYSTEM_ADMIN_TOKEN_SECRET || '',
     tokenTtlMs: num(process.env.SYSTEM_ADMIN_TOKEN_TTL_HOURS, 8) * 60 * 60 * 1000,

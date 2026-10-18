@@ -40,11 +40,11 @@ afterEach(async () => {
 describe('system admin sign-in', () => {
   beforeEach(() => start());
 
-  test('the right email and password return a token that opens the school list', async () => {
-    const res = await login({ email: '  OPS@smartattend.test ', password: TEST_ADMIN.password });
+  test('the right username and password return a token that opens the school list', async () => {
+    const res = await login({ username: '  SysAdmin ', password: TEST_ADMIN.password });
     const body = await res.json();
     assert.equal(res.status, 200);
-    assert.equal(body.email, TEST_ADMIN.email);
+    assert.equal(body.username, TEST_ADMIN.username);
     assert.ok(body.expiresAt > Date.now());
 
     const list = await withToken('/api/system-admin/schools', {}, body.token);
@@ -52,17 +52,17 @@ describe('system admin sign-in', () => {
     assert.ok(db.prepare(`SELECT 1 FROM audit_log WHERE action = 'system_admin.signed_in'`).get());
   });
 
-  test('a wrong password or email is a 401 with the same message', async () => {
-    const wrongPassword = await login({ email: TEST_ADMIN.email, password: 'not it' });
-    const wrongEmail = await login({ email: 'someone@else.ke', password: TEST_ADMIN.password });
+  test('a wrong password or username is a 401 with the same message', async () => {
+    const wrongPassword = await login({ username: TEST_ADMIN.username, password: 'not it' });
+    const wrongEmail = await login({ username: 'someone-else', password: TEST_ADMIN.password });
     assert.equal(wrongPassword.status, 401);
     assert.equal(wrongEmail.status, 401);
     assert.deepEqual(await wrongPassword.json(), await wrongEmail.json());
     assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM audit_log WHERE action = 'system_admin.sign_in_failed'`).get().n, 2);
   });
 
-  test('400 without an email or password', async () => {
-    assert.equal((await login({ email: TEST_ADMIN.email })).status, 400);
+  test('400 without a username or password', async () => {
+    assert.equal((await login({ username: TEST_ADMIN.username })).status, 400);
     assert.equal((await login({ password: 'x' })).status, 400);
   });
 
@@ -90,8 +90,8 @@ describe('system admin sign-in', () => {
   }
 
   test('a token from a server with another secret is refused', async () => {
-    const elsewhere = createSystemAdminAuth({ email: TEST_ADMIN.email, passwordHash: hashPassword('pw'), tokenSecret: 'other' });
-    const { token: foreign } = elsewhere.signIn(TEST_ADMIN.email, 'pw');
+    const elsewhere = createSystemAdminAuth({ username: TEST_ADMIN.username, passwordHash: hashPassword('pw'), tokenSecret: 'other' });
+    const { token: foreign } = elsewhere.signIn(TEST_ADMIN.username, 'pw');
     assert.equal((await withToken('/api/system-admin/schools', {}, foreign)).status, 401);
   });
 
@@ -99,7 +99,7 @@ describe('system admin sign-in', () => {
     token = await signInSystemAdmin(base);
     const res = await withToken('/api/system-admin/me');
     assert.equal(res.status, 200);
-    assert.equal((await res.json()).email, TEST_ADMIN.email);
+    assert.equal((await res.json()).username, TEST_ADMIN.username);
   });
 });
 
@@ -107,9 +107,9 @@ describe('system admin sign-in lockout and expiry', () => {
   test('five wrong passwords lock the address out, even for the right password', async () => {
     let clock = Date.now();
     await start(testSystemAdminAuth({ maxFailures: 5, lockoutMs: 60_000, now: () => clock }));
-    for (let i = 0; i < 4; i += 1) assert.equal((await login({ email: TEST_ADMIN.email, password: 'bad' })).status, 401);
+    for (let i = 0; i < 4; i += 1) assert.equal((await login({ username: TEST_ADMIN.username, password: 'bad' })).status, 401);
 
-    const fifth = await login({ email: TEST_ADMIN.email, password: 'bad' });
+    const fifth = await login({ username: TEST_ADMIN.username, password: 'bad' });
     assert.equal(fifth.status, 429);
     assert.ok(Number(fifth.headers.get('retry-after')) > 0);
     assert.equal((await login(TEST_ADMIN)).status, 429);
@@ -166,7 +166,7 @@ describe('POST /api/system-admin/schools/:id/status', () => {
     const body = await res.json();
     assert.equal(res.status, 200);
     assert.equal(body.status, 'inactive');
-    assert.equal(body.reviewedBy, TEST_ADMIN.email);
+    assert.equal(body.reviewedBy, TEST_ADMIN.username);
   });
 
   test('404 for an unknown school', async () => {

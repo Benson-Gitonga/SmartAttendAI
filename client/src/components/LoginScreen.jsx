@@ -23,7 +23,7 @@ const FEATURES = [
  */
 export default function LoginScreen() {
   const {
-    signIn, signInSystemAdmin, signUp, confirmSignUp, resendConfirmationCode, cognitoConfigured,
+    signIn, signUp, confirmSignUp, resendConfirmationCode, cognitoConfigured,
     loadPendingSignup, savePendingSignup, clearPendingSignup,
   } = useAuth();
   const online = useOnlineStatus();
@@ -76,19 +76,6 @@ export default function LoginScreen() {
         return;
       }
       setError(err.message ?? 'Sign in failed');
-      setBusy(false);
-    }
-  }
-
-  async function handleSystemAdminSignIn(e) {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
-    try {
-      await signInSystemAdmin(email.trim(), password);
-    } catch (err) {
-      setError(err.message ?? 'Sign in failed');
-      setPassword('');
       setBusy(false);
     }
   }
@@ -230,18 +217,18 @@ export default function LoginScreen() {
           {notice && <div className="notice notice--info" role="status">{notice}</div>}
 
           <div className="field">
-            <label className="field__label" htmlFor="email">Email address</label>
+            <label className="field__label" htmlFor="email">Email or username</label>
             <div className="field__wrap">
               <span className="field__icon"><MailIcon size={18} /></span>
               <input
                 id="email"
                 className="field__input"
-                type="email"
-                inputMode="email"
+                type="text"
                 autoComplete="username"
                 autoCapitalize="none"
                 autoCorrect="off"
-                placeholder="Email address"
+                spellCheck={false}
+                placeholder="you@school.ac.ke"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={busy || blocked}
@@ -292,76 +279,6 @@ export default function LoginScreen() {
             </p>
           )}
 
-          <p className="auth__staff">
-            <button type="button" className="linkbtn" onClick={() => switchView('sysadmin')}>
-              SmartAttend system admin sign-in
-            </button>
-          </p>
-        </form>
-      )}
-
-      {view === 'sysadmin' && (
-        <form className="auth__card" onSubmit={handleSystemAdminSignIn}>
-          <div className="auth__logo auth__logo--staff"><LockIcon size={22} /></div>
-          <h1 className="auth__brand">System admin</h1>
-          <p className="auth__tagline">For the SmartAttend team. Schools and teachers use the normal sign-in.</p>
-
-          {!online && (
-            <div className="notice notice--warn" role="status">
-              You’re offline. The system admin signs in against the server, so connect first.
-            </div>
-          )}
-          {error && <div className="notice notice--err" role="alert">{error}</div>}
-
-          <div className="field">
-            <label className="field__label" htmlFor="sa-email">Email address</label>
-            <div className="field__wrap">
-              <span className="field__icon"><MailIcon size={18} /></span>
-              <input
-                id="sa-email"
-                className="field__input"
-                type="email"
-                inputMode="email"
-                autoComplete="username"
-                autoCapitalize="none"
-                autoCorrect="off"
-                placeholder="Email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={busy || !online}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="field">
-            <label className="field__label" htmlFor="sa-password">Password</label>
-            <div className="field__wrap">
-              <span className="field__icon"><LockIcon size={18} /></span>
-              <input
-                id="sa-password"
-                className="field__input field__input--reveal"
-                type={reveal ? 'text' : 'password'}
-                autoComplete="current-password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={busy || !online}
-                required
-              />
-              {revealBtn}
-            </div>
-          </div>
-
-          <button className="btn" type="submit" disabled={busy || !online}>
-            {busy ? 'Signing in…' : 'Sign in as system admin'}
-          </button>
-
-          <p className="auth__switch">
-            <button type="button" className="linkbtn" onClick={() => switchView('signin')}>
-              Back to the normal sign-in
-            </button>
-          </p>
         </form>
       )}
 

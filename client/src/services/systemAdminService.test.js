@@ -10,13 +10,13 @@ afterEach(() => { delete globalThis.fetch; });
 
 describe('loginSystemAdmin', () => {
   it('returns the token from the server', async () => {
-    const fetchImpl = jest.fn().mockResolvedValue(reply(200, { token: 't', email: 'ops@x.ke', expiresAt: 1 }));
-    expect(await loginSystemAdmin(' ops@x.ke ', 'pw', { fetchImpl })).toEqual({ token: 't', email: 'ops@x.ke', expiresAt: 1 });
-    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ email: 'ops@x.ke', password: 'pw' });
+    const fetchImpl = jest.fn().mockResolvedValue(reply(200, { token: 't', username: 'sysadmin', expiresAt: 1 }));
+    expect(await loginSystemAdmin(' sysadmin ', 'pw', { fetchImpl })).toEqual({ token: 't', username: 'sysadmin', expiresAt: 1 });
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ username: 'sysadmin', password: 'pw' });
   });
 
   it.each([
-    [401, {}, 'WRONG', /Wrong email or password/],
+    [401, {}, 'WRONG', /Wrong username or password/],
     [429, { retryAfterSeconds: 600 }, 'LOCKED', /Try again in 10 minutes/],
     [503, {}, 'NOT_SET_UP', /not set up/],
   ])('explains a %i', async (status, body, code, message) => {

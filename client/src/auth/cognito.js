@@ -153,7 +153,8 @@ export async function signIn(username, password) {
  * passed to confirmSignUp(), and remembers the email on the device until then.
  *
  * @param {'teacher'|'admin'} [role] local mode only. There is no system admin
- *   sign-up: that account lives on the server (signInSystemAdmin).
+ *   sign-up: that account lives on the server, and its username goes in the
+ *   normal sign-in (see AuthContext signIn).
  * @param {string|null} [schoolId] the school a school admin just registered
  * @throws {AuthError} INVALID_INPUT | NETWORK | ACCOUNT_EXISTS | SIGNUP_FAILED
  */
@@ -255,11 +256,11 @@ export async function loadStoredSession() {
  * Keep the system admin's server-issued sign-in on the device. The token is
  * what the server checks; the role here only picks which screen to show.
  */
-export async function saveSystemAdminSession({ token, email, expiresAt }, now = Date.now()) {
+export async function saveSystemAdminSession({ token, username, expiresAt }, now = Date.now()) {
   return persist({
     key: SESSION_KEY,
     mode: 'system_admin',
-    username: email,
+    username,
     displayName: 'System admin',
     roles: ['system_admin'],
     role: 'system_admin',

@@ -17,9 +17,9 @@ const server = app.listen(config.port, () => {
   console.log(`  DB: ${config.dbPath}`);
   console.log(`  Gate device key: ${config.deviceApiKey ? 'required (DEVICE_API_KEY)' : 'off, /api/rfid/scan is open'}`);
   console.log(`  System admin: ${
-    config.systemAdmin.email && config.systemAdmin.passwordHash
-      ? `${config.systemAdmin.email}${config.systemAdmin.tokenSecret ? '' : ' (no SYSTEM_ADMIN_TOKEN_SECRET, sign-ins end on restart)'}`
-      : 'not set up, run npm run sysadmin:set -- you@example.com'
+    config.systemAdmin.username && config.systemAdmin.passwordHash
+      ? `${config.systemAdmin.username}${config.systemAdmin.tokenSecret ? '' : ' (no SYSTEM_ADMIN_TOKEN_SECRET, sign-ins end on restart)'}`
+      : 'not set up, run npm run sysadmin:set -- sysadmin'
   }`);
 });
 

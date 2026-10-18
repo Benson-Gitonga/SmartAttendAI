@@ -1,6 +1,6 @@
 /**
  * Sign-in for the platform's system admin. There is one fixed account, set in
- * server/.env (SYSTEM_ADMIN_EMAIL and SYSTEM_ADMIN_PASSWORD_HASH, written by
+ * server/.env (SYSTEM_ADMIN_USERNAME and SYSTEM_ADMIN_PASSWORD_HASH, written by
  * `npm run sysadmin:set`), so it never ships in the PWA bundle. Only a scrypt
  * hash of the password is stored.
  *
@@ -52,7 +52,7 @@ const sameText = (a, b) => {
 
 /**
  * @param {object} opts
- * @param {string} opts.email          the system admin's sign-in email
+ * @param {string} opts.username       the system admin's sign-in name (e.g. "sysadmin")
  * @param {string} opts.passwordHash   from hashPassword()
  * @param {string} [opts.tokenSecret]  HMAC key; a random one per process when empty
  *                                     (every token then dies with a restart)
@@ -62,7 +62,7 @@ const sameText = (a, b) => {
  * @param {() => number} [opts.now]
  */
 export function createSystemAdminAuth({
-  email = '',
+  username = '',
   passwordHash = '',
   tokenSecret = '',
   tokenTtlMs = 8 * 60 * 60 * 1000,
@@ -70,9 +70,9 @@ export function createSystemAdminAuth({
   lockoutMs = 15 * 60 * 1000,
   now = Date.now,
 } = {}) {
-  const configured = Boolean(email && passwordHash);
+  const configured = Boolean(username && passwordHash);
   const secret = tokenSecret || randomBytes(32).toString('base64url');
-  const account = email.trim().toLowerCase();
+  const account = username.trim().toLowerCase();
 
   // address -> { failures, firstAt, lockedUntil }
   const attempts = new Map();
@@ -99,23 +99,23 @@ export function createSystemAdminAuth({
     const issuedAt = now();
     const payload = { sub: account, role: 'system_admin', iat: issuedAt, exp: issuedAt + tokenTtlMs };
     const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-    return { token: `${body}.${sign(secret, body)}`, email: account, expiresAt: payload.exp };
+    return { token: `${body}.${sign(secret, body)}`, username: account, expiresAt: payload.exp };
   }
 
   /**
-   * @returns {{ok:true, token:string, email:string, expiresAt:number}
+   * @returns {{ok:true, token:string, username:string, expiresAt:number}
    *         | {ok:false, reason:'not_configured'|'locked'|'wrong', retryAfterMs?:number}}
    */
-  function signIn(givenEmail, password, { from = 'unknown' } = {}) {
+  function signIn(givenUsername, password, { from = 'unknown' } = {}) {
     if (!configured) return { ok: false, reason: 'not_configured' };
     const wait = lockedFor(from);
     if (wait > 0) return { ok: false, reason: 'locked', retryAfterMs: wait };
 
-    // Always run the hash check, even for a wrong email, so the reply time
-    // does not say whether the email was right.
+    // Always run the hash check, even for a wrong username, so the reply time
+    // does not say whether the username was right.
     const passwordOk = verifyPassword(String(password ?? ''), passwordHash);
-    const emailOk = sameText(String(givenEmail ?? '').trim().toLowerCase(), account);
-    if (!(passwordOk && emailOk)) {
+    const usernameOk = sameText(String(givenUsername ?? '').trim().toLowerCase(), account);
+    if (!(passwordOk && usernameOk)) {
       recordFailure(from);
       const locked = lockedFor(from);
       return locked > 0 ? { ok: false, reason: 'locked', retryAfterMs: locked } : { ok: false, reason: 'wrong' };

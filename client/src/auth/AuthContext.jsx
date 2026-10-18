@@ -20,6 +20,9 @@ import { registerSchool } from '../services/schoolService';
 
 const AuthContext = createContext(null);
 
+// Teacher and school admin accounts are emails; the system admin's is a plain name.
+const isSystemAdminName = (username) => Boolean(username?.trim()) && !username.includes('@');
+
 /**
  *   signedOut: no session on the device.
  *   locked:    the session expired; the PIN unlocks it offline.
@@ -69,20 +72,21 @@ export function AuthProvider({ children }) {
     return () => { cancelled = true; };
   }, [applySession]);
 
+  /**
+   * One sign-in for everyone. Teachers and school admins use their email; a
+   * name without an @ is the system admin's, which only the server can check.
+   */
   const signIn = useCallback(async (username, password) => {
+    if (isSystemAdminName(username)) {
+      const next = await saveSystemAdminSession(await loginSystemAdmin(username, password));
+      await applySession(next);
+      return { session: next, pinEnrolled: false };
+    }
     const next = await cognitoSignIn(username, password);
     // An online login outranks an offline lockout.
     await clearLockout(username);
     await applySession(next);
     return { session: next, pinEnrolled: await hasPin(username) };
-  }, [applySession]);
-
-  /** The system admin signs in against the server, which holds the only account. */
-  const signInSystemAdmin = useCallback(async (email, password) => {
-    const result = await loginSystemAdmin(email, password);
-    const next = await saveSystemAdminSession(result);
-    await applySession(next);
-    return next;
   }, [applySession]);
 
   /**
@@ -171,7 +175,6 @@ export function AuthProvider({ children }) {
       : null,
     cognitoConfigured: isCognitoConfigured(),
     signIn,
-    signInSystemAdmin,
     signUp,
     confirmSignUp,
     resendConfirmationCode,
@@ -183,7 +186,7 @@ export function AuthProvider({ children }) {
     enrolPin,
     simulateExpiry
   }), [
-    status, session, pinState, signIn, signInSystemAdmin, signUp, confirmSignUp,
+    status, session, pinState, signIn, signUp, confirmSignUp,
     resendConfirmationCode, signOut, unlockWithPin, enrolPin, simulateExpiry
   ]);
 

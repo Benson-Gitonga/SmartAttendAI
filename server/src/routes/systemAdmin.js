@@ -31,15 +31,15 @@ export function createSystemAdminRouter({ db, auth }) {
 
   // The only endpoint open without a token.
   router.post('/login', (req, res) => {
-    const { email, password } = req.body ?? {};
-    if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) {
-      return res.status(400).json({ error: 'enter the email and password' });
+    const { username, password } = req.body ?? {};
+    if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
+      return res.status(400).json({ error: 'enter the username and password' });
     }
-    const result = auth.signIn(email, password, { from: req.ip });
+    const result = auth.signIn(username, password, { from: req.ip });
     if (result.ok) {
-      logAudit(db, { action: 'system_admin.signed_in', actorId: result.email, detail: { ip: req.ip } });
-      const { token, email: who, expiresAt } = result;
-      return res.json({ token, email: who, expiresAt });
+      logAudit(db, { action: 'system_admin.signed_in', actorId: result.username, detail: { ip: req.ip } });
+      const { token, username: who, expiresAt } = result;
+      return res.json({ token, username: who, expiresAt });
     }
     if (result.reason === 'not_configured') {
       return res.status(503).json({ error: 'system admin sign-in is not set up on this server' });
@@ -50,13 +50,13 @@ export function createSystemAdminRouter({ db, auth }) {
       res.set('Retry-After', String(seconds));
       return res.status(429).json({ error: 'too many wrong attempts, try again later', retryAfterSeconds: seconds });
     }
-    res.status(401).json({ error: 'wrong email or password' });
+    res.status(401).json({ error: 'wrong username or password' });
   });
 
   router.use(auth.requireSystemAdmin);
 
   router.get('/me', (req, res) => {
-    res.json({ email: req.systemAdmin.sub, expiresAt: req.systemAdmin.exp });
+    res.json({ username: req.systemAdmin.sub, expiresAt: req.systemAdmin.exp });
   });
 
   router.get('/schools', (req, res) => {

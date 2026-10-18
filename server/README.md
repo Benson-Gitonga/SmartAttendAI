@@ -75,7 +75,7 @@ All optional. Copy `.env.example` to `.env` to override.
 | * | `/api/admin/*` | per-school reporting: overview, classes, flagged students, follow-ups |
 | POST | `/api/schools/register` | a school admin registers their school; it starts `pending` (see below) |
 | GET | `/api/schools/:id` | a school's status and any review note, for the admin's waiting screen |
-| POST | `/api/system-admin/login` | system admin sign-in, body `{ "email", "password" }`, returns a token (see below) |
+| POST | `/api/system-admin/login` | system admin sign-in, body `{ "username", "password" }`, returns a token (see below) |
 | GET | `/api/system-admin/schools?status=` | every school, waiting ones first, plus a count per status |
 | POST | `/api/system-admin/schools/:id/{approve,reject,disable,enable}` | review a school; body `{ "note", "actor" }`, `note` required to reject |
 
@@ -106,11 +106,11 @@ header, otherwise they get a `401`. The rest of the API is unaffected.
 There is one system admin account, and it lives only on the server. Set it with
 
 ```
-npm run sysadmin:set -- you@example.com
+npm run sysadmin:set -- sysadmin
 ```
 
-which asks for the password twice (at least 10 characters) and writes
-`SYSTEM_ADMIN_EMAIL`, a scrypt `SYSTEM_ADMIN_PASSWORD_HASH` and, the first
+which asks for the password twice and writes
+`SYSTEM_ADMIN_USERNAME`, a scrypt `SYSTEM_ADMIN_PASSWORD_HASH` and, the first
 time, a random `SYSTEM_ADMIN_TOKEN_SECRET` into `server/.env`. Run it again to
 change the password. Restart the server afterwards.
 
@@ -119,7 +119,9 @@ returns a signed token valid for `SYSTEM_ADMIN_TOKEN_TTL_HOURS` (default 8).
 Every other `/api/system-admin/*` call needs `Authorization: Bearer <token>`,
 or it gets a `401`. Five wrong passwords from one address lock sign-in for
 15 minutes (`429`). Sign-ins, failures and every school change are in the
-audit log, with the signed-in email as the actor. With no account set up the
+audit log, with the system admin username as the actor. The username has no
+`@`: the PWA sends a sign-in without one here, and anything with one is a
+teacher or school admin email. With no account set up the
 endpoints answer `503`.
 
 ### School approval

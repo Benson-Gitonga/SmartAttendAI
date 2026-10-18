@@ -29,10 +29,10 @@ describe('password hashing', () => {
 });
 
 describe('tokens', () => {
-  const auth = createSystemAdminAuth({ email: 'ops@x.ke', passwordHash: hashPassword('pw'), tokenSecret: 's' });
+  const auth = createSystemAdminAuth({ username: 'ops', passwordHash: hashPassword('pw'), tokenSecret: 's' });
 
   test('a tampered token is refused', () => {
-    const { token } = auth.signIn('ops@x.ke', 'pw');
+    const { token } = auth.signIn('ops', 'pw');
     assert.ok(auth.verifyToken(token));
     const [body, mac] = token.split('.');
     const claims = JSON.parse(Buffer.from(body, 'base64url').toString());
@@ -41,9 +41,9 @@ describe('tokens', () => {
     assert.equal(auth.verifyToken(`${body}.${mac}.x`), null);
   });
 
-  test('a token for another account is refused after the email changes', () => {
-    const { token } = auth.signIn('ops@x.ke', 'pw');
-    const renamed = createSystemAdminAuth({ email: 'new@x.ke', passwordHash: hashPassword('pw'), tokenSecret: 's' });
+  test('a token for another account is refused after the username changes', () => {
+    const { token } = auth.signIn('ops', 'pw');
+    const renamed = createSystemAdminAuth({ username: 'someone-new', passwordHash: hashPassword('pw'), tokenSecret: 's' });
     assert.equal(renamed.verifyToken(token), null);
   });
 });

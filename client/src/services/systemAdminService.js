@@ -15,16 +15,16 @@ export class SystemAdminError extends Error {
 }
 
 /**
- * @returns {Promise<{token:string, email:string, expiresAt:number}>}
+ * @returns {Promise<{token:string, username:string, expiresAt:number}>}
  * @throws {SystemAdminError} WRONG | LOCKED | NOT_SET_UP | NETWORK | FAILED
  */
-export async function loginSystemAdmin(email, password, { fetchImpl = globalThis.fetch } = {}) {
+export async function loginSystemAdmin(username, password, { fetchImpl = globalThis.fetch } = {}) {
   let res;
   try {
     res = await fetchImpl('/api/system-admin/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email.trim(), password }),
+      body: JSON.stringify({ username: username.trim(), password }),
     });
   } catch {
     throw new SystemAdminError('NETWORK', 'Could not reach the SmartAttend server. The system admin must sign in online.');
@@ -32,13 +32,13 @@ export async function loginSystemAdmin(email, password, { fetchImpl = globalThis
   if (res.ok) return res.json();
 
   const body = await res.json().catch(() => ({}));
-  if (res.status === 401) throw new SystemAdminError('WRONG', 'Wrong email or password.');
+  if (res.status === 401) throw new SystemAdminError('WRONG', 'Wrong username or password.');
   if (res.status === 429) {
     const minutes = Math.max(1, Math.ceil((body.retryAfterSeconds ?? 60) / 60));
     throw new SystemAdminError('LOCKED', `Too many wrong attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`);
   }
   if (res.status === 503) throw new SystemAdminError('NOT_SET_UP', 'System admin sign-in is not set up on this server yet.');
-  if (res.status === 400) throw new SystemAdminError('WRONG', 'Enter the email and password.');
+  if (res.status === 400) throw new SystemAdminError('WRONG', 'Enter the username and password.');
   throw new SystemAdminError('FAILED', `The server responded ${res.status}.`);
 }
 

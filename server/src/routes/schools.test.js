@@ -140,7 +140,7 @@ describe('approval flow', () => {
     const body = await res.json();
     assert.equal(res.status, 200);
     assert.equal(body.status, 'active');
-    assert.equal(body.reviewedBy, TEST_ADMIN.email, 'the reviewer is whoever is signed in');
+    assert.equal(body.reviewedBy, TEST_ADMIN.username, 'the reviewer is whoever is signed in');
     assert.ok(body.reviewedAt);
     assert.ok(db.prepare(`SELECT 1 FROM audit_log WHERE action = 'school.approved' AND record_id = ?`).get(schoolId));
   });

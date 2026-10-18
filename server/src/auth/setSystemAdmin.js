@@ -1,7 +1,7 @@
 // CLI: set the system admin's sign-in in server/.env.
-//   npm run sysadmin:set -- admin@example.com
+//   npm run sysadmin:set -- sysadmin
 // Asks for the password (typed twice, not shown), then writes
-// SYSTEM_ADMIN_EMAIL, SYSTEM_ADMIN_PASSWORD_HASH and, the first time,
+// SYSTEM_ADMIN_USERNAME, SYSTEM_ADMIN_PASSWORD_HASH and, the first time,
 // SYSTEM_ADMIN_TOKEN_SECRET. Only the hash is written, never the password.
 // For scripted setups, SYSTEM_ADMIN_PASSWORD in the environment skips the prompt.
 
@@ -12,8 +12,12 @@ import { randomBytes } from 'node:crypto';
 import { hashPassword } from './systemAdminAuth.js';
 
 const ENV_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '../../.env');
-const MIN_LENGTH = 10;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Short passwords are allowed for a local demo, with a warning.
+const MIN_LENGTH = 4;
+const RECOMMENDED_LENGTH = 12;
+// No @: the PWA sign-in sends a name without one to the server, and treats
+// anything with one as a teacher or school admin email.
+const USERNAME = /^[A-Za-z0-9._-]{3,64}$/;
 
 /** Replace or append KEY=value lines, keeping everything else in the file. */
 export function upsertEnv(text, values) {
@@ -60,9 +64,10 @@ function askHidden(question) {
 }
 
 async function main() {
-  const email = (process.argv[2] ?? '').trim().toLowerCase();
-  if (!EMAIL.test(email)) {
-    console.error('Usage: npm run sysadmin:set -- admin@example.com');
+  const username = (process.argv[2] ?? '').trim().toLowerCase();
+  if (!USERNAME.test(username)) {
+    console.error('Usage: npm run sysadmin:set -- sysadmin');
+    console.error('The username is 3-64 letters, digits, dots, dashes or underscores (no @).');
     process.exit(1);
   }
 
@@ -79,15 +84,18 @@ async function main() {
     console.error(`Use at least ${MIN_LENGTH} characters. Nothing was changed.`);
     process.exit(1);
   }
+  if (password.length < RECOMMENDED_LENGTH) {
+    console.warn(`Warning: a password under ${RECOMMENDED_LENGTH} characters is only fit for a local demo.`);
+  }
 
   const current = existsSync(ENV_PATH) ? readFileSync(ENV_PATH, 'utf8') : '';
-  const values = { SYSTEM_ADMIN_EMAIL: email, SYSTEM_ADMIN_PASSWORD_HASH: hashPassword(password) };
+  const values = { SYSTEM_ADMIN_USERNAME: username, SYSTEM_ADMIN_PASSWORD_HASH: hashPassword(password) };
   if (!/^SYSTEM_ADMIN_TOKEN_SECRET=.+/m.test(current)) {
     values.SYSTEM_ADMIN_TOKEN_SECRET = randomBytes(32).toString('base64url');
   }
   writeFileSync(ENV_PATH, upsertEnv(current, values));
 
-  console.log(`System admin set to ${email} in ${ENV_PATH}`);
+  console.log(`System admin set to ${username} in ${ENV_PATH}`);
   console.log('Restart the server for the change to take effect.');
 }
 
