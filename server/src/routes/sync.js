@@ -25,14 +25,22 @@
 import { Router } from 'express';
 import { validate } from '../lib/validate.js';
 import { attendanceSyncSchema } from '../schemas/attendanceSync.schema.js';
+import { schoolIdOf } from '../db/repository.js';
 
 /**
  * @param {object} opts
  * @param {import('better-sqlite3').Database} opts.db  the process-wide connection
+ * @param {ReturnType<import('../auth/userAuth.js').createUserAuth>} opts.userAuth
  */
-export function createSyncRouter({ db }) {
+export function createSyncRouter({ db, userAuth }) {
   if (!db) throw new Error('createSyncRouter needs a db');
+  if (!userAuth) throw new Error('createSyncRouter needs userAuth');
   const router = Router();
+
+  // A school that is not active (waiting for approval, rejected or disabled)
+  // cannot send attendance. 403 rather than per-record skips, so the PWA keeps
+  // the batch queued and sends it once the school is enabled.
+  router.use(userAuth.requireUser(), userAuth.requireActiveSchool);
 
   const findEvent = db.prepare('SELECT status, reason FROM attendance_events WHERE event_id = ?');
   const findByStudentDate = db.prepare(
@@ -117,6 +125,18 @@ export function createSyncRouter({ db }) {
     }
 
     const { records, deviceId } = req.body;
+    for (const r of records) r.recordedBy = r.recordedBy ?? req.user.email;
+
+    // Every known student must be in the sender's school; unknown ones are
+    // reported per record below as before.
+    const foreign = records.find((r) => {
+      const owner = schoolIdOf(db, { studentId: r.studentId });
+      return owner != null && owner !== req.user.schoolId;
+    });
+    if (foreign) {
+      return res.status(403).json({ error: 'a record belongs to another school', eventId: foreign.eventId });
+    }
+
     const inserted = [];
     const skipped = [];
 

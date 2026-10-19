@@ -1,10 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import {
   CapIcon, MailIcon, LockIcon, EyeIcon, EyeOffIcon, KeypadIcon, UserIcon,
-  CheckCircleIcon, SyncIcon, BellIcon, GoogleIcon,
+  CheckCircleIcon, SyncIcon, BellIcon, BuildingIcon, ArrowRightIcon, ChevronLeftIcon,
 } from './icons';
+import { COUNTIES_AZ } from '../lib/counties';
+import JoinWithCode from './JoinWithCode';
+
+// Same rules as the server's application schema (schemas/schoolRegistration.schema.js).
+const KENYAN_PHONE = /^(\+254|0)[17]\d{8}$/;
+const SCHOOL_CODE = /^[A-Za-z0-9-]{3,20}$/;
+const PASSWORD_MIN = 8;
+
+const JOB_TITLES = ['Principal', 'Deputy Principal', 'Director of Studies', 'Head of Department', 'School administrator', 'Other'];
 
 const FEATURES = [
   { Icon: CheckCircleIcon, title: 'One-tap class register', text: 'Everyone starts present. Untick who is absent and save.' },
@@ -12,51 +21,118 @@ const FEATURES = [
   { Icon: SyncIcon, title: 'Works offline', text: 'Records save on the device and sync when there is a connection.' },
 ];
 
+const EMPTY_APPLICATION = {
+  schoolName: '', county: '', subCounty: '', schoolCode: '', schoolType: '', boarding: '', studentEstimate: '',
+  fullName: '', jobTitle: '', email: '', phone: '', password: '', confirm: '',
+};
+
+/** Check the application on the device first, with the same rules the server uses. */
+function applicationProblem(a) {
+  if (a.schoolName.trim().length < 3) return 'Enter the full name of the school.';
+  if (!a.county) return 'Choose the county the school is in.';
+  if (a.schoolCode.trim() && !SCHOOL_CODE.test(a.schoolCode.trim())) {
+    return 'The school code should be letters and numbers only, like 20414001.';
+  }
+  if (a.studentEstimate && !(Number(a.studentEstimate) >= 1)) return 'Enter roughly how many students the school has, or leave it empty.';
+  if (a.fullName.trim().length < 2) return 'Enter your full name.';
+  const phone = a.phone.replace(/[\s-]/g, '');
+  if (phone && !KENYAN_PHONE.test(phone)) return 'Enter a Kenyan mobile number like 0712 345 678, or leave the phone empty.';
+  if (a.password.length < PASSWORD_MIN) return `Choose a password of at least ${PASSWORD_MIN} characters.`;
+  if (a.password !== a.confirm) return 'The two passwords do not match.';
+  return null;
+}
+
+/** The request body for POST /api/schools/register, leaving out empty answers. */
+function toApplication(a) {
+  const clean = (o) => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== '' && v != null));
+  return {
+    school: clean({
+      name: a.schoolName.trim(),
+      county: a.county,
+      subCounty: a.subCounty.trim(),
+      schoolCode: a.schoolCode.trim().toUpperCase(),
+      schoolType: a.schoolType,
+      boarding: a.boarding,
+      studentEstimate: a.studentEstimate ? Math.round(Number(a.studentEstimate)) : '',
+    }),
+    applicant: clean({
+      fullName: a.fullName.trim(),
+      jobTitle: a.jobTitle,
+      email: a.email.trim(),
+      phone: a.phone.replace(/[\s-]/g, ''),
+      password: a.password,
+    }),
+  };
+}
+
+// The application has its own address, so the back button returns to sign-in
+// and a refresh stays on the form. (#/register is the teachers' class register.)
+const APPLY_HASH = '#/apply';
+// A teacher's invite link: #/join or #/join/K7QM-4XPA.
+const JOIN_HASH = '#/join';
+const VIEW_HASH = { register: APPLY_HASH, join: JOIN_HASH };
+const currentHash = () => (typeof window !== 'undefined' ? window.location.hash : '');
+const viewFromHash = () => {
+  const hash = currentHash();
+  if (hash === APPLY_HASH) return 'register';
+  if (hash === JOIN_HASH || hash.startsWith(`${JOIN_HASH}/`)) return 'join';
+  return 'signin';
+};
+const codeFromHash = () => {
+  const hash = currentHash();
+  return hash.startsWith(`${JOIN_HASH}/`) ? decodeURIComponent(hash.slice(JOIN_HASH.length + 1)) : '';
+};
+
 /**
- * Views: signin, signup, and confirm (the Cognito email code, never shown in
- * local mode). A sign-up waiting for its code is remembered on the device, so
- * reopening the app returns to the confirm view.
- *
- * There is no role picker: the account's role decides which app loads.
+ * Views: signin (everyone, including the system admin with their username)
+ * and register (a school's application to join, made by its admin).
  */
 export default function LoginScreen() {
-  const {
-    signIn, signUp, confirmSignUp, resendConfirmationCode, cognitoConfigured,
-    signInWithGoogle, googleError,
-    loadPendingSignup, savePendingSignup, clearPendingSignup,
-  } = useAuth();
+  const { signIn, registerSchool } = useAuth();
   const online = useOnlineStatus();
 
-  const [view, setView] = useState('signin');
-  const [name, setName] = useState('');
+  const [view, setView] = useState(viewFromHash);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [code, setCode] = useState('');
+  const [app, setApp] = useState(EMPTY_APPLICATION);
   const [reveal, setReveal] = useState(false);
-  const [error, setError] = useState(googleError ?? null);
+  const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  const blocked = cognitoConfigured && !online && view !== 'confirm';
+  const set = (field) => (e) => setApp((a) => ({ ...a, [field]: e.target.value }));
 
+  // Back and forward between sign-in and the application. Messages belong
+  // to the view they were shown on, so they go only when the view changes.
+  const viewRef = useRef(view);
+  useEffect(() => { viewRef.current = view; }, [view]);
   useEffect(() => {
-    if (!cognitoConfigured) return undefined;
-    let cancelled = false;
-    loadPendingSignup().then((pending) => {
-      if (cancelled || !pending) return;
-      setEmail(pending.email);
-      setView('confirm');
-      setNotice(`Finish setting up your account: enter the code we emailed to ${pending.email}.`);
-    });
-    return () => { cancelled = true; };
-  }, [cognitoConfigured, loadPendingSignup]);
+    const onPop = () => {
+      const next = viewFromHash();
+      if (next === viewRef.current) return;
+      setView(next);
+      setError(null);
+      setNotice(null);
+      setBusy(false);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   function switchView(next) {
+    viewRef.current = next; // before the history change below fires popstate
+    if (VIEW_HASH[next] && viewFromHash() !== next) {
+      window.history.pushState({ fromSignIn: true }, '', VIEW_HASH[next]);
+    } else if (next === 'signin' && viewFromHash() !== 'signin') {
+      // Step back if we came from sign-in, so back does not reopen the form.
+      if (window.history.state?.fromSignIn) window.history.back();
+      else window.history.replaceState(null, '', '#/');
+    }
     setView(next);
     setError(null);
     setNotice(null);
     setBusy(false);
+    window.scrollTo?.(0, 0);
   }
 
   async function handleSignIn(e) {
@@ -66,109 +142,33 @@ export default function LoginScreen() {
     try {
       await signIn(email.trim(), password);
     } catch (err) {
-      if (err.code === 'NOT_CONFIRMED') {
-        await openConfirmWithNewCode(email.trim());
-        return;
-      }
       setError(err.message ?? 'Sign in failed');
       setBusy(false);
     }
   }
 
-  /** The account exists but its email was never verified: send a fresh code. */
-  async function openConfirmWithNewCode(address) {
-    await savePendingSignup(address);
-    switchView('confirm');
-    try {
-      await resendConfirmationCode(address);
-      setNotice(`This account is not verified yet. We sent a new code to ${address}.`);
-    } catch (err) {
-      setNotice(`This account is not verified yet. Enter the code we emailed to ${address}.`);
-      setError(err.message ?? 'Could not send a new code');
-    }
-  }
-
-  async function handleGoogle() {
-    setError(null);
-    setNotice(null);
-    setBusy(true);
-    try {
-      await signInWithGoogle(); // navigates away on success
-    } catch (err) {
-      setError(err.message ?? 'Google sign-in failed');
-      setBusy(false);
-    }
-  }
-
-  async function handleSignUp(e) {
+  async function handleRegister(e) {
     e.preventDefault();
     setError(null);
-    if (password !== confirm) {
-      setError('The two passwords do not match.');
+    const problem = applicationProblem(app);
+    if (problem) {
+      setError(problem);
       return;
     }
     setBusy(true);
     try {
-      const result = await signUp({ name, email, password });
-      if (result?.needsConfirmation) {
-        switchView('confirm');
-        setNotice(`We emailed a verification code to ${email.trim()}.`);
-      }
+      await registerSchool(toApplication(app));
     } catch (err) {
-      if (err.code === 'ACCOUNT_EXISTS') {
+      if (err.code === 'CONFLICT' && err.field === 'email') {
         switchView('signin');
+        setEmail(app.email.trim());
         setNotice(err.message);
         return;
       }
-      setError(err.message ?? 'Could not create the account');
+      setError(err.message ?? 'Could not send the application');
       setBusy(false);
     }
   }
-
-  async function handleConfirm(e) {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
-    try {
-      const session = await confirmSignUp(email.trim(), code, password);
-      // No password after the app was reopened, so ask for it.
-      if (!session) {
-        switchView('signin');
-        setPassword('');
-        setNotice('Your email is verified. Sign in with your password to continue.');
-      }
-    } catch (err) {
-      setError(err.message ?? 'Could not confirm the account');
-      setBusy(false);
-    }
-  }
-
-  async function leaveConfirm() {
-    await clearPendingSignup();
-    setCode('');
-    switchView('signin');
-  }
-
-  async function handleResend() {
-    setError(null);
-    setNotice(null);
-    try {
-      await resendConfirmationCode(email.trim());
-      setNotice('A new code is on its way.');
-    } catch (err) {
-      setError(err.message ?? 'Could not resend the code');
-    }
-  }
-
-  const googleBlock = (
-    <>
-      <button type="button" className="btn btn--outline btn--google" onClick={handleGoogle} disabled={busy || blocked}>
-        <GoogleIcon size={18} />
-        Continue with Google
-      </button>
-      <div className="auth__divider">or</div>
-    </>
-  );
 
   const revealBtn = (
     <button
@@ -179,6 +179,14 @@ export default function LoginScreen() {
     >
       {reveal ? <EyeOffIcon size={18} /> : <EyeIcon size={18} />}
     </button>
+  );
+
+  const offlineNotice = !online && (
+    <div className="notice notice--warn" role="status">
+      {view === 'signin'
+        ? 'You’re offline. Sign in once with a connection; after that your PIN opens the app offline.'
+        : 'You’re offline. Connect to the internet to send your application.'}
+    </div>
   );
 
   return (
@@ -206,250 +214,221 @@ export default function LoginScreen() {
       </aside>
 
       <main className="auth__main">
-      {view === 'signin' && (
-        <form className="auth__card" onSubmit={handleSignIn}>
-          <div className="auth__logo"><CapIcon size={24} /></div>
-          <h1 className="auth__brand">Welcome back</h1>
-          <p className="auth__tagline">Sign in to your SmartAttend account</p>
+        {view === 'signin' && (
+          <form className="auth__card" onSubmit={handleSignIn}>
+            <div className="auth__logo"><CapIcon size={24} /></div>
+            <h1 className="auth__brand">Welcome back</h1>
+            <p className="auth__tagline">Sign in to your SmartAttend account</p>
 
-          {blocked && (
-            <div className="notice notice--warn" role="status">
-              You’re offline. Connect to the internet to sign in for the first time on this device.
+            {offlineNotice}
+            {error && <div className="notice notice--err" role="alert">{error}</div>}
+            {notice && <div className="notice notice--info" role="status">{notice}</div>}
+
+            <div className="field">
+              <label className="field__label" htmlFor="email">Email or username</label>
+              <div className="field__wrap">
+                <span className="field__icon"><MailIcon size={18} /></span>
+                <input
+                  id="email"
+                  className="field__input"
+                  type="text"
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="you@school.ac.ke"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={busy}
+                  required
+                />
+              </div>
             </div>
-          )}
-          {error && <div className="notice notice--err" role="alert">{error}</div>}
-          {notice && <div className="notice notice--info" role="status">{notice}</div>}
 
-          {googleBlock}
-
-          <div className="field">
-            <label className="field__label" htmlFor="email">Email address</label>
-            <div className="field__wrap">
-              <span className="field__icon"><MailIcon size={18} /></span>
-              <input
-                id="email"
-                className="field__input"
-                type="email"
-                inputMode="email"
-                autoComplete="username"
-                autoCapitalize="none"
-                autoCorrect="off"
-                placeholder="Email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={busy || blocked}
-                required
-              />
+            <div className="field">
+              <label className="field__label" htmlFor="password">Password</label>
+              <div className="field__wrap">
+                <span className="field__icon"><LockIcon size={18} /></span>
+                <input
+                  id="password"
+                  className="field__input field__input--reveal"
+                  type={reveal ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={busy}
+                  required
+                />
+                {revealBtn}
+              </div>
             </div>
-          </div>
 
-          <div className="field">
-            <label className="field__label" htmlFor="password">Password</label>
-            <div className="field__wrap">
-              <span className="field__icon"><LockIcon size={18} /></span>
-              <input
-                id="password"
-                className="field__input field__input--reveal"
-                type={reveal ? 'text' : 'password'}
-                autoComplete="current-password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={busy || blocked}
-                required
-              />
-              {revealBtn}
-            </div>
-          </div>
-
-          <button className="btn" type="submit" disabled={busy || blocked}>
-            {busy ? 'Signing in…' : 'Sign in'}
-          </button>
-
-          <p className="auth__switch">
-            New to SmartAttend?{' '}
-            <button type="button" className="linkbtn" onClick={() => switchView('signup')}>
-              Create an account
+            <button className="btn" type="submit" disabled={busy || !online}>
+              {busy ? 'Signing in…' : 'Sign in'}
             </button>
-          </p>
 
-          <p className="auth__offline">
-            <KeypadIcon size={15} />
-            <span>No network? After you have signed in once, you can unlock the app with your offline PIN.</span>
-          </p>
+            <div className="auth__register">
+              <span className="auth__register-icon"><BuildingIcon size={20} /></span>
+              <span className="auth__register-text">
+                <b>New school?</b>
+                <span>Apply to join SmartAttend. We review every school before it goes live.</span>
+              </span>
+              <button type="button" className="btn btn--sm btn--outline" onClick={() => switchView('register')}>
+                Register your school <ArrowRightIcon size={14} />
+              </button>
+            </div>
 
-          {!cognitoConfigured && (
-            <p className="devnote">
-              <strong>Demo mode:</strong> any email and password signs in on this device as a teacher.
-              Use <code>admin@smartattend.demo</code> for the school admin view
-              or <code>sysadmin@smartattend.demo</code> for the system admin view.
-              Set <code>VITE_COGNITO_USER_POOL_ID</code> and <code>VITE_COGNITO_CLIENT_ID</code> to use AWS Cognito,
-              and <code>VITE_COGNITO_DOMAIN</code> for Google sign-in.
+            <p className="auth__switch">
+              Teacher with a code from your school?{' '}
+              <button type="button" className="linkbtn" onClick={() => switchView('join')}>I have an invite code</button>
             </p>
-          )}
-        </form>
-      )}
 
-      {view === 'signup' && (
-        <form className="auth__card" onSubmit={handleSignUp}>
-          <div className="auth__logo"><CapIcon size={24} /></div>
-          <h1 className="auth__brand">Create your account</h1>
-          <p className="auth__tagline">Teachers start here. Admin access is granted by your school.</p>
-
-          {blocked && (
-            <div className="notice notice--warn" role="status">
-              You’re offline. Connect to the internet to create an account.
-            </div>
-          )}
-          {error && <div className="notice notice--err" role="alert">{error}</div>}
-          {notice && <div className="notice notice--info" role="status">{notice}</div>}
-
-          {googleBlock}
-
-          <div className="field">
-            <label className="field__label" htmlFor="su-name">Full name</label>
-            <div className="field__wrap">
-              <span className="field__icon"><UserIcon size={18} /></span>
-              <input
-                id="su-name"
-                className="field__input"
-                type="text"
-                autoComplete="name"
-                placeholder="Full name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                disabled={busy || blocked}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="field">
-            <label className="field__label" htmlFor="su-email">Email address</label>
-            <div className="field__wrap">
-              <span className="field__icon"><MailIcon size={18} /></span>
-              <input
-                id="su-email"
-                className="field__input"
-                type="email"
-                inputMode="email"
-                autoComplete="username"
-                autoCapitalize="none"
-                autoCorrect="off"
-                placeholder="Email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={busy || blocked}
-                required
-              />
-            </div>
-          </div>
-
-          <div className="field">
-            <label className="field__label" htmlFor="su-password">Password</label>
-            <div className="field__wrap">
-              <span className="field__icon"><LockIcon size={18} /></span>
-              <input
-                id="su-password"
-                className="field__input field__input--reveal"
-                type={reveal ? 'text' : 'password'}
-                autoComplete="new-password"
-                placeholder="At least 8 characters"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={busy || blocked}
-                minLength={8}
-                required
-              />
-              {revealBtn}
-            </div>
-          </div>
-
-          <div className="field">
-            <label className="field__label" htmlFor="su-confirm">Confirm password</label>
-            <div className="field__wrap">
-              <span className="field__icon"><LockIcon size={18} /></span>
-              <input
-                id="su-confirm"
-                className="field__input"
-                type={reveal ? 'text' : 'password'}
-                autoComplete="new-password"
-                placeholder="Re-enter password"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                disabled={busy || blocked}
-                required
-              />
-            </div>
-          </div>
-
-          <button className="btn" type="submit" disabled={busy || blocked}>
-            {busy ? 'Creating account…' : 'Create account'}
-          </button>
-
-          <p className="auth__switch">
-            Already have an account?{' '}
-            <button type="button" className="linkbtn" onClick={() => switchView('signin')}>
-              Sign in
-            </button>
-          </p>
-
-          {!cognitoConfigured && (
-            <p className="devnote">
-              <strong>Demo mode:</strong> the account is saved on this device, with no email verification.
+            <p className="auth__offline">
+              <KeypadIcon size={15} />
+              <span>No network? After you have signed in once, you can unlock the app with your offline PIN.</span>
             </p>
-          )}
-        </form>
-      )}
+          </form>
+        )}
 
-      {view === 'confirm' && (
-        <form className="auth__card" onSubmit={handleConfirm}>
-          <div className="auth__logo"><CapIcon size={24} /></div>
-          <h1 className="auth__brand">Verify your email</h1>
-          <p className="auth__tagline">{email.trim()}</p>
-          <p className="auth__help">
-            Check your inbox and spam folder for a 6-digit code. It stays valid for 24 hours,
-            and if you close the app you will come back to this screen.
-          </p>
+        {view === 'join' && <JoinWithCode initialCode={codeFromHash()} onBack={() => switchView('signin')} />}
 
-          {cognitoConfigured && !online && (
-            <div className="notice notice--warn" role="status">
-              You’re offline. You can type the code now, but verifying needs a connection.
-            </div>
-          )}
-          {error && <div className="notice notice--err" role="alert">{error}</div>}
-          {notice && <div className="notice notice--info" role="status">{notice}</div>}
-
-          <div className="field">
-            <label className="field__label" htmlFor="su-code">Verification code</label>
-            <input
-              id="su-code"
-              className="field__input"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              placeholder="123456"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\s/g, ''))}
-              disabled={busy}
-              required
-            />
-          </div>
-
-          <button className="btn" type="submit" disabled={busy || code.length === 0}>
-            {busy ? 'Verifying…' : 'Verify and sign in'}
-          </button>
-
-          <div className="auth__foot">
-            <button className="linkbtn" type="button" onClick={handleResend} disabled={busy}>
-              Resend code
+        {view === 'register' && (
+          <form className="auth__card auth__card--wide" onSubmit={handleRegister} noValidate>
+            <button type="button" className="auth__back" onClick={() => switchView('signin')}>
+              <ChevronLeftIcon size={16} /> Back to sign in
             </button>
-            <button className="linkbtn" type="button" onClick={leaveConfirm} disabled={busy}>
-              Back to sign in
+            <h1 className="auth__brand">Register your school</h1>
+            <p className="auth__tagline">
+              Fill this in as the school’s administrator. The SmartAttend team checks every
+              application; you can sign in straight away and watch for the decision.
+            </p>
+
+            {offlineNotice}
+            {error && <div className="notice notice--err" role="alert">{error}</div>}
+
+            <fieldset className="field-group">
+              <legend className="field__label">The school</legend>
+
+              <div className="field">
+                <label className="field__label" htmlFor="rg-school">School name</label>
+                <input id="rg-school" className="field__input" type="text" autoComplete="organization"
+                  placeholder="e.g. Kisumu Day Secondary School" value={app.schoolName} onChange={set('schoolName')}
+                  disabled={busy} required />
+              </div>
+
+              <div className="field-row">
+                <div className="field">
+                  <label className="field__label" htmlFor="rg-county">County</label>
+                  <select id="rg-county" className="field__input" value={app.county} onChange={set('county')} disabled={busy} required>
+                    <option value="" disabled>Choose…</option>
+                    {COUNTIES_AZ.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="field__label" htmlFor="rg-subcounty">Sub-county <span className="field__opt">(optional)</span></label>
+                  <input id="rg-subcounty" className="field__input" type="text" placeholder="e.g. Kisumu Central"
+                    value={app.subCounty} onChange={set('subCounty')} disabled={busy} />
+                </div>
+              </div>
+
+              <div className="field-row">
+                <div className="field">
+                  <label className="field__label" htmlFor="rg-code">School code <span className="field__opt">(optional)</span></label>
+                  <input id="rg-code" className="field__input" type="text" inputMode="numeric" placeholder="MoE / KNEC code"
+                    value={app.schoolCode} onChange={set('schoolCode')} disabled={busy} />
+                </div>
+                <div className="field">
+                  <label className="field__label" htmlFor="rg-students">Students <span className="field__opt">(about)</span></label>
+                  <input id="rg-students" className="field__input" type="number" min="1" inputMode="numeric" placeholder="e.g. 600"
+                    value={app.studentEstimate} onChange={set('studentEstimate')} disabled={busy} />
+                </div>
+              </div>
+
+              <div className="field-row">
+                <div className="field">
+                  <label className="field__label" htmlFor="rg-type">Type</label>
+                  <select id="rg-type" className="field__input" value={app.schoolType} onChange={set('schoolType')} disabled={busy}>
+                    <option value="">Not sure</option>
+                    <option value="public">Public</option>
+                    <option value="private">Private</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label className="field__label" htmlFor="rg-boarding">Day or boarding</label>
+                  <select id="rg-boarding" className="field__input" value={app.boarding} onChange={set('boarding')} disabled={busy}>
+                    <option value="">Not sure</option>
+                    <option value="day">Day</option>
+                    <option value="boarding">Boarding</option>
+                    <option value="mixed">Day and boarding</option>
+                  </select>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset className="field-group">
+              <legend className="field__label">About you</legend>
+
+              <div className="field-row">
+                <div className="field">
+                  <label className="field__label" htmlFor="rg-name">Full name</label>
+                  <div className="field__wrap">
+                    <span className="field__icon"><UserIcon size={18} /></span>
+                    <input id="rg-name" className="field__input" type="text" autoComplete="name" placeholder="Full name"
+                      value={app.fullName} onChange={set('fullName')} disabled={busy} required />
+                  </div>
+                </div>
+                <div className="field">
+                  <label className="field__label" htmlFor="rg-title">Your role</label>
+                  <select id="rg-title" className="field__input" value={app.jobTitle} onChange={set('jobTitle')} disabled={busy}>
+                    <option value="">Choose…</option>
+                    {JOB_TITLES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="field-row">
+                <div className="field">
+                  <label className="field__label" htmlFor="rg-email">Email address</label>
+                  <input id="rg-email" className="field__input" type="email" inputMode="email" autoComplete="email"
+                    autoCapitalize="none" placeholder="you@school.ac.ke" value={app.email} onChange={set('email')}
+                    disabled={busy} required />
+                </div>
+                <div className="field">
+                  <label className="field__label" htmlFor="rg-phone">Phone <span className="field__opt">(optional)</span></label>
+                  <input id="rg-phone" className="field__input" type="tel" inputMode="tel" autoComplete="tel"
+                    placeholder="07XX XXX XXX" value={app.phone} onChange={set('phone')} disabled={busy} />
+                </div>
+              </div>
+
+              <div className="field-row">
+                <div className="field">
+                  <label className="field__label" htmlFor="rg-password">Password</label>
+                  <div className="field__wrap">
+                    <span className="field__icon"><LockIcon size={18} /></span>
+                    <input id="rg-password" className="field__input field__input--reveal" type={reveal ? 'text' : 'password'}
+                      autoComplete="new-password" placeholder={`At least ${PASSWORD_MIN} characters`}
+                      value={app.password} onChange={set('password')} disabled={busy} required />
+                    {revealBtn}
+                  </div>
+                </div>
+                <div className="field">
+                  <label className="field__label" htmlFor="rg-confirm">Confirm password</label>
+                  <input id="rg-confirm" className="field__input" type={reveal ? 'text' : 'password'} autoComplete="new-password"
+                    placeholder="Type it again" value={app.confirm} onChange={set('confirm')} disabled={busy} required />
+                </div>
+              </div>
+            </fieldset>
+
+            <button className="btn" type="submit" disabled={busy || !online}>
+              {busy ? 'Sending application…' : 'Send application'}
             </button>
-          </div>
-        </form>
-      )}
+            <p className="auth__switch">
+              Already registered?{' '}
+              <button type="button" className="linkbtn" onClick={() => switchView('signin')}>Sign in</button>
+            </p>
+          </form>
+        )}
       </main>
     </div>
   );

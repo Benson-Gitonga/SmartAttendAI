@@ -72,8 +72,22 @@ All optional. Copy `.env.example` to `.env` to override.
 | POST | `/api/sync` | inbound attendance batch from the offline PWA (see below) |
 | GET | `/api/gate/classes/:id/attendance?date=YYYY-MM-DD` | one class's records for a day (default today) plus `gate.lastScanAt` - the PWA pulls this before roll call (see below) |
 | * | `/api/roster/*` | roster upserts pushed from the PWA (schools, classes, students, cards) |
-| * | `/api/admin/*` | per-school reporting: overview, classes, flagged students, follow-ups |
-| * | `/api/system-admin/*` | platform-wide school list + activate/deactivate |
+| GET | `/api/admin/schools/:id/today?date=` | every class's register for a day (school admin) |
+| POST/PATCH | `/api/admin/schools/:id/classes`, `/api/admin/classes/:id` | create a class, rename it or change its teacher |
+| GET | `/api/admin/schools/:id/teachers` | teachers with their classes |
+| GET/PUT | `/api/admin/classes/:id/register?date=` | read, or take/correct, a class's register; PUT needs a `reason` (see below) |
+| GET | `/api/teacher/classes` | the classes assigned to the signed-in teacher, with students |
+| POST | `/api/admin/schools/:id/teachers` | invite a teacher: returns a one-time code, shown once |
+| POST | `/api/admin/teachers/:id/{code,disable,enable}` | new invite or password-reset code; disable or enable a teacher |
+| GET/POST | `/api/auth/setup-codes/:code`, `/api/auth/setup` | who a code is for; set a password with it and sign in |
+| * | `/api/admin/*` | also: overview, flagged students, follow-ups |
+| POST | `/api/auth/login` | school staff sign-in, body `{ "email", "password" }`, returns a token, the user and their school |
+| GET | `/api/auth/me` | the signed-in user and their school's current status |
+| POST | `/api/schools/register` | a school's application: the school (`pending`) and its admin account (see below) |
+| GET | `/api/schools/:id` | a school's status and any review note, for the admin's waiting screen |
+| POST | `/api/system-admin/login` | system admin sign-in, body `{ "username", "password" }`, returns a token (see below) |
+| GET | `/api/system-admin/schools?status=` | every school, waiting ones first, plus a count per status |
+| POST | `/api/system-admin/schools/:id/{approve,reject,disable,enable}` | review a school; body `{ "note", "actor" }`, `note` required to reject |
 
 Valid `cardUid` values are the 10 seeded cards: `04A1B2C3`, `04D4E5F6`,
 `0417A8B9`, `04C2D3E4`, `0455667788`, `01020304`, `11223344`, `55667788`,
@@ -96,6 +110,114 @@ how late it arrived.
 
 Set `DEVICE_API_KEY` and gate devices must send it as the `X-Device-Key`
 header, otherwise they get a `401`. The rest of the API is unaffected.
+
+### Staff sign-in
+
+School admins and teachers have accounts on this server (the `users` table),
+with scrypt-hashed passwords; there is no Cognito. `POST /api/auth/login`
+returns a token signed with `AUTH_TOKEN_SECRET` that lasts
+`AUTH_TOKEN_TTL_DAYS` (30). Every staff endpoint needs it as
+`Authorization: Bearer <token>` and is limited to the user's own school:
+
+| Endpoint | Who | Notes |
+|---|---|---|
+| `/api/admin/*` | school admin | another school's id, class or student is a `404` |
+| `/api/roster/*` | admin or teacher | another school's row is a `403` |
+| `/api/sync` | admin or teacher | a batch with another school's student is a `403` |
+| `/api/gate/classes/:id/attendance` | admin or teacher | another school's class is a `404` |
+| `/api/students`, `/attendance`, `/challenges`, `/stats` | system admin | platform-wide debug lists |
+
+All of them also answer `403` while the school is pending, rejected or
+disabled. The user is re-read on every request, so disabling an account or a
+school takes effect at once. Five wrong passwords for one email from one
+address lock that pair out for 15 minutes.
+
+`npm run db:seed` adds demo accounts, all with the password `demo1234`:
+
+| Email | Role | School |
+|---|---|---|
+| `admin@kibera.ac.ke` | school admin | Kibera Secondary (active, with the demo class) |
+| `teacher@kibera.ac.ke` | teacher | Kibera Secondary |
+| `g.achieng@kisumuday.ac.ke` | school admin | Kisumu Day (pending) |
+| `p.mwangi@nyerihigh.ac.ke` | school admin | Nyeri High (pending) |
+
+### School admin supervision
+
+The school admin creates classes and assigns each one a teacher
+(`class_groups.teacher_user_id`). Teachers cannot create classes, and may only
+change the roster of classes assigned to them. A teacher's device downloads
+its classes from `GET /api/teacher/classes`.
+
+`PUT /api/admin/classes/:id/register` takes or corrects the register for any
+past day or today: `{ date, reason, note?, marks: [{ studentId, status,
+absenceReason? }] }`. `reason` is one of `teacher_absent`, `wrong_mark`,
+`late_arrival`, `gate_error`, `other` (which needs a `note`). Each changed mark
+updates `attendance_events` in place (or adds one), is queued for the cloud
+again, and leaves an `attendance_overrides` row with the old and new mark, the
+reason, the admin and the class teacher it was done for. The teacher's device
+picks the change up on its next gate pull.
+
+### Teacher invites
+
+Teachers do not sign up. The school admin invites them (name, email, phone),
+which creates an `invited` account with no password and a one-time code such
+as `K7QM-4XPA` (`setup_codes`, SHA-256 only, 7 days). The admin sends it from
+their own phone (WhatsApp, SMS, email links in the app); SmartAttend sends
+nothing itself. The teacher opens `/#/join/<code>` or enters it under "I have
+an invite code", chooses a password and is signed in. The same codes reset a
+forgotten password. A new code revokes the old one; codes work once; wrong
+codes from one address are rate-limited. Disabling a teacher signs them out at
+once and revokes their code.
+
+### System admin sign-in
+
+There is one system admin account, and it lives only on the server. Set it with
+
+```
+npm run sysadmin:set -- sysadmin
+```
+
+which asks for the password twice and writes
+`SYSTEM_ADMIN_USERNAME`, a scrypt `SYSTEM_ADMIN_PASSWORD_HASH` and, the first
+time, a random `SYSTEM_ADMIN_TOKEN_SECRET` into `server/.env`. Run it again to
+change the password. Restart the server afterwards.
+
+`POST /api/system-admin/login` checks the password against the hash and
+returns a signed token valid for `SYSTEM_ADMIN_TOKEN_TTL_HOURS` (default 8).
+Every other `/api/system-admin/*` call needs `Authorization: Bearer <token>`,
+or it gets a `401`. Five wrong passwords from one address lock sign-in for
+15 minutes (`429`). Sign-ins, failures and every school change are in the
+audit log, with the system admin username as the actor. The username has no
+`@`: the PWA sends a sign-in without one here, and anything with one is a
+teacher or school admin email. With no account set up the
+endpoints answer `503`.
+
+### School approval
+
+A school applies with `POST /api/schools/register`: `school` (`name`,
+`county`, optional `subCounty`, `schoolCode`, `schoolType`, `boarding`,
+`studentEstimate`) and `applicant` (`fullName`, `email`, `password`, optional
+`phone`, `jobTitle`). The applicant becomes the school's admin and is signed in
+straight away. The school waits as `pending` until a system admin acts on it:
+
+```
+pending --approve--> active --disable--> inactive
+   |                   ^                    |
+   +--reject--> rejected  +-----enable------+
+```
+
+Any other change is a `409` (a rejected school registers again instead). Each
+change records who made it, when, and the note, and leaves a `school.*` audit
+row. An application is refused with a `409` (and `field`) when the email
+already has an account, the school code is already registered, or the same
+name is already registered in that county. Nothing is saved from a refused
+application.
+
+A school that is not `active` cannot write: `/api/roster/*` and `/api/sync`
+answer `403` for its classes and students, so the PWA keeps those changes
+queued and sends them once the school is approved or enabled. Schools pushed
+by the PWA roster (local mode) are `active` by default. `npm run db:seed` adds
+two pending demo schools so the approval queue is not empty.
 
 ## How a scan becomes a record
 
@@ -176,6 +298,5 @@ risk model, and the sync worker's backoff / batching / cloud-response handling.
 
 - Absence reasons in the risk score: `src/lib/riskModel.js` still sets the fee
   and illness features to 0
-- Real Cognito-verified requests
 - Real AWS: `syncWorker.js` targets `SYNC_API_GATEWAY_URL`; until that's a
   deployed endpoint, point it at a local shim around `../aws/lambda/syncHandler.js`

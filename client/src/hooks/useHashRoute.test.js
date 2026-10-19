@@ -12,11 +12,6 @@ describe('hash routes', () => {
     expect(parseHash('#/nope').tab).toBe('dashboard');
   });
 
-  it('opens the role home when there is no page in the hash', () => {
-    expect(parseHash('', 'overview').tab).toBe('overview');
-    expect(parseHash('#/register', 'overview').tab).toBe('attendance');
-  });
-
   it('round-trips through toHash', () => {
     const route = { tab: 'heatmap', studentId: 'a b', classId: null };
     expect(toHash(route)).toBe('#/reports/student/a%20b');

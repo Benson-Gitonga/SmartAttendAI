@@ -1,4 +1,8 @@
-/** POST/PATCH /api/roster/*: idempotent roster upserts pushed from the PWA. */
+/**
+ * POST/PATCH /api/roster/*: idempotent roster upserts pushed from the PWA by
+ * a signed-in teacher or school admin. Each one may only touch their own
+ * school, and only while it is active.
+ */
 
 import { Router } from 'express';
 import {
@@ -8,11 +12,18 @@ import {
   upsertStudent,
   patchStudent,
   upsertCard,
+  schoolIdOf,
 } from '../db/repository.js';
 
-export function createRosterRouter({ db }) {
+export function createRosterRouter({ db, userAuth }) {
   if (!db) throw new Error('createRosterRouter needs a db');
+  if (!userAuth) throw new Error('createRosterRouter needs userAuth');
   const router = Router();
+
+  // A school that is waiting for approval, rejected or disabled cannot change
+  // its roster. 403 keeps the change queued on the device, so it goes through
+  // once the school is approved or enabled again.
+  router.use(userAuth.requireUser(), userAuth.requireActiveSchool);
 
   const require = (res, body, fields) => {
     const missing = fields.filter((f) => body[f] === undefined || body[f] === null || body[f] === '');
@@ -23,15 +34,47 @@ export function createRosterRouter({ db }) {
     return true;
   };
 
+  // Another school's school, class or student: refused. Unknown ones pass,
+  // so the usual "push the parent first" 409 still applies.
+  const blocked = (res, req, { schoolId, classGroupId, studentId }) => {
+    const owner = schoolId ?? schoolIdOf(db, { classGroupId, studentId });
+    if (owner == null || owner === req.user.schoolId) return notYourClass(res, req, { classGroupId, studentId });
+    res.status(403).json({ error: 'that belongs to another school' });
+    return true;
+  };
+
+  // A teacher edits only the classes the school admin assigned them.
+  const assignedTeacher = db.prepare(`SELECT teacher_user_id AS teacherUserId FROM class_groups WHERE class_group_id = ?`);
+  const classOfStudent = db.prepare(`SELECT class_group_id AS classGroupId FROM students WHERE student_id = ?`);
+  const notYourClass = (res, req, { classGroupId, studentId }) => {
+    if (req.user.role !== 'teacher') return false;
+    const cls = classGroupId ?? (studentId ? classOfStudent.get(studentId)?.classGroupId : null);
+    const row = cls ? assignedTeacher.get(cls) : null;
+    if (!row || row.teacherUserId === req.user.userId) return false;
+    res.status(403).json({ error: 'that class is not assigned to you' });
+    return true;
+  };
+
+  // Schools and classes are set up by the school admin, not by teachers.
+  const adminOnly = (res, req) => {
+    if (req.user.role === 'admin') return false;
+    res.status(403).json({ error: 'only the school admin creates schools and classes' });
+    return true;
+  };
+
   router.post('/schools', (req, res) => {
     const body = req.body ?? {};
     if (!require(res, body, ['schoolId', 'name'])) return;
+    if (adminOnly(res, req)) return;
+    if (blocked(res, req, { schoolId: body.schoolId })) return;
     res.status(200).json(upsertSchool(db, body));
   });
 
   router.post('/classes', (req, res) => {
     const body = req.body ?? {};
     if (!require(res, body, ['classGroupId', 'schoolId', 'grade'])) return;
+    if (adminOnly(res, req)) return;
+    if (blocked(res, req, { schoolId: body.schoolId })) return;
     try {
       res.status(200).json(upsertClassGroup(db, body));
     } catch (err) {
@@ -43,6 +86,7 @@ export function createRosterRouter({ db }) {
   });
 
   router.patch('/classes/:id', (req, res) => {
+    if (blocked(res, req, { classGroupId: req.params.id })) return;
     patchClassGroup(db, req.params.id, req.body ?? {});
     res.status(200).json({ classGroupId: req.params.id, updated: true });
   });
@@ -50,6 +94,7 @@ export function createRosterRouter({ db }) {
   router.post('/students', (req, res) => {
     const body = req.body ?? {};
     if (!require(res, body, ['studentId', 'classGroupId', 'fullName'])) return;
+    if (blocked(res, req, { classGroupId: body.classGroupId })) return;
     try {
       res.status(200).json(upsertStudent(db, body));
     } catch (err) {
@@ -61,6 +106,7 @@ export function createRosterRouter({ db }) {
   });
 
   router.patch('/students/:id', (req, res) => {
+    if (blocked(res, req, { studentId: req.params.id })) return;
     patchStudent(db, req.params.id, req.body ?? {});
     res.status(200).json({ studentId: req.params.id, updated: true });
   });
@@ -68,6 +114,7 @@ export function createRosterRouter({ db }) {
   router.post('/students/:id/card', (req, res) => {
     const body = req.body ?? {};
     if (!require(res, body, ['cardUid'])) return;
+    if (blocked(res, req, { studentId: req.params.id })) return;
     try {
       res.status(200).json(upsertCard(db, { cardUid: body.cardUid, studentId: req.params.id }));
     } catch (err) {

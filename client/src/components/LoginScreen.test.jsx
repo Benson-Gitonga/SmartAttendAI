@@ -1,122 +1,206 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import LoginScreen from './LoginScreen';
 
+// Filling in the whole application form takes a while when every suite runs at once.
+jest.setTimeout(20_000);
+
 const auth = {};
+let mockOnline = true;
 
 jest.mock('../auth/AuthContext', () => ({ useAuth: () => auth }));
-jest.mock('../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => true }));
+jest.mock('../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => mockOnline }));
 
-function authError(code, message) {
-  return Object.assign(new Error(message), { code });
+function authError(code, message, extra = {}) {
+  return Object.assign(new Error(message), { code, ...extra });
 }
 
 beforeEach(() => {
+  mockOnline = true;
+  // The application lives at #/apply; every test starts on sign-in.
+  window.history.replaceState(null, '', '/#/');
   Object.assign(auth, {
-    cognitoConfigured: true,
     signIn: jest.fn().mockResolvedValue({}),
-    signInWithGoogle: jest.fn().mockResolvedValue(undefined),
-    googleError: null,
-    signUp: jest.fn(),
-    confirmSignUp: jest.fn(),
-    resendConfirmationCode: jest.fn().mockResolvedValue(undefined),
-    loadPendingSignup: jest.fn().mockResolvedValue(null),
-    savePendingSignup: jest.fn().mockResolvedValue(undefined),
-    clearPendingSignup: jest.fn().mockResolvedValue(undefined),
+    registerSchool: jest.fn().mockResolvedValue({}),
   });
 });
 
 async function signInAs(user, email, password) {
-  await user.type(screen.getByLabelText('Email address'), email);
+  await user.type(screen.getByLabelText('Email or username'), email);
   await user.type(screen.getByLabelText('Password'), password);
   await user.click(screen.getByRole('button', { name: 'Sign in' }));
 }
 
-describe('LoginScreen email verification', () => {
-  it('reopens the verify screen for a sign-up still waiting for its code', async () => {
-    auth.loadPendingSignup.mockResolvedValue({ email: 'teacher@school.ke', createdAt: '2026-10-13T08:00:00Z' });
-    render(<LoginScreen />);
-    expect(await screen.findByRole('heading', { name: 'Verify your email' })).toBeInTheDocument();
-    expect(screen.getByText('teacher@school.ke')).toBeInTheDocument();
-  });
+async function openRegister(user) {
+  render(<LoginScreen />);
+  await user.click(screen.getByRole('button', { name: /Register your school/ }));
+}
 
-  it('stays on sign-in when nothing is pending', async () => {
-    render(<LoginScreen />);
-    await waitFor(() => expect(auth.loadPendingSignup).toHaveBeenCalled());
-    expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
-  });
+async function fillApplication(user, overrides = {}) {
+  const v = {
+    school: 'Kisumu Day Secondary School', county: 'Kisumu', code: '20414001', students: '640',
+    name: 'Grace Achieng', title: 'Principal', email: 'g.achieng@kisumuday.ac.ke', phone: '0712 345 678',
+    password: 'kisumu-day-2026', confirm: 'kisumu-day-2026', ...overrides,
+  };
+  if (v.school) await user.type(screen.getByLabelText('School name'), v.school);
+  if (v.county) await user.selectOptions(screen.getByLabelText('County'), v.county);
+  if (v.code) await user.type(screen.getByLabelText(/School code/), v.code);
+  if (v.students) await user.type(screen.getByLabelText(/Students/), v.students);
+  await user.selectOptions(screen.getByLabelText('Type'), 'public');
+  await user.selectOptions(screen.getByLabelText('Day or boarding'), 'mixed');
+  if (v.name) await user.type(screen.getByLabelText('Full name'), v.name);
+  if (v.title) await user.selectOptions(screen.getByLabelText('Your role'), v.title);
+  if (v.email) await user.type(screen.getByLabelText('Email address'), v.email);
+  if (v.phone) await user.type(screen.getByLabelText(/Phone/), v.phone);
+  if (v.password) await user.type(screen.getByLabelText('Password'), v.password);
+  if (v.confirm) await user.type(screen.getByLabelText('Confirm password'), v.confirm);
+}
 
-  it('sends an unverified account to the verify screen with a fresh code', async () => {
+const send = (user) => user.click(screen.getByRole('button', { name: 'Send application' }));
+
+describe('LoginScreen sign-in', () => {
+  it('signs in with an email', async () => {
     const user = userEvent.setup();
-    auth.signIn.mockRejectedValue(authError('NOT_CONFIRMED', 'Verify your email'));
     render(<LoginScreen />);
     await signInAs(user, 'teacher@school.ke', 'password123');
-
-    expect(await screen.findByRole('heading', { name: 'Verify your email' })).toBeInTheDocument();
-    expect(auth.savePendingSignup).toHaveBeenCalledWith('teacher@school.ke');
-    expect(auth.resendConfirmationCode).toHaveBeenCalledWith('teacher@school.ke');
-    expect(screen.getByText(/We sent a new code to teacher@school.ke/)).toBeInTheDocument();
+    expect(auth.signIn).toHaveBeenCalledWith('teacher@school.ke', 'password123');
   });
 
-  it('asks for the password after verifying in a reopened app', async () => {
+  it('accepts the system admin username on the same form', async () => {
     const user = userEvent.setup();
-    auth.loadPendingSignup.mockResolvedValue({ email: 'teacher@school.ke', createdAt: '2026-10-13T08:00:00Z' });
-    auth.confirmSignUp.mockResolvedValue(null); // no password in memory, so no session
     render(<LoginScreen />);
-
-    await user.type(await screen.findByLabelText('Verification code'), '123456');
-    await user.click(screen.getByRole('button', { name: 'Verify and sign in' }));
-
-    expect(auth.confirmSignUp).toHaveBeenCalledWith('teacher@school.ke', '123456', '');
-    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
-    expect(screen.getByText(/Your email is verified/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Email address')).toHaveValue('teacher@school.ke');
+    await signInAs(user, 'sysadmin', '1234');
+    expect(auth.signIn).toHaveBeenCalledWith('sysadmin', '1234');
   });
 
-  it('forgets the pending sign-up when the teacher goes back', async () => {
+  it("shows the server's reason when sign-in is refused", async () => {
     const user = userEvent.setup();
-    auth.loadPendingSignup.mockResolvedValue({ email: 'teacher@school.ke', createdAt: '2026-10-13T08:00:00Z' });
+    auth.signIn.mockRejectedValue(authError('WRONG', 'Wrong email or password.'));
     render(<LoginScreen />);
-    await user.click(await screen.findByRole('button', { name: 'Back to sign in' }));
-    expect(auth.clearPendingSignup).toHaveBeenCalled();
-    expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
+    await signInAs(user, 'teacher@school.ke', 'nope');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Wrong email or password.');
   });
 
-  it('never checks for a pending sign-up in local (demo) mode', async () => {
-    auth.cognitoConfigured = false;
+  it('has no open sign-up, no role picker and no demo-mode note', () => {
     render(<LoginScreen />);
-    expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
-    expect(auth.loadPendingSignup).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Create an account' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('radio')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Demo mode/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/system admin/i)).not.toBeInTheDocument();
+  });
+
+  it('cannot sign in for the first time while offline', () => {
+    mockOnline = false;
+    render(<LoginScreen />);
+    expect(screen.getByRole('button', { name: 'Sign in' })).toBeDisabled();
+    expect(screen.getByText(/You’re offline/)).toBeInTheDocument();
   });
 });
 
-describe('LoginScreen roles and Google', () => {
-  it('never asks people to pick their own role', async () => {
+describe('LoginScreen school application', () => {
+  it('sends the school and the applicant in the shape the server expects', async () => {
     const user = userEvent.setup();
-    render(<LoginScreen />);
-    await user.click(screen.getByRole('button', { name: 'Create an account' }));
-    expect(screen.queryByRole('radiogroup')).not.toBeInTheDocument();
-    expect(screen.queryByText('School admin')).not.toBeInTheDocument();
+    await openRegister(user);
+    await fillApplication(user);
+    await send(user);
+
+    expect(auth.registerSchool).toHaveBeenCalledWith({
+      school: {
+        name: 'Kisumu Day Secondary School',
+        county: 'Kisumu',
+        schoolCode: '20414001',
+        schoolType: 'public',
+        boarding: 'mixed',
+        studentEstimate: 640,
+      },
+      applicant: {
+        fullName: 'Grace Achieng',
+        jobTitle: 'Principal',
+        email: 'g.achieng@kisumuday.ac.ke',
+        phone: '0712345678',
+        password: 'kisumu-day-2026',
+      },
+    });
   });
 
-  it('starts Google sign-in from the sign-in screen', async () => {
+  it.each([
+    ['no county', { county: '' }, /Choose the county/],
+    ['a school code with spaces', { code: '204 140' }, /letters and numbers only/],
+    ['a phone that is not Kenyan', { phone: '12345' }, /Kenyan mobile number/],
+    ['a short password', { password: 'short', confirm: 'short' }, /at least 8 characters/],
+    ['passwords that do not match', { confirm: 'something-else' }, /do not match/],
+  ])('stops %s before sending', async (label, overrides, message) => {
     const user = userEvent.setup();
-    render(<LoginScreen />);
-    await user.click(screen.getByRole('button', { name: 'Continue with Google' }));
-    expect(auth.signInWithGoogle).toHaveBeenCalled();
+    await openRegister(user);
+    await fillApplication(user, overrides);
+    await send(user);
+    expect(screen.getByRole('alert')).toHaveTextContent(message);
+    expect(auth.registerSchool).not.toHaveBeenCalled();
   });
 
-  it('shows why Google sign-in could not start', async () => {
+  it('sends an email that already has an account back to sign-in', async () => {
     const user = userEvent.setup();
-    auth.signInWithGoogle.mockRejectedValue(authError('GOOGLE_UNAVAILABLE', 'Google sign-in is not set up on this deployment yet'));
-    render(<LoginScreen />);
-    await user.click(screen.getByRole('button', { name: 'Continue with Google' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Google sign-in is not set up');
+    auth.registerSchool.mockRejectedValue(
+      authError('CONFLICT', 'An account with this email already exists. Sign in instead.', { field: 'email' })
+    );
+    await openRegister(user);
+    await fillApplication(user);
+    await send(user);
+
+    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
+    expect(screen.getByText(/already exists/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Email or username')).toHaveValue('g.achieng@kisumuday.ac.ke');
   });
 
-  it('shows an error from the Google redirect', () => {
-    auth.googleError = 'Google sign-in was cancelled';
+  it('shows a school that is already registered', async () => {
+    const user = userEvent.setup();
+    auth.registerSchool.mockRejectedValue(
+      authError('CONFLICT', 'A school with this code is already registered on SmartAttend.', { field: 'school_code' })
+    );
+    await openRegister(user);
+    await fillApplication(user);
+    await send(user);
+    expect(await screen.findByRole('alert')).toHaveTextContent('already registered');
+  });
+
+  it('goes back to sign-in', async () => {
+    const user = userEvent.setup();
+    await openRegister(user);
+    await user.click(screen.getByRole('button', { name: /Back to sign in/ }));
+    expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
+  });
+});
+
+describe('LoginScreen back navigation', () => {
+  beforeEach(() => window.history.replaceState(null, '', '/#/'));
+
+  it('the application has its own address, and back returns to sign-in', async () => {
+    const user = userEvent.setup();
     render(<LoginScreen />);
-    expect(screen.getByRole('alert')).toHaveTextContent('Google sign-in was cancelled');
+    await user.click(screen.getByRole('button', { name: /Register your school/ }));
+    expect(window.location.hash).toBe('#/apply');
+    expect(screen.getByRole('heading', { name: 'Register your school' })).toBeInTheDocument();
+
+    await act(async () => {
+      window.history.back();
+      await new Promise((r) => setTimeout(r, 30));
+    });
+    expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
+  });
+
+  it('opening the app on #/apply shows the application', () => {
+    window.history.replaceState(null, '', '/#/apply');
+    render(<LoginScreen />);
+    expect(screen.getByRole('heading', { name: 'Register your school' })).toBeInTheDocument();
+  });
+
+  it('"Back to sign in" steps back instead of piling up history', async () => {
+    const user = userEvent.setup();
+    render(<LoginScreen />);
+    await user.click(screen.getByRole('button', { name: /Register your school/ }));
+    await user.click(screen.getByRole('button', { name: /Back to sign in/ }));
+    expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
+    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+    expect(window.location.hash).not.toBe('#/apply');
   });
 });

@@ -1,32 +1,27 @@
 import { createContext, useContext, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  signIn as cognitoSignIn,
-  signUp as cognitoSignUp,
-  confirmSignUp as cognitoConfirmSignUp,
-  resendConfirmationCode as cognitoResendCode,
-  signOut as cognitoSignOut,
+  signIn as serverSignIn,
+  registerSchool as serverRegisterSchool,
+  redeemSetupCode,
+  signOut as clearSession,
   loadStoredSession,
   isSessionValid,
   extendSessionWithPin,
   expireSessionNow,
-  isCognitoConfigured,
-  isGoogleConfigured,
-  startGoogleSignIn,
-  completeGoogleSignIn
-} from './cognito';
+  saveSystemAdminSession,
+  updateStoredSchool,
+} from './session';
+import { loginSystemAdmin } from '../services/systemAdminService';
 import { verifyPin, setPin, hasPin, getPinStatus, clearLockout } from './pin';
-import { loadPendingSignup, savePendingSignup, clearPendingSignup } from './pendingSignup';
 
 const AuthContext = createContext(null);
 
-// A fresh sign-in drops the last user's page, so each role opens on its own home.
-function clearRoute() {
-  if (window.location.hash) window.history.replaceState(null, '', window.location.pathname + window.location.search);
-}
+// School staff sign in with an email; the system admin's name has no @.
+const isSystemAdminName = (username) => Boolean(username?.trim()) && !username.includes('@');
 
 /**
  *   signedOut: no session on the device.
- *   locked:    the session expired; the PIN unlocks it offline.
+ *   locked:    the app locked itself after an hour; the PIN unlocks it offline.
  *   ready:     signed in.
  */
 export const AUTH_STATUS = { LOADING: 'loading', SIGNED_OUT: 'signedOut', LOCKED: 'locked', READY: 'ready' };
@@ -34,7 +29,6 @@ export const AUTH_STATUS = { LOADING: 'loading', SIGNED_OUT: 'signedOut', LOCKED
 export function AuthProvider({ children }) {
   const [status, setStatus] = useState(AUTH_STATUS.LOADING);
   const [session, setSession] = useState(null);
-  const [googleError, setGoogleError] = useState(null);
   const [pinState, setPinState] = useState({ enrolled: false, locked: false, attemptsRemaining: 3 });
 
   const refreshPinState = useCallback(async (username) => {
@@ -48,6 +42,14 @@ export function AuthProvider({ children }) {
       setStatus(AUTH_STATUS.SIGNED_OUT);
       return;
     }
+    // An expired system admin sign-in cannot be unlocked with a PIN: the
+    // server's token has run out, so they sign in again.
+    if (next.role === 'system_admin' && !isSessionValid(next)) {
+      await clearSession();
+      setSession(null);
+      setStatus(AUTH_STATUS.SIGNED_OUT);
+      return;
+    }
     await refreshPinState(next.username);
     setStatus(isSessionValid(next) ? AUTH_STATUS.READY : AUTH_STATUS.LOCKED);
   }, [refreshPinState]);
@@ -55,20 +57,6 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // Coming back from Google: finish that sign-in before anything else.
-      try {
-        const fromGoogle = await completeGoogleSignIn();
-        if (cancelled) return;
-        if (fromGoogle) {
-          clearRoute();
-          await clearLockout(fromGoogle.username);
-          await applySession(fromGoogle);
-          return;
-        }
-      } catch (err) {
-        if (cancelled) return;
-        setGoogleError(err.message ?? 'Google sign-in failed');
-      }
       const stored = await loadStoredSession();
       if (cancelled) return;
       if (!stored) {
@@ -80,43 +68,44 @@ export function AuthProvider({ children }) {
     return () => { cancelled = true; };
   }, [applySession]);
 
+  /**
+   * One sign-in for everyone, always checked by the server. School staff use
+   * their email; a name without an @ is the system admin's.
+   */
   const signIn = useCallback(async (username, password) => {
-    const next = await cognitoSignIn(username, password);
-    // An online login outranks an offline lockout.
-    await clearLockout(username);
-    clearRoute();
-    await applySession(next);
-    return { session: next, pinEnrolled: await hasPin(username) };
-  }, [applySession]);
-
-  const signInWithGoogle = useCallback(async () => {
-    setGoogleError(null);
-    await startGoogleSignIn();
-  }, []);
-
-  const signUp = useCallback(async ({ name, email, password }) => {
-    const result = await cognitoSignUp({ name, email, password });
-    await clearLockout(email.trim());
-    if (!result.needsConfirmation) {
-      clearRoute();
-      await applySession(result.session);
-    }
-    return result;
-  }, [applySession]);
-
-  const confirmSignUp = useCallback(async (username, code, password) => {
-    const next = await cognitoConfirmSignUp(username, code, password);
-    if (next) {
-      clearRoute();
+    if (isSystemAdminName(username)) {
+      const next = await saveSystemAdminSession(await loginSystemAdmin(username, password));
       await applySession(next);
+      return { session: next, pinEnrolled: false };
     }
+    const next = await serverSignIn(username, password);
+    // A sign-in the server accepted outranks an offline PIN lockout.
+    await clearLockout(next.username);
+    await applySession(next);
+    return { session: next, pinEnrolled: await hasPin(next.username) };
+  }, [applySession]);
+
+  /** A school's application. The applicant is signed in as its admin while it waits. */
+  const registerSchool = useCallback(async (application) => {
+    const next = await serverRegisterSchool(application);
+    await clearLockout(next.username);
+    await applySession(next);
     return next;
   }, [applySession]);
 
-  const resendConfirmationCode = useCallback(
-    (username) => cognitoResendCode(username),
-    []
-  );
+  /** A teacher sets their password with the code their school admin gave them. */
+  const joinWithCode = useCallback(async (code, password) => {
+    const next = await redeemSetupCode(code, password);
+    await clearLockout(next.username);
+    await applySession(next);
+    return next;
+  }, [applySession]);
+
+  /** Keep the device's copy of the school's name and status up to date. */
+  const refreshSchool = useCallback(async (school) => {
+    const next = await updateStoredSchool(school);
+    if (next) setSession(next);
+  }, []);
 
   const unlockWithPin = useCallback(async (pin) => {
     if (!session) throw new Error('No session to unlock');
@@ -138,7 +127,7 @@ export function AuthProvider({ children }) {
   }, [session, refreshPinState]);
 
   const signOut = useCallback(async () => {
-    await cognitoSignOut();
+    await clearSession();
     setSession(null);
     setPinState({ enrolled: false, locked: false, attemptsRemaining: 3 });
     setStatus(AUTH_STATUS.SIGNED_OUT);
@@ -157,30 +146,24 @@ export function AuthProvider({ children }) {
       ? {
           username: session.username,
           displayName: session.displayName,
+          jobTitle: session.jobTitle ?? null,
           roles: session.roles ?? [],
           role: session.role ?? 'teacher',
           schoolId: session.schoolId ?? null,
           schoolName: session.schoolName ?? null,
+          schoolStatus: session.schoolStatus ?? null,
         }
       : null,
-    cognitoConfigured: isCognitoConfigured(),
-    googleConfigured: isGoogleConfigured(),
-    googleError,
     signIn,
-    signInWithGoogle,
-    signUp,
-    confirmSignUp,
-    resendConfirmationCode,
-    loadPendingSignup,
-    savePendingSignup,
-    clearPendingSignup,
+    registerSchool,
+    joinWithCode,
+    refreshSchool,
     signOut,
     unlockWithPin,
     enrolPin,
     simulateExpiry
   }), [
-    status, session, pinState, googleError, signIn, signInWithGoogle, signUp, confirmSignUp,
-    resendConfirmationCode, signOut, unlockWithPin, enrolPin, simulateExpiry
+    status, session, pinState, signIn, registerSchool, joinWithCode, refreshSchool, signOut, unlockWithPin, enrolPin, simulateExpiry
   ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -3,13 +3,66 @@
 
 PRAGMA foreign_keys = ON;
 
+-- A school registered by its admin starts 'pending' until a system admin
+-- approves ('active') or rejects ('rejected') it. An approved school can be
+-- disabled ('inactive') and enabled again. Rows pushed by the PWA roster
+-- default to 'active' so local-mode schools keep working.
 CREATE TABLE IF NOT EXISTS schools (
   school_id   TEXT PRIMARY KEY,
   name        TEXT NOT NULL,
   county      TEXT,
-  status      TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  status      TEXT NOT NULL DEFAULT 'active'
+              CHECK (status IN ('pending', 'active', 'inactive', 'rejected')),
+  admin_name  TEXT,                                   -- who registered the school
+  admin_email TEXT,
+  admin_phone TEXT,
+  review_note TEXT,                                   -- rejection reason, or why it was disabled
+  reviewed_by TEXT,                                   -- system admin username
+  reviewed_at TEXT,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  -- From the school's application, for the system admin's review.
+  sub_county      TEXT,
+  school_code     TEXT,                               -- Ministry of Education / KNEC code
+  school_type     TEXT CHECK (school_type IN ('public', 'private')),
+  boarding        TEXT CHECK (boarding IN ('day', 'boarding', 'mixed')),
+  student_estimate INTEGER CHECK (student_estimate IS NULL OR student_estimate >= 0)
 );
+
+-- Everyone who signs in to a school: its admin (who applied for the school)
+-- and its teachers. Passwords are scrypt hashes (src/auth/systemAdminAuth.js
+-- hashPassword). The system admin is not here; that account lives in .env.
+CREATE TABLE IF NOT EXISTS users (
+  user_id         TEXT PRIMARY KEY,
+  email           TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  full_name       TEXT NOT NULL,
+  phone           TEXT,
+  job_title       TEXT,                               -- e.g. Principal, Deputy Principal
+  role            TEXT NOT NULL CHECK (role IN ('admin', 'teacher')),
+  school_id       TEXT NOT NULL REFERENCES schools(school_id) ON DELETE CASCADE,
+  password_hash   TEXT,                               -- NULL until an invited teacher sets one
+  status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'invited', 'disabled')),
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  last_sign_in_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_school ON users(school_id);
+
+-- One-time codes a school admin gives a teacher: to set a password for the
+-- first time ('invite') or after forgetting it ('reset'). Only a SHA-256 of
+-- the code is kept. A new code for the same person revokes the old one.
+CREATE TABLE IF NOT EXISTS setup_codes (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  code_hash   TEXT NOT NULL UNIQUE,
+  purpose     TEXT NOT NULL CHECK (purpose IN ('invite', 'reset')),
+  created_by  TEXT,                                   -- the admin's email
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at  TEXT NOT NULL,                          -- ISO 8601
+  used_at     TEXT,
+  revoked_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_setup_codes_user ON setup_codes(user_id);
 
 CREATE TABLE IF NOT EXISTS class_groups (
   class_group_id TEXT PRIMARY KEY,
@@ -120,3 +173,24 @@ CREATE TABLE IF NOT EXISTS follow_ups (
 );
 
 CREATE INDEX IF NOT EXISTS idx_followups_student ON follow_ups(student_id, created_at);
+
+-- A school admin taking or correcting a class's register (teacher absent,
+-- wrong mark...). attendance_events keeps the current mark; this keeps who
+-- changed it, from what, and why. The reason is required.
+CREATE TABLE IF NOT EXISTS attendance_overrides (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id     TEXT NOT NULL REFERENCES attendance_events(event_id) ON DELETE CASCADE,
+  student_id   TEXT NOT NULL,
+  date         TEXT NOT NULL,
+  from_status  TEXT,                                   -- NULL: the student had no mark
+  to_status    TEXT NOT NULL CHECK (to_status IN ('present', 'absent', 'late')),
+  from_reason  TEXT,
+  to_reason    TEXT,
+  reason       TEXT NOT NULL CHECK (reason IN ('teacher_absent', 'wrong_mark', 'late_arrival', 'gate_error', 'other')),
+  note         TEXT,
+  actor        TEXT NOT NULL,                          -- the admin's email
+  on_behalf_of TEXT,                                   -- the class teacher at the time
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_overrides_student_date ON attendance_overrides(student_id, date);

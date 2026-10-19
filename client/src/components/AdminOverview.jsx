@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { getSchoolOverview, getSchoolClasses, getSchoolFlagged } from '../services/adminService';
 import { useAuth } from '../auth/AuthContext';
+import { authHeaders } from '../auth/session';
 import Avatar from './Avatar';
 import { ArrowRightIcon, PhoneIcon, MailIcon } from './icons';
 
@@ -52,8 +53,9 @@ export default function AdminOverview({ onOpenClass }) {
     try {
       const res = await fetch(`/api/admin/students/${studentId}/follow-ups`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ flag, method, note: note.trim() || null, actor: user?.username ?? null }),
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+        // The server logs the follow-up against whoever is signed in.
+        body: JSON.stringify({ flag, method, note: note.trim() || null }),
       });
       if (!res.ok) throw new Error(`server responded ${res.status}`);
       setLogging(null);

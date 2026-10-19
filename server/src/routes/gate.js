@@ -19,20 +19,27 @@ import {
   getClassAttendanceForDate,
   getLastGateScanAt,
   todayISO,
+  schoolIdOf,
 } from '../db/repository.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-export function createGateRouter({ db }) {
+export function createGateRouter({ db, userAuth }) {
   if (!db) throw new Error('createGateRouter needs a db');
+  if (!userAuth) throw new Error('createGateRouter needs userAuth');
   const router = Router();
+
+  router.use(userAuth.requireUser(), userAuth.requireActiveSchool);
 
   router.get('/classes/:id/attendance', (req, res) => {
     const date = req.query.date || todayISO();
     if (!DATE_RE.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
 
     const cls = getClassGroup(db, req.params.id);
-    if (!cls) return res.status(404).json({ error: 'class not found' });
+    // Another school's class looks the same as no class at all.
+    if (!cls || schoolIdOf(db, { classGroupId: req.params.id }) !== req.user.schoolId) {
+      return res.status(404).json({ error: 'class not found' });
+    }
 
     res.json({
       classGroupId: req.params.id,

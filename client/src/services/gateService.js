@@ -17,6 +17,7 @@
  */
 
 import { applyGateRecords, todayISO, GATE_CAPTURE_METHODS } from '../db/database';
+import { authHeaders } from '../auth/session';
 
 /** Same-origin endpoint on the Tier 2 Express server (Vite proxies /api in dev). */
 export function gateEndpoint(classGroupId, date) {
@@ -58,7 +59,7 @@ export async function pullGateAttendance(classGroupId, {
 
   let response;
   try {
-    response = await fetchImpl(gateEndpoint(classGroupId, date), { signal: controller?.signal });
+    response = await fetchImpl(gateEndpoint(classGroupId, date), { signal: controller?.signal, headers: await authHeaders() });
   } catch {
     return { status: 'unreachable', ...empty };
   } finally {

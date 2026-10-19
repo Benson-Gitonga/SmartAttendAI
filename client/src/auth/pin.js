@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import { db } from '../db/database';
 
 /**
- * Offline PIN unlock for when the Cognito token has expired and there is no
+ * Offline PIN unlock for when the app has locked itself and there is no
  * network. The PIN is stored only as a bcrypt hash.
  */
 

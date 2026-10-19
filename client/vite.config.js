@@ -3,10 +3,6 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
-  // amazon-cognito-identity-js expects Node's `global`.
-  define: {
-    global: 'globalThis',
-  },
   // Dev only: forward /api to the Tier 2 server.
   server: {
     proxy: {

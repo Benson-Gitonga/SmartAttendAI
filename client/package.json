@@ -12,7 +12,6 @@
     "test": "jest"
   },
   "dependencies": {
-    "amazon-cognito-identity-js": "^6.3.20",
     "bcryptjs": "^3.0.3",
     "dexie": "^4.4.5",
     "react": "^19.2.8",

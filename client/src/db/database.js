@@ -398,7 +398,14 @@ function queueRosterPush({ method = 'POST', path, body }) {
  *
  * @param {{includeArchived?: boolean, ownerUsername?: string}} [opts]
  */
-export async function getClasses({ includeArchived = false, ownerUsername } = {}) {
+export async function getClasses({ includeArchived = false, ownerUsername, assignedOnly = false } = {}) {
+  // Classes the school admin assigned this teacher, as downloaded by
+  // applyAssignedClasses: no demo class, and nothing claimed from other accounts.
+  if (assignedOnly) {
+    return (await db.classGroups.toArray())
+      .filter((c) => c.assigned && c.ownerUsername === ownerUsername && (includeArchived || c.active !== false))
+      .sort((a, b) => classLabel(a).localeCompare(classLabel(b)));
+  }
   if (ownerUsername) {
     const orphaned = await db.classGroups.filter((c) => !c.demo && !c.ownerUsername).toArray();
     for (const c of orphaned) {
@@ -411,6 +418,72 @@ export async function getClasses({ includeArchived = false, ownerUsername } = {}
     .filter((c) => includeArchived || c.active !== false)
     .filter((c) => !ownerUsername || c.demo || c.ownerUsername === ownerUsername)
     .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+}
+
+/**
+ * Save the classes the school admin assigned this teacher (GET
+ * /api/teacher/classes) on the device. The server is the record for these,
+ * so nothing is queued back up. A class that is no longer assigned is
+ * archived, keeping its history on the device.
+ *
+ * @param {object[]} classes  each with its `students`
+ * @param {string} ownerUsername  the signed-in teacher
+ * @returns {Promise<{classes: number, students: number, removed: number}>}
+ */
+export async function applyAssignedClasses(classes, ownerUsername) {
+  const now = new Date().toISOString();
+  let studentCount = 0;
+  let removed = 0;
+
+  await db.transaction('rw', db.classGroups, db.students, async () => {
+    const keep = new Set(classes.map((c) => c.classGroupId));
+
+    for (const c of classes) {
+      const fields = {
+        classGroupId: c.classGroupId,
+        schoolId: c.schoolId,
+        grade: c.grade ?? null,
+        stream: c.stream ?? null,
+        name: [c.grade, c.stream].filter(Boolean).join(' ').trim() || 'Class',
+        academicYear: c.academicYear ?? null,
+        teacherName: c.teacherName ?? null,
+        ownerUsername,
+        assigned: true,
+        demo: false,
+        active: true,
+        archivedAt: null,
+      };
+      const local = await db.classGroups.where('classGroupId').equals(c.classGroupId).first();
+      if (local) await db.classGroups.update(local.id, fields);
+      else await db.classGroups.add({ ...fields, createdAt: now });
+
+      for (const st of c.students ?? []) {
+        const studentFields = {
+          studentId: st.studentId,
+          classGroupId: c.classGroupId,
+          fullName: st.fullName,
+          admissionNo: st.admissionNo ?? null,
+          guardianPhone: st.guardianPhone ?? null,
+          guardianEmail: st.guardianEmail ?? null,
+          enrolledAt: st.enrolledAt ?? null,
+          active: st.active !== false,
+          ...(st.cardUid ? { cardUid: st.cardUid } : {}),
+        };
+        const existing = await db.students.where('studentId').equals(st.studentId).first();
+        if (existing) await db.students.update(existing.id, studentFields);
+        else await db.students.add(studentFields);
+        studentCount += 1;
+      }
+    }
+
+    const dropped = await db.classGroups
+      .filter((c) => c.assigned && c.ownerUsername === ownerUsername && c.active !== false && !keep.has(c.classGroupId))
+      .toArray();
+    for (const c of dropped) await db.classGroups.update(c.id, { active: false, archivedAt: now });
+    removed = dropped.length;
+  });
+
+  return { classes: classes.length, students: studentCount, removed };
 }
 
 export async function getClassById(classGroupId) {

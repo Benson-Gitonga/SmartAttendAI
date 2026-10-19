@@ -5,18 +5,33 @@ import { openDatabase } from '../db/index.js';
 import { seed } from '../db/seed.js';
 import { recordAttendance, todayISO } from '../db/repository.js';
 import { createApp } from '../app.js';
+import { testUserAuth, staffHeaders } from '../auth/testing.js';
 import { createCardHandler } from '../attendance/handler.js';
 
 let db;
 let server;
 let base;
+let userAuth;
+let headers; // made on the first request of each test
+
+// Requests from a signed-in teacher of school-kibera-001.
+const SCHOOL = 'school-kibera-001';
+const api = (p, init = {}) => {
+  if (!headers) {
+    db.prepare('INSERT OR IGNORE INTO schools (school_id, name) VALUES (?, ?)').run(SCHOOL, 'Test School');
+    headers = staffHeaders(db, userAuth, { schoolId: SCHOOL, role: 'teacher' });
+  }
+  return fetch(`${base}${p}`, { ...init, headers: { ...headers, ...init.headers } });
+};
 
 const CLASS = 'class-form3b-001';
 
 beforeEach(async () => {
   db = openDatabase(':memory:');
+  userAuth = testUserAuth(db);
+  headers = undefined;
   seed(db);
-  server = createApp({ db, logger: false }).listen(0);
+  server = createApp({ db, userAuth, logger: false }).listen(0);
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
 
@@ -33,7 +48,7 @@ afterEach(async () => {
 });
 
 const getClassAttendance = (classId, query = '') =>
-  fetch(`${base}/api/gate/classes/${classId}/attendance${query}`);
+  api(`/api/gate/classes/${classId}/attendance${query}`);
 
 describe('GET /api/gate/classes/:id/attendance', () => {
   test('404 for a class the server does not know', async () => {
@@ -72,7 +87,7 @@ describe('GET /api/gate/classes/:id/attendance', () => {
 
   test('includes teacher marks synced from a phone, with their absence reason', async () => {
     const eventId = randomUUID();
-    await fetch(`${base}/api/sync`, {
+    await api(`/api/sync`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({

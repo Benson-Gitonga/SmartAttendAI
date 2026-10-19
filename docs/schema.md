@@ -13,12 +13,19 @@ dates as `TEXT` `YYYY-MM-DD` in school-local time.
 ## The 8 tables
 
 ### 1. `schools`
-`school_id` (PK, text), `name`, `county`, `created_at`.
-Top of the roster hierarchy.
+`school_id` (PK, text), `name`, `county`, `status`, `admin_name`,
+`admin_email`, `admin_phone`, `review_note`, `reviewed_by`, `reviewed_at`,
+`created_at`.
+Top of the roster hierarchy. `status` is `pending` (registered, waiting for a
+system admin), `active`, `inactive` (disabled) or `rejected`; only an `active`
+school's roster and attendance are accepted. The `admin_*` columns hold who
+registered the school, and the `review*` columns the last approval, rejection
+or enable/disable.
 
 ### 2. `class_groups`
 `class_group_id` (PK, text), `school_id` (FK → schools), `grade`, `stream`,
-`academic_year` (int), `created_at`.
+`academic_year` (int), `teacher_name`, `teacher_user_id` (FK → users, the teacher the
+school admin assigned), `created_at`. Only the school admin creates classes.
 
 ### 3. `students`
 `student_id` (PK, text), `class_group_id` (FK → class_groups), `admission_no`,
@@ -84,6 +91,17 @@ a record that isn't there.
 Standalone traceability log. `id`, `action` (e.g. `attendance.recorded`,
 `attendance.rejected`, `rfid.unknown_card`), `actor_id`, `record_id`,
 `detail` (JSON text), `timestamp`.
+
+### 10. `users`
+School admins and teachers: `email` (unique), `full_name`, `role`
+(`admin` | `teacher`), `school_id`, `password_hash` (scrypt), `status`
+(`active` | `invited` | `disabled`), `last_sign_in_at`.
+
+### 11. `attendance_overrides`
+A school admin taking or correcting a register: `event_id`, `student_id`,
+`date`, `from_status` / `to_status`, `from_reason` / `to_reason`, `reason`
+(`teacher_absent`, `wrong_mark`, `late_arrival`, `gate_error`, `other`),
+`note`, `actor` (the admin), `on_behalf_of` (the class teacher), `created_at`.
 
 ## Relationship to the client's Dexie schema
 
