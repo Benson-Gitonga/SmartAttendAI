@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { PIN_LENGTH } from '../auth/pin';
+import { INACTIVITY_LOCK_MS } from '../auth/inactivity';
+
+const LOCK_MINUTES = Math.round(INACTIVITY_LOCK_MS / 60000);
 import { CapIcon } from './icons';
 
 /**
@@ -43,12 +46,12 @@ export default function PinSetup({ onDone, onSkip, changing = false, skipLabel =
       <form className="auth__card" onSubmit={handleSubmit}>
         <div className="auth__logo"><CapIcon size={24} /></div>
         <h1 className="auth__brand">{changing ? 'Change your offline PIN' : 'Set an offline PIN'}</h1>
-        <p className="auth__tagline">Keep working when the session expires</p>
+        <p className="auth__tagline">Keeps the register safe on a phone left unattended</p>
         <p className="auth__help">
           {changing
             ? `Choose a new ${PIN_LENGTH}-digit PIN. It replaces the current one on this device immediately.`
-            : `Your sign-in expires after one hour. A ${PIN_LENGTH}-digit PIN lets you unlock
-               SmartAttend and keep recording attendance when there is no network.`}
+            : `SmartAttend locks after ${LOCK_MINUTES} minutes without use. Your ${PIN_LENGTH}-digit PIN
+               opens it again, even with no network.`}
         </p>
 
         {error && <div className="notice notice--err" role="alert">{error}</div>}

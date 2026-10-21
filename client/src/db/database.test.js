@@ -1,5 +1,6 @@
 import {
   db,
+  applyServerAttendance,
   addAttendanceEvent,
   addAttendanceBatch,
   setAttendance,
@@ -673,5 +674,30 @@ describe('classes assigned by the school admin', () => {
     expect(await db.classGroups.where('classGroupId').equals('class-srv-1').count()).toBe(1);
     expect((await getClassById('class-srv-1')).name).toBe('Form 2 West');
     expect((await db.students.where('studentId').equals('stu-srv-1').first()).fullName).toBe('Zawadi N. Kamau');
+  });
+});
+
+describe("applyServerAttendance - history downloaded for a teacher's class", () => {
+  const row = (studentId, date, status, extra = {}) => ({ eventId: `srv-${studentId}-${date}`, studentId, date, status, captureMethod: 'import', ...extra });
+
+  it('adds the records as already synced, so nothing is queued', async () => {
+    const result = await applyServerAttendance([row('s1', '2026-10-01', 'absent', { reason: 'fee' }), row('s1', '2026-10-02', 'present')]);
+    expect(result).toEqual({ added: 2, updated: 0 });
+    const saved = await db.attendanceEvents.where('studentId').equals('s1').sortBy('date');
+    expect(saved.map((r) => [r.status, r.reason])).toEqual([['absent', 'fee'], ['present', null]]);
+    expect(saved.every((r) => r.syncedAt)).toBe(true);
+    expect(await countPendingSync()).toBe(0);
+  });
+
+  it('keeps a change the teacher made on this device that has not been sent yet', async () => {
+    await setAttendance({ studentId: 's2', date: '2026-10-03', status: 'absent' });
+    const result = await applyServerAttendance([row('s2', '2026-10-03', 'present')]);
+    expect(result).toEqual({ added: 0, updated: 0 });
+    expect((await db.attendanceEvents.where('[studentId+date]').equals(['s2', '2026-10-03']).first()).status).toBe('absent');
+  });
+
+  it('takes a correction made on the server to a synced record', async () => {
+    await applyServerAttendance([row('s3', '2026-10-05', 'present')]);
+    expect(await applyServerAttendance([row('s3', '2026-10-05', 'absent')])).toEqual({ added: 0, updated: 1 });
   });
 });

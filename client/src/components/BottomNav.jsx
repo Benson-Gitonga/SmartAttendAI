@@ -1,4 +1,4 @@
-import { RosterIcon, GridIcon, BellIcon, HomeIcon, UsersIcon, CalendarIcon, BuildingIcon } from './icons';
+import { RosterIcon, GridIcon, BellIcon, HomeIcon, UsersIcon, CalendarIcon, BuildingIcon, KeypadIcon, UserIcon } from './icons';
 
 /** Nav items for the signed-in role. Shared by BottomNav (phone) and SideNav (desktop). */
 export function navItems(role) {
@@ -7,8 +7,11 @@ export function navItems(role) {
     return [
       { id: 'today', label: 'Today', short: 'Today', Icon: CalendarIcon },
       { id: 'classes', label: 'Classes', short: 'Classes', Icon: BuildingIcon },
-      { id: 'teachers', label: 'Teachers', short: 'Teachers', Icon: UsersIcon },
+      { id: 'students', label: 'Students', short: 'Students', Icon: UsersIcon },
+      { id: 'teachers', label: 'Teachers', short: 'Teachers', Icon: UserIcon },
       { id: 'overview', label: 'At-risk students', short: 'At-risk', Icon: BellIcon },
+      // Phones reach the scan station from the Today page instead.
+      { id: 'scan', label: 'Scan station', short: 'Scan', Icon: KeypadIcon, section: 'Tools', desktopOnly: true },
     ];
   }
   const items = [
@@ -24,7 +27,7 @@ export function navItems(role) {
 export default function BottomNav({ active, onChange, alertCount = 0, role, registerStatus = null }) {
   return (
     <nav className="bottom-nav" aria-label="Primary">
-      {navItems(role).map(({ id, short, Icon }) => (
+      {navItems(role).filter((item) => !item.desktopOnly).map(({ id, short, Icon }) => (
         <button
           key={id}
           type="button"

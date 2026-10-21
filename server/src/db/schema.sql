@@ -42,10 +42,29 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash   TEXT,                               -- NULL until an invited teacher sets one
   status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'invited', 'disabled')),
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
-  last_sign_in_at TEXT
+  last_sign_in_at TEXT,
+  email_verified_at TEXT,                             -- set by an email link (confirm, set-up or reset)
+  google_sub      TEXT,                               -- Google's id for the linked account (unique, see db/index.js)
+  google_email    TEXT                                -- that account's email, shown on the account sheet
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_school ON users(school_id);
+
+-- Links sent by email: confirm the applicant's address ('verify_email'), set
+-- the first password ('setup') or a new one ('reset'). Only a SHA-256 of the
+-- token is kept. A new link of the same purpose revokes the older ones.
+CREATE TABLE IF NOT EXISTS email_tokens (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  token_hash  TEXT NOT NULL UNIQUE,
+  purpose     TEXT NOT NULL CHECK (purpose IN ('verify_email', 'setup', 'reset')),
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at  TEXT NOT NULL,                          -- ISO 8601
+  used_at     TEXT,
+  revoked_at  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_tokens_user ON email_tokens(user_id, purpose);
 
 -- One-time codes a school admin gives a teacher: to set a password for the
 -- first time ('invite') or after forgetting it ('reset'). Only a SHA-256 of

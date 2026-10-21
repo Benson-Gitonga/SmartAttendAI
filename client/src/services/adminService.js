@@ -101,3 +101,50 @@ export function newTeacherCode(userId) {
 export function setTeacherEnabled(userId, enabled) {
   return request(`/api/admin/teachers/${encodeURIComponent(userId)}/${enabled ? 'enable' : 'disable'}`, { method: 'POST', body: {} });
 }
+
+/** Students of the school, or of one class: [{ studentId, fullName, admissionNo, classGroupId, className, cardUid, active, ... }] */
+export async function getStudents(schoolId, { classId = null, includeInactive = false } = {}) {
+  const query = new URLSearchParams();
+  if (classId) query.set('classId', classId);
+  if (includeInactive) query.set('inactive', '1');
+  const qs = query.toString();
+  const { students } = await request(`${school(schoolId)}/students${qs ? `?${qs}` : ''}`);
+  return students;
+}
+
+/** Enrol one student; they get a card number at once. */
+export function enrolStudent(classGroupId, { fullName, admissionNo, guardianPhone, guardianEmail }) {
+  const clean = Object.fromEntries(Object.entries({ fullName, admissionNo, guardianPhone, guardianEmail })
+    .map(([k, v]) => [k, typeof v === 'string' ? v.trim() : v])
+    .filter(([, v]) => v));
+  return request(`${klass(classGroupId)}/students`, { method: 'POST', body: clean });
+}
+
+/** Enrol a whole class list at once. All or nothing; a bad row comes back as an error naming the row. */
+export async function importStudents(classGroupId, students) {
+  const { students: created } = await request(`${klass(classGroupId)}/students/import`, { method: 'POST', body: { students } });
+  return created;
+}
+
+/** Edit, move (`classGroupId`), remove (`active: false`) or restore a student. */
+export function updateStudent(studentId, patch) {
+  return request(`/api/admin/students/${encodeURIComponent(studentId)}`, { method: 'PATCH', body: patch });
+}
+
+/** A replacement card: the old number stops working. */
+export function reissueCard(studentId) {
+  return request(`/api/admin/students/${encodeURIComponent(studentId)}/card`, { method: 'POST', body: {} });
+}
+
+/**
+ * One card read at the scan station. Resolves to { outcome: 'recorded'|'duplicate', student, mark }
+ * or, for a card the school does not know, { outcome: 'unknown-card', cardUid }.
+ */
+export async function stationScan(cardUid) {
+  try {
+    return await request('/api/admin/scan', { method: 'POST', body: { cardUid } });
+  } catch (err) {
+    if (err.status === 404) return { outcome: 'unknown-card', cardUid };
+    throw err;
+  }
+}

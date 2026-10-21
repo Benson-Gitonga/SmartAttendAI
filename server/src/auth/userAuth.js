@@ -5,8 +5,8 @@
  *
  * A sign-in returns a token signed with AUTH_TOKEN_SECRET that lasts
  * AUTH_TOKEN_TTL_DAYS (long, because a teacher may work offline for days and
- * the queued records are sent with it). The PWA's offline PIN only unlocks the
- * app on the device; it never extends this token.
+ * the queued records are sent with it). The PWA stays signed in for as long
+ * as the token lasts, and renews it whenever it is online.
  *
  * Every request re-reads the user, so disabling an account or its school
  * takes effect at once, without waiting for tokens to expire.
@@ -14,7 +14,9 @@
 
 import { verifyPassword, hashPassword } from './systemAdminAuth.js';
 import { createTokenSigner, createAttemptLimiter, bearerToken } from './tokens.js';
-import { findUserForSignIn, getUser, getSchool, recordSignIn } from '../db/repository.js';
+import {
+  findUserForSignIn, getUser, getSchool, recordSignIn, activateWithGoogle, findUserByGoogleSub, linkGoogleAccount,
+} from '../db/repository.js';
 
 // Checked against when the email is unknown, so a wrong email takes as long
 // as a wrong password and the reply time does not say which it was.
@@ -31,6 +33,7 @@ export function describeAccount(db, user) {
       role: user.role,
       jobTitle: user.jobTitle,
       schoolId: user.schoolId,
+      googleEmail: user.googleEmail ?? null,
     },
     school: school && {
       schoolId: school.schoolId,
@@ -99,6 +102,37 @@ export function createUserAuth({
     return { ok: true, ...issueToken(user), ...describeAccount(db, user) };
   }
 
+  /**
+   * Sign in with a Google account (auth/googleAuth.js). Only finds an
+   * account, never makes one, and the role always comes from that account:
+   *   1. the user this Google account was linked to, whatever its email;
+   *   2. else the user whose email Google has confirmed, and the Google
+   *      account is linked to them from now on.
+   * An invited user whose school is active is set up by this, as their
+   * invite link would have done.
+   *
+   * @param {{sub: string, email: string, emailVerified: boolean}} google
+   * @returns {{ok:true, token:string, expiresAt:number, user:object, school:object}
+   *         | {ok:false, reason:'no_account'|'unverified'|'disabled'|'school_inactive'}}
+   */
+  function signInWithGoogle(google) {
+    let user = findUserByGoogleSub(db, google?.sub);
+    if (!user) {
+      if (!google?.emailVerified) return { ok: false, reason: 'unverified' };
+      user = findUserForSignIn(db, google.email);
+      if (!user) return { ok: false, reason: 'no_account' };
+      // Remember this Google account, unless the user already linked another.
+      if (!user.googleSub && google.sub) user = linkGoogleAccount(db, user.userId, google).user ?? user;
+    }
+    if (user.status === 'disabled') return { ok: false, reason: 'disabled' };
+    if (user.status === 'invited') {
+      if (getSchool(db, user.schoolId)?.status !== 'active') return { ok: false, reason: 'school_inactive' };
+      user = activateWithGoogle(db, user.userId);
+    }
+    recordSignIn(db, user.userId);
+    return { ok: true, ...issueToken(user), ...describeAccount(db, user) };
+  }
+
   /** The current user for a token, or null when the token or account is no longer good. */
   function userForToken(token) {
     const claims = signer.verify(token, now());
@@ -136,5 +170,5 @@ export function createUserAuth({
     next();
   }
 
-  return { signIn, issueToken, userForToken, requireUser, requireActiveSchool };
+  return { signIn, signInWithGoogle, issueToken, userForToken, requireUser, requireActiveSchool };
 }

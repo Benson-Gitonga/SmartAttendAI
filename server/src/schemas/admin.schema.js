@@ -76,3 +76,58 @@ export const inviteTeacherSchema = {
     phone: { type: 'string', pattern: '^(\\+254|0)[17]\\d{8}$' },
   },
 };
+
+const STUDENT_FIELDS = {
+  fullName: { type: 'string', minLength: 2, maxLength: 120, pattern: NOT_BLANK },
+  admissionNo: { type: 'string', maxLength: 40 },
+  guardianPhone: { type: ['string', 'null'], maxLength: 20, pattern: '^(|(\\+254|0)[17]\\d{8})$' },
+  guardianEmail: { type: ['string', 'null'], maxLength: 254, pattern: '^(|[^\\s@]+@[^\\s@]+\\.[^\\s@]+)$' },
+};
+
+/** POST /api/admin/classes/:id/students: enrol one student. */
+export const enrolStudentSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  $id: 'https://smartattend.example/schemas/admin-enrol-student.json',
+  type: 'object',
+  additionalProperties: false,
+  required: ['fullName'],
+  properties: STUDENT_FIELDS,
+};
+
+/** POST /api/admin/classes/:id/students/import: many at once, from a CSV the admin uploaded. */
+export const importStudentsSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  $id: 'https://smartattend.example/schemas/admin-import-students.json',
+  type: 'object',
+  additionalProperties: false,
+  required: ['students'],
+  properties: {
+    students: { type: 'array', minItems: 1, maxItems: 500, items: enrolStudentSchema },
+  },
+};
+
+/** PATCH /api/admin/students/:id: edit, move to another class, remove or restore. */
+export const updateStudentSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  $id: 'https://smartattend.example/schemas/admin-update-student.json',
+  type: 'object',
+  additionalProperties: false,
+  minProperties: 1,
+  properties: {
+    ...STUDENT_FIELDS,
+    classGroupId: { type: 'string', minLength: 1, maxLength: 80 },
+    active: { type: 'boolean' },
+  },
+};
+
+/** POST /api/admin/scan: one card read by a scan station. */
+export const stationScanSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  $id: 'https://smartattend.example/schemas/admin-station-scan.json',
+  type: 'object',
+  additionalProperties: false,
+  required: ['cardUid'],
+  properties: {
+    cardUid: { type: 'string', minLength: 4, maxLength: 32, pattern: '^[A-Za-z0-9]+$' },
+  },
+};

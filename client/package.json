@@ -12,8 +12,10 @@
     "test": "jest"
   },
   "dependencies": {
+    "@zxing/browser": "0.2.1",
     "bcryptjs": "^3.0.3",
     "dexie": "^4.4.5",
+    "qrcode": "1.5.4",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "workbox-background-sync": "^7.4.1",

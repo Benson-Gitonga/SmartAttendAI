@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AuthProvider, useAuth, AUTH_STATUS } from './auth/AuthContext';
 import LoginScreen from './components/LoginScreen';
+import { usePublicRoute } from './components/auth/publicRoute';
 import PinUnlock from './components/PinUnlock';
 import PinSetup from './components/PinSetup';
-import RosterManager from './components/RosterManager';
+import ClassList from './components/ClassList';
 import ClassSwitcher from './components/ClassSwitcher';
 import AttendanceForm from './components/AttendanceForm';
 import Heatmap from './components/Heatmap';
@@ -46,7 +47,7 @@ const writeActiveClass = (id) => {
 };
 
 function TeacherApp() {
-  const { user, session, pinState, signOut, simulateExpiry } = useAuth();
+  const { user, pinState, signOut } = useAuth();
   const online = useOnlineStatus();
   const [route, navigate] = useHashRoute();
 
@@ -201,16 +202,12 @@ function TeacherApp() {
       />
     );
   } else if (tab === 'heatmap') {
-    body = <Heatmap key={activeClassId} classGroupId={activeClassId} className={activeLabel} />;
+    body = <Heatmap key={`${activeClassId}-${refreshKey}`} classGroupId={activeClassId} className={activeLabel} />;
   } else if (tab === 'alerts') {
-    body = <Alerts key={activeClassId} classGroupId={activeClassId} className={activeLabel} onOpenProfile={openProfile} />;
+    body = <Alerts key={`${activeClassId}-${refreshKey}`} classGroupId={activeClassId} className={activeLabel} onOpenProfile={openProfile} />;
   } else if (tab === 'students') {
     body = (
-      <RosterManager
-        key={activeClassId}
-        classGroupId={activeClassId}
-        className={activeLabel}
-      />
+      <ClassList key={activeClassId} classGroupId={activeClassId} className={activeLabel} onOpenProfile={openProfile} />
     );
   } else {
     body = (
@@ -271,16 +268,10 @@ function TeacherApp() {
           user={user}
           online={online}
           pending={pending}
-          pinSession={Boolean(session?.pinVerified)}
           pinEnrolled={pinState.enrolled}
           onManagePin={() => { setSheetOpen(false); setPinSetupOpen(true); }}
           onManageRoster={() => { setSheetOpen(false); goTab('students'); }}
           onSignOut={() => { setSheetOpen(false); setConfirmSignOut(true); }}
-          onSimulateExpiry={
-            import.meta.env.DEV
-              ? () => { setSheetOpen(false); simulateExpiry(); }
-              : undefined
-          }
           onClose={() => setSheetOpen(false)}
         />
       )}
@@ -292,7 +283,7 @@ function TeacherApp() {
           title="Are you sure you want to sign out?"
           body={pending > 0
             ? `${pending} attendance record${pending === 1 ? ' has' : 's have'} not reached the server yet. They stay on this device and sync after you sign back in.`
-            : 'You will need your email and password to sign back in. Your offline PIN will not open the app until then.'}
+            : 'You will need to be online to sign back in.'}
           confirmLabel="Yes, sign out"
           onCancel={() => setConfirmSignOut(false)}
           onConfirm={() => { setConfirmSignOut(false); signOut(); }}
@@ -334,6 +325,7 @@ const readPinSkipped = (user) => {
 function AuthGate() {
   const { status, pinState, user } = useAuth();
   const [pinSetupSkipped, setPinSetupSkipped] = useState(false);
+  const publicRoute = usePublicRoute();
   const skipPinSetup = () => {
     try { localStorage.setItem(pinSkipKey(user), '1'); } catch { /* private mode */ }
     setPinSetupSkipped(true);
@@ -341,9 +333,10 @@ function AuthGate() {
 
   if (status === AUTH_STATUS.LOADING) return <div className="centered">Loading SmartAttend…</div>;
   if (status === AUTH_STATUS.SIGNED_OUT) return <LoginScreen />;
-  if (status === AUTH_STATUS.LOCKED) return <PinUnlock />;
-
-  // System admins skip the PIN and class-setup gates.
+  // A link from an email (confirm, set up, reset) opens its page even on a
+  // device where someone is signed in.
+  if (publicRoute.page === 'verify' || publicRoute.page === 'setPassword') return <LoginScreen />;
+  // System admins have no school to check, and no PIN.
   if (user?.role === 'system_admin') return <SystemAdminOverview />;
 
   // School staff get in once their school is approved (and not disabled).
@@ -353,6 +346,8 @@ function AuthGate() {
       {!pinState.enrolled && !pinSetupSkipped && !readPinSkipped(user)
         ? <PinSetup onDone={() => setPinSetupSkipped(true)} onSkip={skipPinSetup} />
         : user?.role === 'admin' ? <AdminApp /> : <TeacherApp />}
+      {/* Drawn over the app rather than instead of it, so an unsaved register survives the lock. */}
+      {status === AUTH_STATUS.LOCKED && <div className="lock-overlay"><PinUnlock /></div>}
     </SchoolStatusGate>
   );
 }

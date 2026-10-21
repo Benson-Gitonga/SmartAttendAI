@@ -14,13 +14,18 @@ import AdminToday from './AdminToday';
 import AdminClasses from './AdminClasses';
 import AdminClassPage from './AdminClassPage';
 import AdminTeachers from './AdminTeachers';
+import AdminStudents from './AdminStudents';
+import AdminScanStation from './AdminScanStation';
+import StudentIdCards from './StudentIdCards';
 import { LogOutIcon } from '../icons';
 
 const ADMIN_TITLES = {
   today: 'Today',
   classes: 'Classes',
+  students: 'Students',
   teachers: 'Teachers',
   overview: 'At-risk students',
+  scan: 'Scan station',
 };
 const ADMIN_TABS = Object.keys(ADMIN_TITLES);
 
@@ -29,13 +34,14 @@ const ADMIN_TABS = Object.keys(ADMIN_TITLES);
  * a class. Everything here is read from and written to the server live.
  */
 export default function AdminApp() {
-  const { user, session, pinState, signOut } = useAuth();
+  const { user, pinState, signOut } = useAuth();
   const online = useOnlineStatus();
   const [route, navigate] = useHashRoute();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [pinSetupOpen, setPinSetupOpen] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [classTitle, setClassTitle] = useState({});
+  const [cardSheet, setCardSheet] = useState(null); // { students, title } while printing ID cards
 
   const tab = ADMIN_TABS.includes(route.tab) ? route.tab : 'today';
   const goTab = useCallback((next) => navigate({ tab: next }), [navigate]);
@@ -55,6 +61,18 @@ export default function AdminApp() {
     );
   }
 
+  // The ID-card sheet takes the whole screen so only the cards print.
+  if (cardSheet) {
+    return (
+      <StudentIdCards
+        students={cardSheet.students}
+        title={cardSheet.title}
+        schoolName={user?.schoolName ?? 'School'}
+        onClose={() => setCardSheet(null)}
+      />
+    );
+  }
+
   let body;
   let detail = null;
   if (route.classId) {
@@ -62,12 +80,16 @@ export default function AdminApp() {
     detail = classTitle[route.classId] ?? 'Class';
   } else if (tab === 'classes') {
     body = <AdminClasses onOpenClass={openClass} />;
+  } else if (tab === 'students') {
+    body = <AdminStudents onPrintCards={(students, title) => setCardSheet({ students, title })} />;
+  } else if (tab === 'scan') {
+    body = <AdminScanStation />;
   } else if (tab === 'teachers') {
     body = <AdminTeachers onOpenClass={openClass} />;
   } else if (tab === 'overview') {
     body = <AdminOverview onOpenClass={openClass} />;
   } else {
-    body = <AdminToday onOpenClass={openClass} />;
+    body = <AdminToday onOpenClass={openClass} onGo={goTab} />;
   }
 
   const schoolCrumb = { label: user?.schoolName || 'School' };
@@ -97,7 +119,6 @@ export default function AdminApp() {
           user={user}
           online={online}
           pending={0}
-          pinSession={Boolean(session?.pinVerified)}
           pinEnrolled={pinState.enrolled}
           onManagePin={() => { setSheetOpen(false); setPinSetupOpen(true); }}
           onSignOut={() => { setSheetOpen(false); setConfirmSignOut(true); }}
@@ -110,7 +131,7 @@ export default function AdminApp() {
           tone="danger"
           Icon={LogOutIcon}
           title="Are you sure you want to sign out?"
-          body="You will need your email and password to sign back in."
+          body="You will need to be online to sign back in."
           confirmLabel="Yes, sign out"
           onCancel={() => setConfirmSignOut(false)}
           onConfirm={() => { setConfirmSignOut(false); signOut(); }}

@@ -13,6 +13,7 @@ import { isSchoolDay } from '../lib/riskModel';
 import { showToast } from '../lib/toast';
 import Avatar from './Avatar';
 import { SyncIcon, SearchIcon } from './icons';
+import CameraScanner from './CameraScanner';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -34,10 +35,10 @@ const timeOf = (iso) =>
   iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 
 /**
- * Class register. Without the school gate every student starts ticked present
- * and the teacher unticks whoever is absent. With the gate running, students
- * who scanned in are already present and the ones who did not start unticked,
- * so the teacher only ticks late arrivals and gives absence reasons.
+ * Class register. Every student starts ticked present and the teacher unticks
+ * whoever is absent, with a reason if they know it. Gate scans and cards
+ * scanned here with the camera show the time the student arrived, but they do
+ * not change the default: a student who did not scan still starts present.
  */
 export default function AttendanceForm({ classGroupId, pending = 0, onRecordsChanged, onOpenProfile, onDirtyChange }) {
   const { user } = useAuth();
@@ -60,6 +61,8 @@ export default function AttendanceForm({ classGroupId, pending = 0, onRecordsCha
   const [gate, setGate] = useState(null);
   const [checkingGate, setCheckingGate] = useState(false);
   const [conflicts, setConflicts] = useState([]);
+  const [scanning, setScanning] = useState(false);
+  const [scannedAt, setScannedAt] = useState({}); // studentId -> ISO time, cards scanned on this phone
   const headerRef = useRef(null);
 
   const readLocal = useCallback(async () => {
@@ -105,9 +108,8 @@ export default function AttendanceForm({ classGroupId, pending = 0, onRecordsCha
     [saved],
   );
 
-  const gateActive = date === today && gate?.status === 'active';
-  // Status for a student with no record yet: with the gate running, no scan means absent.
-  const defaultStatus = gateActive ? 'absent' : 'present';
+  // A student with no record yet starts present; the teacher unticks absentees.
+  const defaultStatus = 'present';
 
   const valueFor = useCallback(
     (studentId) => (studentId in draft ? draft[studentId] : recorded[studentId] ?? defaultStatus),
@@ -206,6 +208,19 @@ export default function AttendanceForm({ classGroupId, pending = 0, onRecordsCha
     setDate(next);
   }
 
+  // A card read by the camera: tick that student present and note the time.
+  function onCardScanned(code) {
+    const uid = code.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const student = students.find((s) => (s.cardUid ?? '').toUpperCase() === uid);
+    if (!student) {
+      showToast(`Card ${uid} is not in this class`, { tone: 'error' });
+      return;
+    }
+    setPresent([student.studentId], true);
+    setScannedAt((prev) => ({ ...prev, [student.studentId]: prev[student.studentId] ?? new Date().toISOString() }));
+    showToast(`${student.fullName}: present`);
+  }
+
   async function handleSubmit() {
     setError(null);
     setSaving(true);
@@ -242,7 +257,6 @@ export default function AttendanceForm({ classGroupId, pending = 0, onRecordsCha
 
   const nameOf = (studentId) => students.find((s) => s.studentId === studentId)?.fullName ?? studentId;
   const nothingSaved = students.every((s) => !(s.studentId in recorded));
-  const verb = gateActive ? 'Confirm' : 'Save';
 
   return (
     <div className="register">
@@ -256,6 +270,11 @@ export default function AttendanceForm({ classGroupId, pending = 0, onRecordsCha
           </p>
         </div>
         <div className="page-head__actions">
+          {date === today && students.length > 0 && (
+            <button type="button" className="btn btn--outline btn--sm" onClick={() => setScanning(true)} disabled={saving}>
+              Scan cards
+            </button>
+          )}
           <label className="date-input">
             <span className="sr-only">Register date</span>
             <input
@@ -294,7 +313,7 @@ export default function AttendanceForm({ classGroupId, pending = 0, onRecordsCha
           {result.failed.length} record(s) could not be saved.
         </div>
       )}
-      {nothingSaved && !gateActive && !result && students.length > 0 && (
+      {nothingSaved && !result && students.length > 0 && (
         <div className="notice notice--info" role="status">
           Everyone is ticked as present. Untick the students who are absent, add a reason if you know it, then save.
         </div>
@@ -354,7 +373,7 @@ export default function AttendanceForm({ classGroupId, pending = 0, onRecordsCha
               {visible.length === 0 && (
                 <tr>
                   <td colSpan={5} className="table__empty">
-                    {students.length === 0 ? 'No students in this class yet. Add them under Students.' : 'No students match.'}
+                    {students.length === 0 ? 'No students in this class yet. Your school admin adds them.' : 'No students match.'}
                   </td>
                 </tr>
               )}
@@ -396,7 +415,7 @@ export default function AttendanceForm({ classGroupId, pending = 0, onRecordsCha
                     <td className="col-state">
                       <div className="state-cell">
                         <span className={`badge ${present ? 'badge--ok' : 'badge--danger-soft'}`}>
-                          {status === 'late' ? 'Late' : present ? 'Present' : 'Absent'}
+                          {present ? 'Present' : 'Absent'}
                         </span>
                         {!present && (
                           <select
@@ -414,10 +433,12 @@ export default function AttendanceForm({ classGroupId, pending = 0, onRecordsCha
                           <span className="state-note">
                             gate {timeOf(record.createdAt)}{record.captureMethod === 'fingerprint' ? ' (fingerprint)' : ''}
                           </span>
+                        ) : scannedAt[id] && present ? (
+                          <span className="state-note">scanned {timeOf(scannedAt[id])}</span>
                         ) : changed ? (
                           <span className="state-note">changed</span>
                         ) : !(id in recorded) ? (
-                          <span className="state-note">{gateActive ? 'not scanned' : 'not saved'}</span>
+                          <span className="state-note">not saved</span>
                         ) : null}
                       </div>
                     </td>
@@ -452,10 +473,18 @@ export default function AttendanceForm({ classGroupId, pending = 0, onRecordsCha
             onClick={handleSubmit}
             disabled={saving || dirty.length === 0}
           >
-            {saving ? 'Saving…' : dirty.length > 0 ? `${verb} attendance (${dirty.length})` : 'Saved'}
+            {saving ? 'Saving…' : dirty.length > 0 ? `Save attendance (${dirty.length})` : 'Saved'}
           </button>
         </div>
       </div>
+
+      {scanning && (
+        <CameraScanner
+          hint={`Scan cards for ${formatLongDate(date)}. Each card ticks that student present.`}
+          onCode={onCardScanned}
+          onClose={() => setScanning(false)}
+        />
+      )}
     </div>
   );
 }
@@ -469,7 +498,7 @@ function GateBanner({ gate, checking, atGateCount, total, onRefresh }) {
   const copy = {
     active: {
       tone: 'ok',
-      text: `${atGateCount} of ${total} scanned in at the gate (last scan ${timeOf(gate.lastScanAt)}). Students who did not scan are unticked: tick anyone who is here and give reasons for the rest.`,
+      text: `${atGateCount} of ${total} scanned in at the gate (last scan ${timeOf(gate.lastScanAt)}). Everyone is ticked present: untick anyone who is not here.`,
     },
     'no-scans': {
       tone: 'warn',

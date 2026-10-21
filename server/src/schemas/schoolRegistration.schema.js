@@ -36,12 +36,14 @@ export const schoolRegistrationSchema = {
     applicant: {
       type: 'object',
       additionalProperties: false,
-      required: ['fullName', 'email', 'password'],
+      required: ['fullName', 'email'],
       properties: {
         fullName: { type: 'string', minLength: 2, maxLength: 120, pattern: NOT_BLANK },
         email: { type: 'string', format: 'email', maxLength: 254 },
         phone: { type: 'string', pattern: KENYAN_MOBILE },
         jobTitle: { type: 'string', maxLength: 80 },
+        // Older clients chose a password while applying. Now it is set from
+        // the link emailed on approval, so it is optional.
         password: { type: 'string', minLength: PASSWORD_MIN_LENGTH, maxLength: 200 },
       },
     },
@@ -85,5 +87,45 @@ export const setupCodeSchema = {
   properties: {
     code: { type: 'string', minLength: 8, maxLength: 20 },
     password: { type: 'string', minLength: PASSWORD_MIN_LENGTH, maxLength: 200 },
+  },
+};
+
+/** POST /api/auth/set-password: a password from an emailed set-up or reset link. */
+export const setPasswordSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  $id: 'https://smartattend.example/schemas/set-password.json',
+  title: 'SetPassword',
+  type: 'object',
+  additionalProperties: false,
+  required: ['token', 'password'],
+  properties: {
+    token: { type: 'string', minLength: 40, maxLength: 64 },
+    password: { type: 'string', minLength: PASSWORD_MIN_LENGTH, maxLength: 200 },
+  },
+};
+
+/** POST /api/auth/verify-email and the link lookup. */
+export const emailTokenSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  $id: 'https://smartattend.example/schemas/email-token.json',
+  title: 'EmailToken',
+  type: 'object',
+  additionalProperties: false,
+  required: ['token'],
+  properties: {
+    token: { type: 'string', minLength: 40, maxLength: 64 },
+  },
+};
+
+/** POST /api/auth/forgot-password. */
+export const forgotPasswordSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  $id: 'https://smartattend.example/schemas/forgot-password.json',
+  title: 'ForgotPassword',
+  type: 'object',
+  additionalProperties: false,
+  required: ['email'],
+  properties: {
+    email: { type: 'string', format: 'email', maxLength: 254 },
   },
 };

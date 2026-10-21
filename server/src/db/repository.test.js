@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 
 describe('schema', () => {
-  test('creates all 12 tables', () => {
+  test('creates all 13 tables', () => {
     const names = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
       .all()
@@ -34,6 +34,7 @@ describe('schema', () => {
       'attendance_overrides',
       'audit_log',
       'class_groups',
+      'email_tokens',
       'fingerprint_challenges',
       'follow_ups',
       'rfid_cards',

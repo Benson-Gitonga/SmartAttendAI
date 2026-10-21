@@ -5,11 +5,13 @@ import Database from 'better-sqlite3';
 import { openDatabase, migrate } from '../db/index.js';
 import { createApp } from '../app.js';
 import { testSystemAdminAuth, signInSystemAdmin, testUserAuth, TEST_ADMIN } from '../auth/testing.js';
+import { createMailer } from '../mail/mailer.js';
 
 let db;
 let server;
 let base;
 let token; // the system admin's
+let mailer;
 
 const auth = () => ({ authorization: `Bearer ${token}` });
 const get = (path) => fetch(`${base}${path}`, { headers: auth() });
@@ -35,10 +37,18 @@ const APPLICANT = {
   email: 'G.Achieng@KisumuDay.ac.ke',
   phone: '0712345678',
   jobTitle: 'Principal',
-  password: 'kisumu-day-2026',
 };
 
-/** Apply, with any school or applicant fields changed. The body has the new token, user and school. */
+/** The token in the newest emailed link to page (verify-email or set-password). */
+function linkToken(page, to = 'g.achieng@kisumuday.ac.ke') {
+  const email = mailer.outbox().find((m) => m.to === to && m.link?.includes(`#/${page}/`));
+  assert.ok(email, `no ${page} email to ${to}`);
+  return email.link.split('/').pop();
+}
+
+const confirmEmail = async (to) => post('/api/auth/verify-email', { token: linkToken('verify-email', to) }, {});
+
+/** Apply, with any school or applicant fields changed. The body has the school and the applicant's email. */
 async function register(school = {}, applicant = {}) {
   const res = await post('/api/schools/register', {
     school: { ...SCHOOL, ...school },
@@ -49,7 +59,8 @@ async function register(school = {}, applicant = {}) {
 
 beforeEach(async () => {
   db = openDatabase(':memory:');
-  server = createApp({ db, logger: false, systemAdminAuth: testSystemAdminAuth(), userAuth: testUserAuth(db) }).listen(0);
+  mailer = createMailer({ quiet: true });
+  server = createApp({ db, logger: false, systemAdminAuth: testSystemAdminAuth(), userAuth: testUserAuth(db), mailer }).listen(0);
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${server.address().port}`;
   token = await signInSystemAdmin(base);
@@ -61,15 +72,14 @@ afterEach(async () => {
 });
 
 describe('POST /api/schools/register', () => {
-  test('creates a pending school and an admin account, and signs the applicant in', async () => {
+  test('creates a pending school and an admin account with no password, and signs nobody in', async () => {
     const { res, body } = await register();
     assert.equal(res.status, 201);
     assert.match(body.school.schoolId, /^school-[0-9a-f-]{36}$/);
     assert.equal(body.school.status, 'pending');
-    assert.equal(body.user.role, 'admin');
-    assert.equal(body.user.email, 'g.achieng@kisumuday.ac.ke');
-    assert.equal(body.user.schoolId, body.school.schoolId);
-    assert.ok(body.token);
+    assert.equal(body.email, 'g.achieng@kisumuday.ac.ke');
+    assert.equal(body.emailSent, true);
+    assert.equal(body.token, undefined, 'the applicant is not signed in');
 
     const row = db.prepare('SELECT * FROM schools WHERE school_id = ?').get(body.school.schoolId);
     assert.equal(row.school_code, '20414001');
@@ -81,23 +91,49 @@ describe('POST /api/schools/register', () => {
 
     const user = db.prepare('SELECT * FROM users WHERE email = ?').get('g.achieng@kisumuday.ac.ke');
     assert.equal(user.job_title, 'Principal');
-    assert.match(user.password_hash, /^scrypt:/);
+    assert.equal(user.role, 'admin');
+    assert.equal(user.status, 'invited');
+    assert.equal(user.password_hash, null);
+    assert.equal(user.email_verified_at, null);
     assert.ok(db.prepare(`SELECT 1 FROM audit_log WHERE action = 'school.registered' AND record_id = ?`).get(body.school.schoolId));
   });
 
-  test('never stores or returns the password', async () => {
-    const { body } = await register();
-    assert.doesNotMatch(JSON.stringify(body), /kisumu-day-2026|scrypt/);
-    const row = db.prepare('SELECT password_hash FROM users').get();
-    assert.doesNotMatch(row.password_hash, /kisumu-day-2026/);
+  test('emails the applicant a link to confirm their address', async () => {
+    await register();
+    const [email] = mailer.outbox();
+    assert.equal(email.to, 'g.achieng@kisumuday.ac.ke');
+    assert.match(email.subject, /Confirm your email/);
+    assert.match(email.link, /^http:\/\/localhost:5173\/#\/verify-email\/[A-Za-z0-9_-]{43}$/);
+    assert.ok(email.text.includes(email.link), 'the link is written out for plain-text mail');
+    const stored = db.prepare('SELECT token_hash FROM email_tokens').get();
+    assert.ok(!email.link.includes(stored.token_hash), 'only a hash of the token is kept');
   });
 
-  test('the applicant can sign in with the password they chose', async () => {
+  test('the link confirms the email, once', async () => {
     await register();
-    const res = await post('/api/auth/login', { email: 'g.achieng@kisumuday.ac.ke', password: APPLICANT.password }, {});
-    const body = await res.json();
+    const res = await confirmEmail();
     assert.equal(res.status, 200);
-    assert.equal(body.school.status, 'pending');
+    assert.equal((await res.json()).schoolName, SCHOOL.name);
+    assert.ok(db.prepare(`SELECT email_verified_at FROM users`).get().email_verified_at);
+    assert.equal((await confirmEmail()).status, 410, 'a used link does not work again');
+  });
+
+  test('the applicant cannot sign in before the school is approved', async () => {
+    await register();
+    await confirmEmail();
+    const res = await post('/api/auth/login', { email: 'g.achieng@kisumuday.ac.ke', password: 'anything-at-all' }, {});
+    assert.equal(res.status, 403);
+    assert.equal((await res.json()).reason, 'invited');
+  });
+
+  test('an older client that sends a password still gets a working account', async () => {
+    const { body } = await register({}, { password: 'kisumu-day-2026' });
+    assert.doesNotMatch(JSON.stringify(body), /kisumu-day-2026|scrypt/);
+    const row = db.prepare('SELECT password_hash, status FROM users').get();
+    assert.match(row.password_hash, /^scrypt:/);
+    assert.equal(row.status, 'active');
+    const res = await post('/api/auth/login', { email: 'g.achieng@kisumuday.ac.ke', password: 'kisumu-day-2026' }, {});
+    assert.equal(res.status, 200);
   });
 
   test('the public status call does not hand out contact details', async () => {
@@ -161,8 +197,7 @@ describe('POST /api/schools/register', () => {
     ['a student estimate of zero', { studentEstimate: 0 }, {}],
     ['a bad email', {}, { email: 'not-an-email' }],
     ['a bad phone number', {}, { phone: '12345' }],
-    ['a short password', {}, { password: 'short' }],
-    ['a missing password', {}, { password: undefined }],
+    ['a short password (older clients)', {}, { password: 'short' }],
     ['an unexpected field', { status: 'active' }, {}],
   ]) {
     test(`400 for ${label}`, async () => {
@@ -196,6 +231,7 @@ describe('approval flow', () => {
   let schoolId;
   beforeEach(async () => {
     ({ body: { school: { schoolId } } } = await register());
+    await confirmEmail();
   });
 
   const statusOf = () => db.prepare('SELECT status FROM schools WHERE school_id = ?').get(schoolId).status;
@@ -207,7 +243,50 @@ describe('approval flow', () => {
     assert.equal(body.status, 'active');
     assert.equal(body.reviewedBy, TEST_ADMIN.username, 'the reviewer is whoever is signed in');
     assert.ok(body.reviewedAt);
+    assert.equal(body.emailSent, true);
     assert.ok(db.prepare(`SELECT 1 FROM audit_log WHERE action = 'school.approved' AND record_id = ?`).get(schoolId));
+  });
+
+  test('an application whose email is not confirmed cannot be approved yet', async () => {
+    const other = await register({ name: 'Nyeri High', county: 'Nyeri', schoolCode: '10101010' }, { email: 'p.mwangi@nyerihigh.ac.ke' });
+    const res = await post(`/api/system-admin/schools/${other.body.school.schoolId}/approve`);
+    assert.equal(res.status, 409);
+    assert.equal((await res.json()).reason, 'email_not_verified');
+
+    const { schools } = await (await get('/api/system-admin/schools')).json();
+    const byId = Object.fromEntries(schools.map((s) => [s.schoolId, s.adminEmailVerified]));
+    assert.deepEqual(byId, { [schoolId]: true, [other.body.school.schoolId]: false });
+  });
+
+  test('approval emails a set-up link; the applicant sets a password and is signed in', async () => {
+    await post(`/api/system-admin/schools/${schoolId}/approve`);
+    const email = mailer.outbox()[0];
+    assert.match(email.subject, /is approved/);
+
+    const setupToken = linkToken('set-password');
+    const about = await (await fetch(`${base}/api/auth/links/${setupToken}`)).json();
+    assert.deepEqual(
+      { purpose: about.purpose, email: about.email, schoolName: about.schoolName },
+      { purpose: 'setup', email: 'g.achieng@kisumuday.ac.ke', schoolName: SCHOOL.name }
+    );
+
+    const res = await post('/api/auth/set-password', { token: setupToken, password: 'a-good-password' }, {});
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.ok(body.token);
+    assert.equal(body.user.role, 'admin');
+    assert.equal(body.school.status, 'active');
+
+    const login = await post('/api/auth/login', { email: 'g.achieng@kisumuday.ac.ke', password: 'a-good-password' }, {});
+    assert.equal(login.status, 200);
+    assert.equal((await post('/api/auth/set-password', { token: setupToken, password: 'another-one!' }, {})).status, 410);
+  });
+
+  test('a verify link cannot be used to set a password', async () => {
+    const other = await register({ name: 'Nyeri High', county: 'Nyeri', schoolCode: '10101010' }, { email: 'p.mwangi@nyerihigh.ac.ke' });
+    assert.equal(other.res.status, 201);
+    const res = await post('/api/auth/set-password', { token: linkToken('verify-email', 'p.mwangi@nyerihigh.ac.ke'), password: 'a-good-password' }, {});
+    assert.equal(res.status, 400);
   });
 
   test('reject needs a reason, and the school admin can read it', async () => {
@@ -221,6 +300,10 @@ describe('approval flow', () => {
 
     const status = await (await fetch(`${base}/api/schools/${schoolId}`)).json();
     assert.equal(status.reviewNote, 'Could not verify the school');
+
+    const email = mailer.outbox()[0];
+    assert.match(email.subject, /Your SmartAttend application/);
+    assert.match(email.text, /Reason: Could not verify the school/);
   });
 
   test('disable and enable an approved school', async () => {
@@ -318,9 +401,12 @@ describe('a school that is not active cannot write', () => {
   let schoolId;
   let staff; // the applicant's own sign-in
   beforeEach(async () => {
-    const { body } = await register();
+    // An older client's application, with a password, so the applicant can
+    // sign in while the school is still pending.
+    const { body } = await register({}, { password: 'kisumu-day-2026' });
     schoolId = body.school.schoolId;
-    staff = { authorization: `Bearer ${body.token}` };
+    const login = await (await post('/api/auth/login', { email: APPLICANT.email, password: 'kisumu-day-2026' }, {})).json();
+    staff = { authorization: `Bearer ${login.token}` };
   });
 
   const asStaff = (path, body, method = 'POST') =>
@@ -419,5 +505,64 @@ describe('migrating a database from before school approval', () => {
     old.prepare(`INSERT INTO schools (school_id, name, status) VALUES ('s2', 'New School', 'pending')`).run();
     assert.throws(() => old.prepare(`INSERT INTO class_groups (class_group_id, school_id, grade, academic_year) VALUES ('c2', 'nope', 'F1', 2026)`).run());
     old.close();
+  });
+});
+
+describe('forgot password', () => {
+  const forgot = (email) => post('/api/auth/forgot-password', { email }, {});
+  const GENERIC = /If that email has a SmartAttend account/;
+
+  test('the same answer for an unknown email, and nothing is sent', async () => {
+    const res = await forgot('nobody@example.com');
+    assert.equal(res.status, 200);
+    assert.match((await res.json()).message, GENERIC);
+    assert.equal(mailer.outbox().length, 0);
+  });
+
+  test('a signed-up admin gets a reset link that replaces the password', async () => {
+    await register({}, { password: 'kisumu-day-2026' });
+    const res = await forgot('G.Achieng@kisumuday.ac.ke');
+    assert.match((await res.json()).message, GENERIC);
+    assert.match(mailer.outbox()[0].subject, /Reset your SmartAttend password/);
+
+    const about = await (await fetch(`${base}/api/auth/links/${linkToken('set-password')}`)).json();
+    assert.equal(about.purpose, 'reset');
+
+    // The school must be live to set a password, as with any sign-in.
+    const schoolId = db.prepare('SELECT school_id FROM schools').get().school_id;
+    db.prepare(`UPDATE schools SET status = 'active' WHERE school_id = ?`).run(schoolId);
+    const set = await post('/api/auth/set-password', { token: linkToken('set-password'), password: 'brand-new-pass' }, {});
+    assert.equal(set.status, 200);
+
+    const login = (password) => post('/api/auth/login', { email: APPLICANT.email, password }, {});
+    assert.equal((await login('kisumu-day-2026')).status, 401);
+    assert.equal((await login('brand-new-pass')).status, 200);
+  });
+
+  test('an applicant who lost the confirmation email gets it again', async () => {
+    await register();
+    await forgot(APPLICANT.email);
+    const emails = mailer.outbox().filter((m) => m.link?.includes('#/verify-email/'));
+    assert.equal(emails.length, 2);
+    assert.equal((await post('/api/auth/verify-email', { token: emails[1].link.split('/').pop() }, {})).status, 410, 'the older link stops working');
+    assert.equal((await confirmEmail()).status, 200);
+  });
+
+  test('a confirmed applicant waiting for review gets nothing new', async () => {
+    await register();
+    await confirmEmail();
+    const before = mailer.outbox().length;
+    await forgot(APPLICANT.email);
+    assert.equal(mailer.outbox().length, before);
+  });
+
+  test('too many requests for one email are refused for a while', async () => {
+    for (let i = 0; i < 5; i += 1) assert.equal((await forgot('nobody@example.com')).status, 200);
+    assert.equal((await forgot('nobody@example.com')).status, 429);
+  });
+
+  test('a junk link is a 404', async () => {
+    const res = await fetch(`${base}/api/auth/links/${'x'.repeat(43)}`);
+    assert.equal(res.status, 404);
   });
 });

@@ -10,7 +10,6 @@ import { readAdminDate, writeAdminDate } from './adminDate';
 
 const STATUSES = [
   { id: 'present', label: 'Present', short: 'P' },
-  { id: 'late', label: 'Late', short: 'L' },
   { id: 'absent', label: 'Absent', short: 'A' },
 ];
 const ABSENCE_REASONS = { fee: 'School fees', health: 'Sick', other: 'Other', unknown: 'Unknown' };
@@ -18,7 +17,7 @@ const ABSENCE_REASONS = { fee: 'School fees', health: 'Sick', other: 'Other', un
 const OVERRIDE_REASONS = {
   teacher_absent: 'The class teacher is away',
   wrong_mark: 'A mark was wrong',
-  late_arrival: 'A student arrived late',
+  late_arrival: 'A student arrived after the register',
   gate_error: 'The gate scanner got it wrong',
   other: 'Something else (explain below)',
 };
@@ -71,7 +70,10 @@ export default function AdminClassPage({ classGroupId, onTitle }) {
   useEffect(() => { writeAdminDate(date); }, [date]);
 
   // A draft only counts while it differs from what the server has.
-  const effective = (st) => drafts[st.studentId] ?? (st.mark ? { status: st.mark.status, absenceReason: st.mark.absenceReason ?? null } : null);
+  // Older 'late' marks count as present: the register is present or absent only.
+  const effective = (st) => drafts[st.studentId] ?? (st.mark
+    ? { status: st.mark.status === 'late' ? 'present' : st.mark.status, absenceReason: st.mark.absenceReason ?? null }
+    : null);
   const changes = useMemo(() => (data?.students ?? []).filter((st) => {
     const d = drafts[st.studentId];
     if (!d) return false;
@@ -137,7 +139,6 @@ export default function AdminClassPage({ classGroupId, onTitle }) {
 
       <div className="ad-register-summary">
         <span className="ad-chip ad-chip--present">{counts.present} present</span>
-        <span className="ad-chip ad-chip--late">{counts.late} late</span>
         <span className="ad-chip ad-chip--absent">{counts.absent} absent</span>
         <span className="ad-chip ad-chip--unmarked">{unmarked.length} not marked</span>
         {unmarked.length > 0 && (
@@ -151,7 +152,7 @@ export default function AdminClassPage({ classGroupId, onTitle }) {
         <div className="ad-empty">
           <span className="ad-empty__icon"><RosterIcon size={24} /></span>
           <p className="ad-empty__title">No students in this class yet</p>
-          <p className="ad-empty__text">The class teacher adds students from their phone.</p>
+          <p className="ad-empty__text">Add students to this class on the Students page.</p>
         </div>
       ) : (
         <div className="panel">

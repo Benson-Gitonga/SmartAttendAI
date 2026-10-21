@@ -38,7 +38,7 @@ const listing = (schools) => ({
   ),
 });
 
-const card = (name) => screen.getByText(name).closest('article');
+const card = (name) => screen.getByText(name).closest('tr');
 
 beforeEach(() => {
   service.getAllSchools.mockResolvedValue(listing([KISUMU, KIBERA, MOI]));
@@ -49,7 +49,7 @@ describe('SystemAdminOverview', () => {
     render(<SystemAdminOverview />);
     expect(await screen.findByText(KISUMU.name)).toBeInTheDocument();
     expect(screen.queryByText(KIBERA.name)).not.toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /Waiting/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /Pending review/ })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText('g.achieng@kisumuday.ac.ke')).toBeInTheDocument();
   });
 
@@ -58,7 +58,7 @@ describe('SystemAdminOverview', () => {
     render(<SystemAdminOverview />);
     expect(await screen.findByText(KIBERA.name)).toBeInTheDocument();
     expect(screen.getByText(MOI.name)).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /All/ })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: /All schools/ })).toHaveAttribute('aria-selected', 'true');
   });
 
   it('approves a school only after the confirmation, then reloads the list', async () => {
@@ -113,7 +113,7 @@ describe('SystemAdminOverview', () => {
     const user = userEvent.setup();
     render(<SystemAdminOverview />);
     await screen.findByText(KISUMU.name);
-    await user.click(screen.getByRole('tab', { name: /All/ }));
+    await user.click(screen.getByRole('tab', { name: /All schools/ }));
 
     expect(within(card(KIBERA.name)).getByRole('button', { name: 'Disable' })).toBeInTheDocument();
     expect(within(card(KIBERA.name)).queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
@@ -138,7 +138,7 @@ describe('SystemAdminOverview', () => {
     const user = userEvent.setup();
     render(<SystemAdminOverview />);
     await screen.findByText(KISUMU.name);
-    await user.click(screen.getByRole('tab', { name: /All/ }));
+    await user.click(screen.getByRole('tab', { name: /All schools/ }));
     await user.type(screen.getByLabelText('Search schools'), 'uasin');
     expect(screen.getByText(MOI.name)).toBeInTheDocument();
     expect(screen.queryByText(KIBERA.name)).not.toBeInTheDocument();
@@ -152,7 +152,7 @@ describe('SystemAdminOverview', () => {
     await user.click(screen.getByRole('tab', { name: /Active/ }));
 
     const disable = within(card(KIBERA.name)).getByRole('button', { name: 'Disable' });
-    expect(disable).toHaveClass('sa-btn--danger');
+    expect(disable).toHaveClass('sys-btn--danger');
     await user.click(disable);
 
     const dialog = screen.getByRole('dialog');
@@ -194,6 +194,28 @@ describe('SystemAdminOverview', () => {
     render(<SystemAdminOverview />);
     await waitFor(() => expect(mockSignOut).toHaveBeenCalled());
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('opens the details panel from a row, with the same actions', async () => {
+    const user = userEvent.setup();
+    render(<SystemAdminOverview />);
+    await user.click(await screen.findByRole('button', { name: KISUMU.name }));
+    const panel = screen.getByRole('complementary', { name: `${KISUMU.name} details` });
+    expect(within(panel).getByText('0712345678')).toBeInTheDocument();
+    await user.click(within(panel).getByRole('button', { name: 'Approve' }));
+    expect(screen.getByRole('dialog')).toHaveTextContent(`Are you sure you want to approve ${KISUMU.name}?`);
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await user.click(within(panel).getByRole('button', { name: 'Close details' }));
+    expect(screen.queryByRole('complementary')).not.toBeInTheDocument();
+  });
+
+  it('holds approval until the applicant has confirmed their email', async () => {
+    service.getAllSchools.mockResolvedValue(listing([{ ...KISUMU, adminEmailVerified: false }, KIBERA]));
+    render(<SystemAdminOverview />);
+    await screen.findByText(KISUMU.name);
+    expect(within(card(KISUMU.name)).getByText('Email not confirmed')).toBeInTheDocument();
+    expect(within(card(KISUMU.name)).getByRole('button', { name: 'Approve' })).toBeDisabled();
+    expect(within(card(KISUMU.name)).getByRole('button', { name: 'Reject' })).toBeEnabled();
   });
 
   it('shows who is signed in', async () => {

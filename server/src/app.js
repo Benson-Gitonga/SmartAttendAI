@@ -14,7 +14,10 @@ import { createGateRouter } from './routes/gate.js';
 import { createSystemAdminAuth } from './auth/systemAdminAuth.js';
 import { createUserAuth } from './auth/userAuth.js';
 import { createAuthRouter } from './routes/auth.js';
+import { createGoogleVerifier } from './auth/googleAuth.js';
 import { createTeacherRouter } from './routes/teacher.js';
+import { createMailer } from './mail/mailer.js';
+import { createAccountEmails } from './mail/accountEmails.js';
 import {
   getAttendanceForDate,
   getRecentChallenges,
@@ -30,6 +33,9 @@ import {
  * @param {string} [opts.deviceApiKey] required X-Device-Key for gate scans; '' = open
  * @param {ReturnType<typeof createSystemAdminAuth>} [opts.systemAdminAuth] sign-in for /api/system-admin
  * @param {ReturnType<typeof createUserAuth>} [opts.userAuth] sign-in for school staff
+ * @param {ReturnType<typeof createMailer>} [opts.mailer] outgoing email (log-only by default)
+ * @param {string} [opts.appUrl] where the PWA lives, for links in emails
+ * @param {ReturnType<typeof createGoogleVerifier>} [opts.google] checks "Continue with Google" tokens
  */
 export function createApp({
   db,
@@ -38,8 +44,12 @@ export function createApp({
   deviceApiKey = config.deviceApiKey,
   systemAdminAuth = createSystemAdminAuth(config.systemAdmin),
   userAuth = createUserAuth({ db, ...config.auth }),
+  mailer = createMailer(config.mail),
+  appUrl = config.appUrl,
+  google = createGoogleVerifier(config.google),
 } = {}) {
   const app = express();
+  const emails = createAccountEmails({ db, mailer, appUrl });
   app.use(express.json());
   if (logger) app.use(morgan('dev'));
 
@@ -70,12 +80,18 @@ export function createApp({
     res.json(getStats(db, req.query.date || todayISO()));
   });
 
-  app.use('/api/auth', createAuthRouter({ db, userAuth }));
+  app.use('/api/auth', createAuthRouter({ db, userAuth, emails, google }));
+
+  // Without SES, emails only go to the console and this outbox, so the links
+  // in them can still be followed while developing.
+  if (mailer.transport === 'log' && process.env.NODE_ENV !== 'production') {
+    app.get('/api/dev/outbox', (req, res) => res.json({ emails: mailer.outbox() }));
+  }
 
   app.use('/api/sync', createSyncRouter({ db, userAuth }));
 
   app.use('/api/roster', createRosterRouter({ db, userAuth }));
-  app.use('/api/admin', createAdminRouter({ db, userAuth }));
+  app.use('/api/admin', createAdminRouter({ db, userAuth, emails }));
   app.use('/api/teacher', createTeacherRouter({ db, userAuth }));
 
   // Today's gate scans (and any teacher marks) for one class, pulled by the
@@ -83,11 +99,11 @@ export function createApp({
   app.use('/api/gate', createGateRouter({ db, userAuth }));
 
   // A school applies to join, and its applicant waits for approval.
-  app.use('/api/schools', createSchoolsRouter({ db, userAuth }));
+  app.use('/api/schools', createSchoolsRouter({ db, emails }));
 
   // Platform-wide school list: approve or reject new schools, disable or
   // enable approved ones. For the system-admin role.
-  app.use('/api/system-admin', createSystemAdminRouter({ db, auth: systemAdminAuth }));
+  app.use('/api/system-admin', createSystemAdminRouter({ db, auth: systemAdminAuth, emails }));
 
   // One scan from a gate device or by hand. Body: { "cardUid": "04A1B2C3" }
   // plus, for a device with a fingerprint step, "interactive": true and later

@@ -51,32 +51,32 @@ const rowFor = (name) => screen.getByText(name).closest('tr');
 const tickFor = (name) => screen.getByRole('checkbox', { name: `${name} present` });
 
 describe('AttendanceForm with the school gate', () => {
-  it('shows gate scans as already present and only asks about the rest', async () => {
+  it('shows the gate scan time, and still starts everyone present', async () => {
     gateWithAminaScanned();
     render(<AttendanceForm classGroupId={CLASS} />);
 
     expect(await screen.findByText(/1 of 2 scanned in at the gate/)).toBeInTheDocument();
     expect(within(rowFor('Amina Wanjiru')).getByText(/gate .* \(fingerprint\)/)).toBeInTheDocument();
     expect(tickFor('Amina Wanjiru')).toBeChecked();
-    // no scan with the gate running: starts unticked (absent)
-    expect(tickFor('Kevin Odhiambo')).not.toBeChecked();
-    expect(within(rowFor('Kevin Odhiambo')).getByText(/not scanned/)).toBeInTheDocument();
+    // no scan does not mean absent: the teacher unticks whoever is not here
+    expect(tickFor('Kevin Odhiambo')).toBeChecked();
+    expect(within(rowFor('Kevin Odhiambo')).getByText(/not saved/)).toBeInTheDocument();
     // gate scans are already on the server - nothing to push
     expect(await countPendingSync()).toBe(0);
   });
 
-  it('marks a non-scanned student absent with a reason and confirms', async () => {
+  it('unticking a student who did not scan marks them absent, with a reason', async () => {
     gateWithAminaScanned();
     const user = userEvent.setup();
     render(<AttendanceForm classGroupId={CLASS} />);
     await screen.findByText(/1 of 2 scanned in at the gate/);
 
-    // Kevin did not scan, so he is already unticked; the teacher adds a reason
+    await user.click(tickFor('Kevin Odhiambo'));
     const reason = screen.getByRole('combobox', { name: 'Why was Kevin Odhiambo absent?' });
     await user.selectOptions(reason, 'fee');
     expect(reason).toHaveValue('fee');
 
-    await user.click(screen.getByRole('button', { name: /Confirm attendance \(1\)/ }));
+    await user.click(screen.getByRole('button', { name: /Save attendance \(1\)/ }));
 
     await waitFor(async () => {
       const kevinRecord = await db.attendanceEvents.where('[studentId+date]').equals(['stu-2', TODAY]).first();

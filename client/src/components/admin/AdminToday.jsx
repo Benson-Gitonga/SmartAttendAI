@@ -1,21 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
-import { getRegisterBoard } from '../../services/adminService';
+import { getRegisterBoard, getTeachers } from '../../services/adminService';
 import { todayISO } from '../../db/database';
 import { readAdminDate, writeAdminDate } from './adminDate';
-import { ArrowRightIcon, CheckCircleIcon, ClockIcon, AlertTriangleIcon, SyncIcon, UsersIcon } from '../icons';
+import { SyncIcon } from '../icons';
 
 const STATUS = {
-  done: { label: 'Done', tone: 'done', Icon: CheckCircleIcon },
-  partial: { label: 'Part done', tone: 'partial', Icon: ClockIcon },
-  gate_only: { label: 'Gate only', tone: 'partial', Icon: ClockIcon },
-  not_taken: { label: 'Not taken', tone: 'missing', Icon: AlertTriangleIcon },
-  empty: { label: 'No students', tone: 'empty', Icon: UsersIcon },
+  done: { label: 'Taken', tone: 'active' },
+  partial: { label: 'Part taken', tone: 'pending' },
+  gate_only: { label: 'Gate scans only', tone: 'pending' },
+  not_taken: { label: 'Not taken', tone: 'rejected' },
+  empty: { label: 'No students', tone: 'inactive' },
 };
 
 const FILTERS = [
-  { id: 'waiting', label: 'Needs attention', test: (c) => ['not_taken', 'gate_only', 'partial'].includes(c.status) },
-  { id: 'done', label: 'Done', test: (c) => c.status === 'done' },
+  { id: 'waiting', label: 'Not taken yet', test: (c) => ['not_taken', 'gate_only', 'partial'].includes(c.status) },
+  { id: 'done', label: 'Taken', test: (c) => c.status === 'done' },
   { id: 'all', label: 'All classes', test: () => true },
 ];
 
@@ -24,15 +24,16 @@ const percent = (rate) => (rate == null ? '-' : `${Math.round(rate * 100)}%`);
 const time = (iso) => (iso ? new Date(iso).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' }) : null);
 
 /**
- * The school admin's home: every class's register for one day, so classes
- * that have not taken it stand out and can be opened and taken or corrected.
+ * The school admin's home: a summary of the day, which classes have not taken
+ * the register, and (until the school is set up) the steps to get there.
  */
-export default function AdminToday({ onOpenClass }) {
+export default function AdminToday({ onOpenClass, onGo }) {
   const { user } = useAuth();
   const schoolId = user?.schoolId;
   const [date, setDate] = useState(readAdminDate);
   useEffect(() => { writeAdminDate(date); }, [date]);
   const [board, setBoard] = useState(null);
+  const [teacherCount, setTeacherCount] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState('waiting');
@@ -41,7 +42,9 @@ export default function AdminToday({ onOpenClass }) {
     if (!schoolId) return;
     setLoading(true);
     try {
-      setBoard(await getRegisterBoard(schoolId, date));
+      const [b, teachers] = await Promise.all([getRegisterBoard(schoolId, date), getTeachers(schoolId)]);
+      setBoard(b);
+      setTeacherCount(teachers.filter((t) => t.status !== 'disabled').length);
       setError(null);
     } catch (err) {
       setError(err.message ?? 'Could not load the registers');
@@ -56,112 +59,121 @@ export default function AdminToday({ onOpenClass }) {
     () => Object.fromEntries(FILTERS.map((f) => [f.id, (board?.classes ?? []).filter(f.test).length])),
     [board]
   );
-  // Open on the classes that need something; once all are done, show them all.
+  // Open on the classes that still need the register; once all are done, show them all.
   const activeFilter = filter === 'waiting' && board && counts.waiting === 0 ? 'all' : filter;
   const visible = (board?.classes ?? []).filter(FILTERS.find((f) => f.id === activeFilter).test);
   const isToday = date === todayISO();
   const t = board?.totals;
 
+  const setup = board && teacherCount != null ? [
+    { id: 'classes', done: board.classes.length > 0, label: 'Create your classes', go: 'classes' },
+    { id: 'students', done: t.students > 0, label: 'Add students (one by one or from a CSV file)', go: 'students' },
+    { id: 'teachers', done: teacherCount > 0, label: 'Invite your teachers', go: 'teachers' },
+    { id: 'assign', done: board.classes.length > 0 && board.classes.every((c) => c.teacherUserId), label: 'Give every class a teacher', go: 'classes' },
+  ] : null;
+  const setupLeft = setup?.filter((s) => !s.done).length ?? 0;
+
   return (
-    <div className="ad-page">
-      <div className="page-head">
+    <div className="ad-page ad-console">
+      <div className="sys-pagehead">
         <div>
-          <h2 className="page-head__title">{isToday ? "Today's registers" : 'Registers'}</h2>
-          <p className="page-head__sub">
-            {isToday
-              ? 'Every class in the school. Open one to take the register for an absent teacher or correct a mark.'
-              : `Every class's register on ${new Date(`${date}T00:00`).toLocaleDateString('en-KE', { weekday: 'long', day: 'numeric', month: 'long' })}.`}
-          </p>
+          <h1 className="sys-pagehead__title">{isToday ? 'Today' : new Date(`${date}T00:00`).toLocaleDateString('en-KE', { weekday: 'long', day: 'numeric', month: 'long' })}</h1>
+          <p className="sys-pagehead__sub">{user?.schoolName ?? 'Your school'} · attendance across every class</p>
         </div>
-        <div className="page-head__actions">
-          <label className="date-input">
-            <span className="sr-only">Day</span>
-            <input type="date" value={date} max={todayISO()} onChange={(e) => e.target.value && setDate(e.target.value)} />
-          </label>
-          <button type="button" className="btn btn--outline btn--sm" onClick={load} disabled={loading}>
-            <SyncIcon size={15} /> Refresh
+        <div className="sys-pagehead__actions">
+          <input className="sys-input sys-input--date" type="date" value={date} max={todayISO()} aria-label="Day" onChange={(e) => e.target.value && setDate(e.target.value)} />
+          <button type="button" className="sys-btn sys-btn--secondary" onClick={load} disabled={loading}>
+            <SyncIcon size={14} className={loading ? 'sa-spin' : undefined} /> Refresh
           </button>
+          <button type="button" className="sys-btn sys-btn--secondary ad-scan-link" onClick={() => onGo?.('scan')}>Scan station</button>
         </div>
       </div>
 
-      {error && <div className="notice notice--err" role="alert">Could not load the registers ({error}).</div>}
-      {!error && !board && <p className="empty">Loading registers…</p>}
+      {error && <div className="sys-banner sys-banner--error" role="alert">Could not load the registers ({error}).</div>}
+      {!error && !board && <p className="sys-muted" role="status">Loading…</p>}
 
-      {t && (
-        <div className="ad-totals">
-          <div className="ad-total ad-total--hero">
-            <span className="ad-total__value">{t.done}<small>/{t.classes}</small></span>
-            <span className="ad-total__label">classes done</span>
-            <span className="ad-meter" aria-hidden="true">
-              <span style={{ width: `${t.classes ? (t.done / t.classes) * 100 : 0}%` }} />
-            </span>
+      {setup && setupLeft > 0 && (
+        <section className="sys-panel ad-setup">
+          <div className="sys-toolbar">
+            <span className="sys-toolbar__title">Set up your school</span>
+            <span className="sys-toolbar__count">{setup.length - setupLeft} of {setup.length} done</span>
           </div>
-          <div className="ad-total"><span className="ad-total__value">{percent(t.attendanceRate)}</span><span className="ad-total__label">attendance</span></div>
-          <div className="ad-total ad-total--ok"><span className="ad-total__value">{t.present + t.late}</span><span className="ad-total__label">in school</span></div>
-          <div className="ad-total ad-total--bad"><span className="ad-total__value">{t.absent}</span><span className="ad-total__label">absent</span></div>
-          <div className="ad-total ad-total--warn"><span className="ad-total__value">{t.unmarked}</span><span className="ad-total__label">not marked yet</span></div>
-        </div>
+          <ol className="ad-setup__list">
+            {setup.map((step) => (
+              <li key={step.id} className={step.done ? 'is-done' : undefined}>
+                <span className="ad-setup__mark" aria-hidden="true">{step.done ? '✓' : ''}</span>
+                <span className="ad-setup__label">{step.label}</span>
+                {!step.done && <button type="button" className="sys-btn sys-btn--secondary sys-btn--sm" onClick={() => onGo?.(step.go)}>Open</button>}
+              </li>
+            ))}
+          </ol>
+        </section>
       )}
 
-      {board && (
+      {t && board.classes.length > 0 && (
+        <dl className="ad-stats">
+          <div><dt>Registers taken</dt><dd>{t.done} <span>of {t.classes}</span></dd></div>
+          <div><dt>Attendance</dt><dd>{percent(t.attendanceRate)}</dd></div>
+          <div><dt>Present</dt><dd>{t.present + t.late}</dd></div>
+          <div><dt>Absent</dt><dd>{t.absent}</dd></div>
+          <div><dt>Not marked yet</dt><dd>{t.unmarked}</dd></div>
+        </dl>
+      )}
+
+      {board && board.classes.length > 0 && (
         <>
-          <div className="chips ad-filters" role="tablist" aria-label="Filter classes">
+          <nav className="sys-tabs" role="tablist" aria-label="Filter classes">
             {FILTERS.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                role="tab"
-                className="chip"
-                aria-selected={activeFilter === f.id}
-                onClick={() => setFilter(f.id)}
-              >
-                {f.label}
-                <span className="chip__count">{counts[f.id]}</span>
+              <button key={f.id} type="button" role="tab" className="sys-tab" aria-selected={activeFilter === f.id} onClick={() => setFilter(f.id)}>
+                {f.label}<span className="sys-tab__count">{counts[f.id]}</span>
               </button>
             ))}
-          </div>
+          </nav>
 
-          {board.classes.length === 0 && (
-            <div className="ad-empty">
-              <p className="ad-empty__title">No classes yet</p>
-              <p className="ad-empty__text">Create your school&apos;s classes under <b>Classes</b> and assign each one a teacher.</p>
-            </div>
-          )}
-
-          <div className="ad-board">
-            {visible.map((c) => {
-              const s = STATUS[c.status] ?? STATUS.not_taken;
-              const marked = c.studentCount - c.unmarked;
-              return (
-                <button key={c.classGroupId} type="button" className={`ad-tile ad-tile--${s.tone}`} onClick={() => onOpenClass(c.classGroupId)}>
-                  <span className="ad-tile__head">
-                    <span className="ad-tile__name">{className(c)}</span>
-                    <span className={`ad-status ad-status--${s.tone}`}><s.Icon size={13} /> {s.label}</span>
-                  </span>
-                  <span className="ad-tile__teacher">{c.teacherName || 'No teacher assigned'}</span>
-                  {c.studentCount > 0 && (
-                    <>
-                      <span className="ad-meter" aria-hidden="true">
-                        <span style={{ width: `${(marked / c.studentCount) * 100}%` }} />
-                      </span>
-                      <span className="ad-tile__counts">
-                        <span>{marked}/{c.studentCount} marked</span>
-                        {c.absent > 0 && <span className="ad-tile__absent">{c.absent} absent</span>}
-                        {c.lastMarkAt && <span>last {time(c.lastMarkAt)}</span>}
-                      </span>
-                    </>
-                  )}
-                  <span className="ad-tile__go">
-                    {c.status === 'done' ? 'View or correct' : 'Take register'} <ArrowRightIcon size={14} />
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-
-          {visible.length === 0 && board.classes.length > 0 && (
-            <p className="empty">Nothing here: every class has taken its register.</p>
-          )}
+          <section className="sys-panel">
+            <table className="sys-table">
+              <thead>
+                <tr>
+                  <th>Class</th>
+                  <th>Teacher</th>
+                  <th>Register</th>
+                  <th className="sys-num">Marked</th>
+                  <th className="sys-num">Present</th>
+                  <th className="sys-num">Absent</th>
+                  <th className="sys-table__actions"><span className="sa-visually-hidden">Open</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.length === 0 && (
+                  <tr><td colSpan={7} className="sys-table__empty">Every class has taken its register.</td></tr>
+                )}
+                {visible.map((c) => {
+                  const s = STATUS[c.status] ?? STATUS.not_taken;
+                  const marked = c.studentCount - c.unmarked;
+                  return (
+                    <tr key={c.classGroupId} onClick={() => onOpenClass(c.classGroupId)}>
+                      <td data-label="Class">
+                        <button type="button" className="sys-table__name" onClick={(e) => { e.stopPropagation(); onOpenClass(c.classGroupId); }}>{className(c)}</button>
+                      </td>
+                      <td data-label="Teacher">{c.teacherName || <span className="sys-muted">No teacher</span>}</td>
+                      <td data-label="Register">
+                        <span className={`sys-status sys-status--${s.tone}`}>{s.label}</span>
+                        {c.lastMarkAt && <div className="sys-table__sub">last mark {time(c.lastMarkAt)}</div>}
+                      </td>
+                      <td data-label="Marked" className="sys-num">{marked}/{c.studentCount}</td>
+                      <td data-label="Present" className="sys-num">{c.present + c.late}</td>
+                      <td data-label="Absent" className="sys-num">{c.absent}</td>
+                      <td className="sys-table__actions">
+                        <button type="button" className="sys-btn sys-btn--secondary sys-btn--sm" onClick={(e) => { e.stopPropagation(); onOpenClass(c.classGroupId); }}>
+                          {c.status === 'done' ? 'View' : 'Take register'}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </section>
         </>
       )}
     </div>

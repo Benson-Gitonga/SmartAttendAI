@@ -16,6 +16,7 @@ import {
   setSchoolStatus,
   SCHOOL_STATUSES,
   SchoolTransitionError,
+  isSchoolAdminVerified,
   logAudit,
 } from '../db/repository.js';
 
@@ -23,10 +24,12 @@ import {
  * @param {object} opts
  * @param {import('better-sqlite3').Database} opts.db
  * @param {ReturnType<typeof createSystemAdminAuth>} opts.auth
+ * @param {ReturnType<import('../mail/accountEmails.js').createAccountEmails>} opts.emails
  */
-export function createSystemAdminRouter({ db, auth }) {
+export function createSystemAdminRouter({ db, auth, emails }) {
   if (!db) throw new Error('createSystemAdminRouter needs a db');
   if (!auth) throw new Error('createSystemAdminRouter needs auth');
+  if (!emails) throw new Error('createSystemAdminRouter needs emails');
   const router = Router();
 
   // The only endpoint open without a token.
@@ -67,15 +70,19 @@ export function createSystemAdminRouter({ db, auth }) {
     res.json({ schools: getAllSchools(db, { status }), counts: countSchoolsByStatus(db) });
   });
 
-  /** Run a status change and turn its failures into HTTP answers. */
+  /**
+   * Run a status change. Returns the school, or null after answering with the
+   * failure (404 unknown school, 409 a change that is not allowed).
+   */
   const transition = (res, run) => {
     try {
       const school = run();
-      if (!school) return res.status(404).json({ error: 'school not found' });
-      res.json(school);
+      if (!school) res.status(404).json({ error: 'school not found' });
+      return school;
     } catch (err) {
       if (err instanceof SchoolTransitionError) {
-        return res.status(409).json({ error: err.message, from: err.from, to: err.to });
+        res.status(409).json({ error: err.message, from: err.from, to: err.to });
+        return null;
       }
       throw err;
     }
@@ -93,20 +100,37 @@ export function createSystemAdminRouter({ db, auth }) {
   const EXPECTED_FROM = { approve: 'pending', enable: 'inactive' };
 
   for (const [action, status] of Object.entries(ACTIONS)) {
-    router.post(`/schools/:id/${action}`, (req, res) => {
+    router.post(`/schools/:id/${action}`, async (req, res, next) => {
       const body = req.body ?? {};
       const { valid, errors } = validate(schoolReviewSchema, body);
       if (!valid) return res.status(400).json({ error: 'invalid request', errors });
       if (action === 'reject' && !body.note?.trim()) {
         return res.status(400).json({ error: 'give a reason for the rejection' });
       }
+      // An application is only reviewed once its applicant has confirmed their
+      // email, so the set-up link is sure to reach a real inbox.
+      if (action === 'approve' && getSchool(db, req.params.id)?.status === 'pending' && !isSchoolAdminVerified(db, req.params.id)) {
+        return res.status(409).json({ error: 'The applicant has not confirmed their email yet.', reason: 'email_not_verified' });
+      }
 
-      transition(res, () => {
+      const school = transition(res, () => {
         // approve and enable both land on 'active', so check the starting
         // point too: approving a disabled school is not an approval.
         requireFrom(req.params.id, EXPECTED_FROM[action], action === 'approve' ? 'approved' : 'enabled');
         return changeSchoolStatus(db, req.params.id, status, { actor: req.systemAdmin.sub, note: body.note });
       });
+      if (!school) return undefined;
+
+      // The decision goes to the applicant. A failed email does not undo it;
+      // they can get a fresh link from "Forgot password".
+      try {
+        let email = null;
+        if (action === 'approve') email = await emails.schoolApproved(school.schoolId);
+        if (action === 'reject') email = await emails.schoolRejected(school.schoolId, body.note.trim());
+        res.json(email ? { ...school, emailSent: email.sent } : school);
+      } catch (err) {
+        next(err);
+      }
     });
   }
 
@@ -117,11 +141,12 @@ export function createSystemAdminRouter({ db, auth }) {
     if (status !== 'active' && status !== 'inactive') {
       return res.status(400).json({ error: "status must be 'active' or 'inactive'" });
     }
-    transition(res, () => {
+    const school = transition(res, () => {
       // Turning a pending school on here would skip the approval step.
       if (status === 'active') requireFrom(req.params.id, 'inactive', 'enabled');
       return setSchoolStatus(db, req.params.id, status, { actor, note });
     });
+    if (school) res.json(school);
   });
 
   return router;

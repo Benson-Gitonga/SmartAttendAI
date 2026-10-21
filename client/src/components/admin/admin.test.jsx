@@ -38,9 +38,9 @@ describe('AdminToday', () => {
     date: todayISO(),
     totals: { classes: 3, done: 1, waiting: 2, students: 90, present: 50, late: 2, absent: 3, unmarked: 35, attendanceRate: 0.95 },
     classes: [
-      { classGroupId: 'class-1a', grade: 'Form 1', stream: 'A', teacherName: 'Mr. Kamau', studentCount: 30, unmarked: 30, absent: 0, status: 'not_taken' },
-      { classGroupId: 'class-3b', grade: 'Form 3', stream: 'B', teacherName: 'Ms. Otieno', studentCount: 30, unmarked: 0, absent: 3, status: 'done', lastMarkAt: new Date().toISOString() },
-      { classGroupId: 'class-4c', grade: 'Form 4', stream: 'C', teacherName: null, studentCount: 30, unmarked: 5, absent: 0, status: 'gate_only' },
+      { classGroupId: 'class-1a', grade: 'Form 1', stream: 'A', teacherName: 'Mr. Kamau', teacherUserId: 'user-kamau', studentCount: 30, unmarked: 30, present: 0, late: 0, absent: 0, status: 'not_taken' },
+      { classGroupId: 'class-3b', grade: 'Form 3', stream: 'B', teacherName: 'Ms. Otieno', teacherUserId: 'user-otieno', studentCount: 30, unmarked: 0, present: 27, late: 0, absent: 3, status: 'done', lastMarkAt: new Date().toISOString() },
+      { classGroupId: 'class-4c', grade: 'Form 4', stream: 'C', teacherName: null, teacherUserId: null, studentCount: 30, unmarked: 5, present: 25, late: 0, absent: 0, status: 'gate_only' },
     ],
   };
 
@@ -50,9 +50,11 @@ describe('AdminToday', () => {
     expect(await screen.findByText('Form 1 A')).toBeInTheDocument();
     expect(screen.getByText('Form 4 C')).toBeInTheDocument();
     expect(screen.queryByText('Form 3 B')).not.toBeInTheDocument();
-    expect(screen.getByText('No teacher assigned')).toBeInTheDocument();
+    expect(screen.getByText('No teacher')).toBeInTheDocument();
     expect(screen.getByText('Not taken')).toBeInTheDocument();
-    expect(screen.getByText('classes done')).toBeInTheDocument();
+    expect(screen.getByText('Registers taken')).toBeInTheDocument();
+    // one class has no teacher, so the setup checklist still shows that step
+    expect(screen.getByText('Give every class a teacher')).toBeInTheDocument();
   });
 
   it('opens a class to take its register', async () => {
@@ -60,7 +62,7 @@ describe('AdminToday', () => {
     const onOpenClass = jest.fn();
     api.getRegisterBoard.mockResolvedValue(board);
     render(<AdminToday onOpenClass={onOpenClass} />);
-    await user.click(await screen.findByRole('button', { name: /Form 1 A/ }));
+    await user.click(await screen.findByRole('button', { name: 'Form 1 A' }));
     expect(onOpenClass).toHaveBeenCalledWith('class-1a');
   });
 
@@ -148,7 +150,7 @@ describe('AdminClassPage, taking or correcting a register', () => {
     const user = userEvent.setup();
     api.getClassRegister.mockResolvedValue(register());
     render(<AdminClassPage classGroupId="class-3b" />);
-    await user.click(await screen.findByRole('button', { name: 'Late: Amina Wanjiru' }));
+    await user.click(await screen.findByRole('button', { name: 'Absent: Amina Wanjiru' }));
     await user.click(screen.getByRole('button', { name: 'Save changes' }));
     const dialog = screen.getByRole('dialog');
     await user.click(within(dialog).getByLabelText(/Something else/));

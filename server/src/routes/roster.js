@@ -55,10 +55,11 @@ export function createRosterRouter({ db, userAuth }) {
     return true;
   };
 
-  // Schools and classes are set up by the school admin, not by teachers.
-  const adminOnly = (res, req) => {
+  // Schools, classes and students are set up by the school admin, not by
+  // teachers. (A teacher's 403 is final: the device drops the change.)
+  const adminOnly = (res, req, what = 'creates schools and classes') => {
     if (req.user.role === 'admin') return false;
-    res.status(403).json({ error: 'only the school admin creates schools and classes' });
+    res.status(403).json({ error: `only the school admin ${what}`, reason: 'admin_only' });
     return true;
   };
 
@@ -94,6 +95,7 @@ export function createRosterRouter({ db, userAuth }) {
   router.post('/students', (req, res) => {
     const body = req.body ?? {};
     if (!require(res, body, ['studentId', 'classGroupId', 'fullName'])) return;
+    if (adminOnly(res, req, 'adds and edits students')) return;
     if (blocked(res, req, { classGroupId: body.classGroupId })) return;
     try {
       res.status(200).json(upsertStudent(db, body));
@@ -106,6 +108,7 @@ export function createRosterRouter({ db, userAuth }) {
   });
 
   router.patch('/students/:id', (req, res) => {
+    if (adminOnly(res, req, 'adds and edits students')) return;
     if (blocked(res, req, { studentId: req.params.id })) return;
     patchStudent(db, req.params.id, req.body ?? {});
     res.status(200).json({ studentId: req.params.id, updated: true });
@@ -114,6 +117,7 @@ export function createRosterRouter({ db, userAuth }) {
   router.post('/students/:id/card', (req, res) => {
     const body = req.body ?? {};
     if (!require(res, body, ['cardUid'])) return;
+    if (adminOnly(res, req, 'issues student cards')) return;
     if (blocked(res, req, { studentId: req.params.id })) return;
     try {
       res.status(200).json(upsertCard(db, { cardUid: body.cardUid, studentId: req.params.id }));

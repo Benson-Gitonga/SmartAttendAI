@@ -23,6 +23,10 @@ export const config = {
         ? resolve(process.env.DB_PATH)
         : join(defaultDbDir, 'smartattend', 'smartattend.db'),
 
+  // Fill the Kibera demo school with three months of made-up attendance on
+  // start (src/db/seedDemoData.js). Never queued for the cloud.
+  demoData: process.env.DEMO_DATA !== 'false',
+
   // Mock RFID reader: emit a card-detected event this often.
   rfidIntervalMs: num(process.env.RFID_INTERVAL_MS, 5000),
 
@@ -51,6 +55,25 @@ export const config = {
     tokenSecret: process.env.AUTH_TOKEN_SECRET || '',
     tokenTtlMs: num(process.env.AUTH_TOKEN_TTL_DAYS, 30) * 24 * 60 * 60 * 1000,
   },
+
+  // "Continue with Google" (src/auth/googleAuth.js). The OAuth web client id
+  // from Google Cloud; the PWA reads it from GET /api/auth/google. Without one,
+  // a development-only stand-in is used unless NODE_ENV=production.
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID || '',
+    devMode: process.env.NODE_ENV !== 'production' && process.env.GOOGLE_SIGNIN !== 'off',
+  },
+
+  // Outgoing email (src/mail/mailer.js). 'log' prints each email and keeps it
+  // in the dev outbox; 'ses' sends it with Amazon SES.
+  mail: {
+    transport: process.env.MAIL_TRANSPORT === 'ses' ? 'ses' : 'log',
+    from: process.env.MAIL_FROM || 'SmartAttend <no-reply@smartattend.local>',
+    region: process.env.AWS_REGION || process.env.SES_REGION || undefined,
+  },
+
+  // Where the PWA lives, for the links in emails.
+  appUrl: (process.env.APP_URL || 'http://localhost:5173').replace(/\/+$/, ''),
 
   // The one system admin account (src/auth/systemAdminAuth.js). Set with
   // `npm run sysadmin:set`; only a hash of the password is kept. With no username

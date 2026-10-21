@@ -1,6 +1,6 @@
 import { db } from '../db/database';
 import {
-  signIn, registerSchool, loadStoredSession, authHeaders, extendSessionWithPin, isSessionValid, SESSION_KEY,
+  signIn, signInWithGoogle, refreshSession, registerSchool, loadStoredSession, authHeaders, isSessionValid, SESSION_KEY,
 } from './session';
 
 const reply = (status, body = {}) => jest.fn().mockResolvedValue({
@@ -19,7 +19,7 @@ beforeEach(async () => {
 });
 
 describe('signIn', () => {
-  it('keeps the server token and locks the app on the device after an hour', async () => {
+  it('keeps the server token, and stays signed in for as long as it lasts', async () => {
     const fetchImpl = reply(200, SERVER_REPLY);
     const session = await signIn(' g.achieng@kisumuday.ac.ke ', 'pw', { fetchImpl });
 
@@ -29,7 +29,8 @@ describe('signIn', () => {
       mode: 'server', username: 'g.achieng@kisumuday.ac.ke', displayName: 'Grace Achieng', role: 'admin',
       schoolId: 'school-1', schoolStatus: 'pending', token: 'signed.token', tokenExpiresAt: SERVER_REPLY.expiresAt,
     });
-    expect(session.expiresAt).toBeLessThanOrEqual(Date.now() + 60 * 60 * 1000);
+    expect(isSessionValid(session)).toBe(true);
+    expect(isSessionValid(session, SERVER_REPLY.expiresAt + 1)).toBe(false);
     expect(await loadStoredSession()).toMatchObject({ token: 'signed.token' });
   });
 
@@ -52,11 +53,12 @@ describe('signIn', () => {
 });
 
 describe('registerSchool', () => {
-  it('signs the applicant in as the pending school admin', async () => {
-    const fetchImpl = reply(201, SERVER_REPLY);
-    const session = await registerSchool({ school: { name: 'x', county: 'Kisumu' }, applicant: {} }, { fetchImpl });
+  it('sends the application and signs nobody in: the applicant confirms their email next', async () => {
+    const fetchImpl = reply(201, { school: { schoolId: 'school-1', status: 'pending' }, email: 'g.achieng@kisumuday.ac.ke', emailSent: true });
+    const result = await registerSchool({ school: { name: 'x', county: 'Kisumu' }, applicant: {} }, { fetchImpl });
     expect(fetchImpl.mock.calls[0][0]).toBe('/api/schools/register');
-    expect(session.schoolStatus).toBe('pending');
+    expect(result.email).toBe('g.achieng@kisumuday.ac.ke');
+    expect(await loadStoredSession()).toBeNull();
   });
 
   it('passes on which field clashed', async () => {
@@ -78,13 +80,44 @@ describe('stored sessions', () => {
     expect(await authHeaders()).toEqual({ Authorization: 'Bearer signed.token' });
   });
 
-  it('a PIN unlock reopens the app but leaves the server token alone', async () => {
+  it('treats a session saved by an older build, with its one-hour lock, as signed in until the token runs out', async () => {
     const session = await signIn('a@b.ke', 'pw', { fetchImpl: reply(200, SERVER_REPLY) });
-    const locked = { ...session, expiresAt: Date.now() - 1 };
-    expect(isSessionValid(locked)).toBe(false);
-    const reopened = await extendSessionWithPin(locked);
-    expect(isSessionValid(reopened)).toBe(true);
-    expect(reopened.token).toBe('signed.token');
-    expect(reopened.tokenExpiresAt).toBe(SERVER_REPLY.expiresAt);
+    expect(isSessionValid({ ...session, expiresAt: Date.now() - 1 })).toBe(true);
+  });
+});
+
+describe('signInWithGoogle', () => {
+  it('sends the Google credential and keeps the session the server returns', async () => {
+    const fetchImpl = reply(200, SERVER_REPLY);
+    const session = await signInWithGoogle('google.id.token', { fetchImpl });
+    expect(fetchImpl.mock.calls[0][0]).toBe('/api/auth/google');
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ credential: 'google.id.token' });
+    expect(session.token).toBe('signed.token');
+  });
+
+  it('says when no account uses that Google email', async () => {
+    const fetchImpl = reply(403, { reason: 'no_account', error: 'No SmartAttend account uses this Google email.', email: 'x@gmail.com' });
+    const err = await signInWithGoogle('t', { fetchImpl }).catch((e) => e);
+    expect(err).toMatchObject({ code: 'NO_ACCOUNT', email: 'x@gmail.com' });
+    expect(await loadStoredSession()).toBeNull();
+  });
+});
+
+describe('refreshSession', () => {
+  it('swaps an old token for a new one', async () => {
+    await signIn('a@b.ke', 'pw', { fetchImpl: reply(200, SERVER_REPLY) });
+    const fetchImpl = reply(200, { ...SERVER_REPLY, token: 'newer.token' });
+    const result = await refreshSession({ fetchImpl, now: Date.now() + 13 * 3_600_000 });
+    expect(result.status).toBe('renewed');
+    expect(fetchImpl.mock.calls[0][1].headers).toEqual({ Authorization: 'Bearer signed.token' });
+    expect(await authHeaders()).toEqual({ Authorization: 'Bearer newer.token' });
+  });
+
+  it('leaves a recent token alone, and reports one the server refuses', async () => {
+    await signIn('a@b.ke', 'pw', { fetchImpl: reply(200, SERVER_REPLY) });
+    const fetchImpl = reply(401);
+    expect((await refreshSession({ fetchImpl })).status).toBe('skipped');
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect((await refreshSession({ fetchImpl, force: true })).status).toBe('signed_out');
   });
 });

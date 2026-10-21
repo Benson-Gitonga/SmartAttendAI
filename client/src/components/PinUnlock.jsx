@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { MAX_ATTEMPTS, PIN_LENGTH } from '../auth/pin';
+import { INACTIVITY_LOCK_MS } from '../auth/inactivity';
+
+const LOCK_MINUTES = Math.round(INACTIVITY_LOCK_MS / 60000);
 import { CapIcon } from './icons';
 
 function minutesLeft(lockedUntil, now) {
@@ -55,32 +58,16 @@ export default function PinUnlock() {
     }
   }
 
-  if (!pinState.enrolled) {
-    return (
-      <div className="auth">
-        <div className="auth__card">
-          <div className="auth__logo"><CapIcon size={24} /></div>
-          <h1 className="auth__brand">Session expired</h1>
-          <p className="auth__help">
-            Your sign-in has expired and no offline PIN is set on this device.
-            Connect to the internet and sign in with your password.
-          </p>
-          <button className="btn" type="button" onClick={signOut}>Back to sign in</button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="auth">
       <form className="auth__card" onSubmit={handleSubmit}>
         <div className="auth__logo"><CapIcon size={24} /></div>
-        <h1 className="auth__brand">Session expired</h1>
+        <h1 className="auth__brand">SmartAttend is locked</h1>
         <p className="auth__tagline">{session?.displayName ?? session?.username}</p>
 
         <h2 className="auth__legend">Enter your PIN</h2>
         <p className="auth__help">
-          Your sign-in expired. Enter your {PIN_LENGTH}-digit PIN to keep going, no internet needed.
+          Locked after {LOCK_MINUTES} minutes without use. Enter your {PIN_LENGTH}-digit PIN to carry on, no internet needed.
         </p>
 
         {error && <div className="notice notice--err" role="alert">{error}</div>}

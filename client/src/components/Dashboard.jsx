@@ -62,7 +62,7 @@ function RateChart({ days }) {
                   {d.rate == null ? 'No register taken' : (
                     <>
                       <span>{Math.round(d.rate * 100)}% attended</span>
-                      <span>{d.present} present · {d.late} late · {d.absent} absent</span>
+                      <span>{d.present + d.late} present · {d.absent} absent</span>
                     </>
                   )}
                 </div>
@@ -146,17 +146,12 @@ export default function Dashboard({ classGroupId, className, onTakeAttendance, o
         </div>
         <div className="kpi">
           <span className="kpi__label"><span className="dot dot--present" />Present</span>
-          <span className="kpi__value">{todayStats.present}</span>
+          <span className="kpi__value">{todayStats.present + todayStats.late}</span>
           <span className="kpi__sub">today</span>
         </div>
         <div className="kpi">
           <span className="kpi__label"><span className="dot dot--absent" />Absent</span>
           <span className="kpi__value">{todayStats.absent}</span>
-          <span className="kpi__sub">today</span>
-        </div>
-        <div className="kpi">
-          <span className="kpi__label"><span className="dot dot--late" />Late</span>
-          <span className="kpi__value">{todayStats.late}</span>
           <span className="kpi__sub">today</span>
         </div>
         <div className="kpi">

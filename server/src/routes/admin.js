@@ -9,7 +9,10 @@
 
 import { Router } from 'express';
 import { validate } from '../lib/validate.js';
-import { createClassSchema, updateClassSchema, registerOverrideSchema, inviteTeacherSchema } from '../schemas/admin.schema.js';
+import {
+  createClassSchema, updateClassSchema, registerOverrideSchema, inviteTeacherSchema,
+  enrolStudentSchema, importStudentsSchema, updateStudentSchema, stationScanSchema,
+} from '../schemas/admin.schema.js';
 import {
   getSchoolOverview,
   getClassesForSchool,
@@ -32,13 +35,21 @@ import {
   getSchoolTeacher,
   setTeacherEnabled,
   RegistrationConflictError,
+  getSchoolStudents,
+  enrolStudent,
+  importStudents,
+  updateSchoolStudent,
+  reissueStudentCard,
+  recordStationScan,
+  StudentInputError,
 } from '../db/repository.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-export function createAdminRouter({ db, userAuth }) {
+export function createAdminRouter({ db, userAuth, emails }) {
   if (!db) throw new Error('createAdminRouter needs a db');
   if (!userAuth) throw new Error('createAdminRouter needs userAuth');
+  if (!emails) throw new Error('createAdminRouter needs emails');
   const router = Router();
 
   router.use(userAuth.requireUser('admin'), userAuth.requireActiveSchool);
@@ -113,21 +124,27 @@ export function createAdminRouter({ db, userAuth }) {
     res.json({ teachers: getTeachersForSchool(db, req.params.schoolId) });
   });
 
-  // Invite a teacher: an account with no password yet, and a one-time code
-  // the admin passes on (WhatsApp, SMS, email or paper). Shown only once.
-  router.post('/schools/:schoolId/teachers', (req, res) => {
+  // Invite a teacher: an account with no password yet. They get an email with
+  // a set-up link; the one-time code (shown only once) is the fallback the
+  // admin can pass on by WhatsApp, SMS or paper.
+  router.post('/schools/:schoolId/teachers', async (req, res, next) => {
     const { valid, errors } = validate(inviteTeacherSchema, req.body ?? {});
     if (!valid) return invalid(res, errors);
+    let invite;
     try {
-      const { teacher, code, expiresAt } = inviteTeacher(db, {
-        ...req.body, schoolId: req.params.schoolId, createdBy: req.user.email,
-      });
-      res.status(201).json({ teacher, code, expiresAt, purpose: 'invite' });
+      invite = inviteTeacher(db, { ...req.body, schoolId: req.params.schoolId, createdBy: req.user.email });
     } catch (err) {
       if (err instanceof RegistrationConflictError) {
         return res.status(409).json({ error: 'An account with this email already exists.', field: 'email' });
       }
-      throw err;
+      return next(err);
+    }
+    try {
+      const { teacher, code, expiresAt } = invite;
+      const { sent } = await emails.teacherInvite(teacher, { invitedBy: req.user.fullName, code });
+      res.status(201).json({ teacher, code, expiresAt, purpose: 'invite', emailSent: sent });
+    } catch (err) {
+      next(err);
     }
   });
 
@@ -139,12 +156,21 @@ export function createAdminRouter({ db, userAuth }) {
 
   // A fresh code: a new invite if they never set a password, otherwise a
   // password reset. Any earlier code stops working.
-  router.post('/teachers/:userId/code', (req, res) => {
+  // The same again by email: their invite link, or a password reset link.
+  router.post('/teachers/:userId/code', async (req, res, next) => {
     const teacher = teacherOr404(req, res);
     if (!teacher) return undefined;
     if (teacher.status === 'disabled') return res.status(409).json({ error: 'Enable this teacher first.' });
-    const purpose = teacher.status === 'invited' ? 'invite' : 'reset';
-    res.status(201).json({ teacher, ...issueSetupCode(db, { userId: teacher.userId, purpose, createdBy: req.user.email }) });
+    try {
+      const purpose = teacher.status === 'invited' ? 'invite' : 'reset';
+      const issued = issueSetupCode(db, { userId: teacher.userId, purpose, createdBy: req.user.email });
+      const { sent } = purpose === 'invite'
+        ? await emails.teacherInvite(teacher, { invitedBy: req.user.fullName, code: issued.code })
+        : await emails.passwordReset(teacher);
+      res.status(201).json({ teacher, ...issued, emailSent: sent });
+    } catch (err) {
+      next(err);
+    }
   });
 
   // Disabling signs the teacher out everywhere at once (their token is
@@ -187,6 +213,69 @@ export function createAdminRouter({ db, userAuth }) {
       if (err instanceof ClassInputError) return res.status(400).json({ error: err.message });
       throw err;
     }
+  });
+
+  // Students. Only the school admin enrols, edits, moves and removes them;
+  // teachers get their class lists on their next download.
+  const studentProblem = (res, err) => {
+    if (err instanceof StudentInputError) return res.status(400).json({ error: err.message, row: err.row });
+    throw err;
+  };
+
+  router.get('/schools/:schoolId/students', (req, res) => {
+    const classGroupId = req.query.classId || null;
+    if (classGroupId && schoolIdOf(db, { classGroupId }) !== req.user.schoolId) return notMine(res, 'class');
+    res.json({
+      students: getSchoolStudents(db, req.params.schoolId, { classGroupId, includeInactive: req.query.inactive === '1' }),
+    });
+  });
+
+  router.post('/classes/:id/students', (req, res) => {
+    if (!ownsClass(req)) return notMine(res, 'class');
+    const { valid, errors } = validate(enrolStudentSchema, req.body ?? {});
+    if (!valid) return invalid(res, errors);
+    try {
+      res.status(201).json(enrolStudent(db, req.user.schoolId, { ...req.body, classGroupId: req.params.id }, { actor: req.user.email }));
+    } catch (err) {
+      studentProblem(res, err);
+    }
+  });
+
+  router.post('/classes/:id/students/import', (req, res) => {
+    if (!ownsClass(req)) return notMine(res, 'class');
+    const { valid, errors } = validate(importStudentsSchema, req.body ?? {});
+    if (!valid) return invalid(res, errors);
+    try {
+      const students = importStudents(db, req.user.schoolId, req.params.id, req.body.students, { actor: req.user.email });
+      res.status(201).json({ students });
+    } catch (err) {
+      studentProblem(res, err);
+    }
+  });
+
+  router.patch('/students/:id', (req, res) => {
+    if (!ownsStudent(req)) return notMine(res, 'student');
+    const { valid, errors } = validate(updateStudentSchema, req.body ?? {});
+    if (!valid) return invalid(res, errors);
+    try {
+      res.json(updateSchoolStudent(db, req.user.schoolId, req.params.id, req.body, { actor: req.user.email }));
+    } catch (err) {
+      studentProblem(res, err);
+    }
+  });
+
+  router.post('/students/:id/card', (req, res) => {
+    if (!ownsStudent(req)) return notMine(res, 'student');
+    res.json(reissueStudentCard(db, req.user.schoolId, req.params.id, { actor: req.user.email }));
+  });
+
+  // A scan station: a USB barcode scanner (or a camera) at the gate or office
+  // reads a student's card and marks them present for today.
+  router.post('/scan', (req, res) => {
+    const { valid, errors } = validate(stationScanSchema, req.body ?? {});
+    if (!valid) return invalid(res, errors);
+    const result = recordStationScan(db, req.user.schoolId, req.body.cardUid, { actor: req.user.email });
+    res.status(result.outcome === 'unknown-card' ? 404 : 200).json(result);
   });
 
   router.get('/schools/:schoolId/flagged', (req, res) => {

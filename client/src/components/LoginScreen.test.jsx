@@ -1,6 +1,7 @@
 import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import LoginScreen from './LoginScreen';
+import * as session from '../auth/session';
 
 // Filling in the whole application form takes a while when every suite runs at once.
 jest.setTimeout(20_000);
@@ -10,55 +11,61 @@ let mockOnline = true;
 
 jest.mock('../auth/AuthContext', () => ({ useAuth: () => auth }));
 jest.mock('../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => mockOnline }));
+jest.mock('../auth/session', () => ({
+  requestPasswordHelp: jest.fn(),
+  verifyEmail: jest.fn(),
+  lookupEmailLink: jest.fn(),
+  lookupSetupCode: jest.fn(),
+  getGoogleSignInConfig: jest.fn(),
+}));
 
 function authError(code, message, extra = {}) {
   return Object.assign(new Error(message), { code, ...extra });
 }
 
+const goTo = (hash) => act(() => {
+  window.location.hash = hash;
+  window.dispatchEvent(new HashChangeEvent('hashchange'));
+});
+
 beforeEach(() => {
   mockOnline = true;
-  // The application lives at #/apply; every test starts on sign-in.
   window.history.replaceState(null, '', '/#/');
   Object.assign(auth, {
     signIn: jest.fn().mockResolvedValue({}),
-    registerSchool: jest.fn().mockResolvedValue({}),
+    registerSchool: jest.fn().mockResolvedValue({ email: 'g.achieng@kisumuday.ac.ke', emailSent: true }),
+    setPasswordFromLink: jest.fn().mockResolvedValue({}),
+    signInWithGoogle: jest.fn().mockResolvedValue({}),
   });
+  session.getGoogleSignInConfig.mockResolvedValue({ mode: 'off', clientId: null });
 });
 
 async function signInAs(user, email, password) {
-  await user.type(screen.getByLabelText('Email or username'), email);
+  await user.type(screen.getByLabelText('Email'), email);
   await user.type(screen.getByLabelText('Password'), password);
   await user.click(screen.getByRole('button', { name: 'Sign in' }));
-}
-
-async function openRegister(user) {
-  render(<LoginScreen />);
-  await user.click(screen.getByRole('button', { name: /Register your school/ }));
 }
 
 async function fillApplication(user, overrides = {}) {
   const v = {
     school: 'Kisumu Day Secondary School', county: 'Kisumu', code: '20414001', students: '640',
-    name: 'Grace Achieng', title: 'Principal', email: 'g.achieng@kisumuday.ac.ke', phone: '0712 345 678',
-    password: 'kisumu-day-2026', confirm: 'kisumu-day-2026', ...overrides,
+    name: 'Grace Achieng', title: 'Principal', email: 'g.achieng@kisumuday.ac.ke', phone: '0712 345 678', ...overrides,
   };
   if (v.school) await user.type(screen.getByLabelText('School name'), v.school);
   if (v.county) await user.selectOptions(screen.getByLabelText('County'), v.county);
   if (v.code) await user.type(screen.getByLabelText(/School code/), v.code);
-  if (v.students) await user.type(screen.getByLabelText(/Students/), v.students);
-  await user.selectOptions(screen.getByLabelText('Type'), 'public');
-  await user.selectOptions(screen.getByLabelText('Day or boarding'), 'mixed');
+  if (v.students) await user.type(screen.getByLabelText(/Number of students/), v.students);
+  await user.selectOptions(screen.getByLabelText(/^Type/), 'public');
+  await user.selectOptions(screen.getByLabelText(/Day or boarding/), 'mixed');
   if (v.name) await user.type(screen.getByLabelText('Full name'), v.name);
-  if (v.title) await user.selectOptions(screen.getByLabelText('Your role'), v.title);
-  if (v.email) await user.type(screen.getByLabelText('Email address'), v.email);
+  if (v.title) await user.selectOptions(screen.getByLabelText(/Your role/), v.title);
+  if (v.email) await user.type(screen.getByLabelText('Work email'), v.email);
   if (v.phone) await user.type(screen.getByLabelText(/Phone/), v.phone);
-  if (v.password) await user.type(screen.getByLabelText('Password'), v.password);
-  if (v.confirm) await user.type(screen.getByLabelText('Confirm password'), v.confirm);
 }
 
-const send = (user) => user.click(screen.getByRole('button', { name: 'Send application' }));
+const submit = (user) => user.click(screen.getByRole('button', { name: 'Submit application' }));
 
-describe('LoginScreen sign-in', () => {
+describe('sign in', () => {
   it('signs in with an email', async () => {
     const user = userEvent.setup();
     render(<LoginScreen />);
@@ -81,12 +88,40 @@ describe('LoginScreen sign-in', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Wrong email or password.');
   });
 
-  it('has no open sign-up, no role picker and no demo-mode note', () => {
+  it('keeps the application off the sign-in page: only a link to it', () => {
     render(<LoginScreen />);
-    expect(screen.queryByRole('button', { name: 'Create an account' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('School name')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Apply for your school' })).toHaveAttribute('href', '#/apply');
+    expect(screen.getByRole('link', { name: 'Forgot password?' })).toHaveAttribute('href', '#/forgot-password');
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
-    expect(screen.queryByText(/Demo mode/)).not.toBeInTheDocument();
     expect(screen.queryByText(/system admin/i)).not.toBeInTheDocument();
+  });
+
+  it('shows no Google button when the server has Google sign-in off', async () => {
+    render(<LoginScreen />);
+    await act(async () => {});
+    expect(screen.queryByRole('button', { name: /Google/ })).not.toBeInTheDocument();
+  });
+
+  it('without a Google client id yet, the stand-in signs in with the Google email', async () => {
+    session.getGoogleSignInConfig.mockResolvedValue({ mode: 'dev', clientId: null });
+    const user = userEvent.setup();
+    render(<LoginScreen />);
+    await user.click(await screen.findByRole('button', { name: /Continue with Google/ }));
+    expect(screen.getByText(/Development mode/)).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Google email'), 'teacher@kibera.ac.ke');
+    await user.click(screen.getByRole('button', { name: /Continue$/ }));
+    expect(auth.signInWithGoogle).toHaveBeenCalledWith('dev:teacher@kibera.ac.ke');
+  });
+
+  it('says when no account uses that Google email', async () => {
+    session.getGoogleSignInConfig.mockResolvedValue({ mode: 'dev', clientId: null });
+    auth.signInWithGoogle.mockRejectedValue(authError('NO_ACCOUNT', 'No SmartAttend account uses this Google email.'));
+    const user = userEvent.setup();
+    render(<LoginScreen />);
+    await user.click(await screen.findByRole('button', { name: /Continue with Google/ }));
+    await user.type(screen.getByLabelText('Google email'), 'stranger@gmail.com{Enter}');
+    expect(await screen.findByText(/No SmartAttend account uses this Google email/)).toBeInTheDocument();
   });
 
   it('cannot sign in for the first time while offline', () => {
@@ -97,110 +132,115 @@ describe('LoginScreen sign-in', () => {
   });
 });
 
-describe('LoginScreen school application', () => {
-  it('sends the school and the applicant in the shape the server expects', async () => {
+describe('school application (#/apply)', () => {
+  it('sends the school and the applicant, with no password, then says to check email', async () => {
     const user = userEvent.setup();
-    await openRegister(user);
+    window.history.replaceState(null, '', '/#/apply');
+    render(<LoginScreen />);
+    expect(screen.queryByLabelText(/Password/)).not.toBeInTheDocument();
     await fillApplication(user);
-    await send(user);
+    await submit(user);
 
     expect(auth.registerSchool).toHaveBeenCalledWith({
       school: {
-        name: 'Kisumu Day Secondary School',
-        county: 'Kisumu',
-        schoolCode: '20414001',
-        schoolType: 'public',
-        boarding: 'mixed',
-        studentEstimate: 640,
+        name: 'Kisumu Day Secondary School', county: 'Kisumu', schoolCode: '20414001',
+        schoolType: 'public', boarding: 'mixed', studentEstimate: 640,
       },
-      applicant: {
-        fullName: 'Grace Achieng',
-        jobTitle: 'Principal',
-        email: 'g.achieng@kisumuday.ac.ke',
-        phone: '0712345678',
-        password: 'kisumu-day-2026',
-      },
+      applicant: { fullName: 'Grace Achieng', jobTitle: 'Principal', email: 'g.achieng@kisumuday.ac.ke', phone: '0712345678' },
     });
+    expect(await screen.findByRole('heading', { name: 'Check your email' })).toBeInTheDocument();
+    expect(screen.getByText('g.achieng@kisumuday.ac.ke')).toBeInTheDocument();
   });
 
-  it.each([
-    ['no county', { county: '' }, /Choose the county/],
-    ['a school code with spaces', { code: '204 140' }, /letters and numbers only/],
-    ['a phone that is not Kenyan', { phone: '12345' }, /Kenyan mobile number/],
-    ['a short password', { password: 'short', confirm: 'short' }, /at least 8 characters/],
-    ['passwords that do not match', { confirm: 'something-else' }, /do not match/],
-  ])('stops %s before sending', async (label, overrides, message) => {
+  it('marks the fields that need fixing and sends nothing', async () => {
     const user = userEvent.setup();
-    await openRegister(user);
-    await fillApplication(user, overrides);
-    await send(user);
-    expect(screen.getByRole('alert')).toHaveTextContent(message);
+    window.history.replaceState(null, '', '/#/apply');
+    render(<LoginScreen />);
+    await fillApplication(user, { email: 'not-an-email', phone: '12345' });
+    await submit(user);
     expect(auth.registerSchool).not.toHaveBeenCalled();
+    expect(screen.getByText('Enter a valid email address.')).toBeInTheDocument();
+    expect(screen.getByText(/Enter a Kenyan mobile number/)).toBeInTheDocument();
   });
 
-  it('sends an email that already has an account back to sign-in', async () => {
+  it("shows the server's reason for an email that already has an account", async () => {
     const user = userEvent.setup();
-    auth.registerSchool.mockRejectedValue(
-      authError('CONFLICT', 'An account with this email already exists. Sign in instead.', { field: 'email' })
-    );
-    await openRegister(user);
+    auth.registerSchool.mockRejectedValue(authError('CONFLICT', 'An account with this email already exists.', { field: 'email' }));
+    window.history.replaceState(null, '', '/#/apply');
+    render(<LoginScreen />);
     await fillApplication(user);
-    await send(user);
-
-    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
-    expect(screen.getByText(/already exists/)).toBeInTheDocument();
-    expect(screen.getByLabelText('Email or username')).toHaveValue('g.achieng@kisumuday.ac.ke');
+    await submit(user);
+    expect(await screen.findByRole('alert')).toHaveTextContent('already exists');
   });
 
-  it('shows a school that is already registered', async () => {
-    const user = userEvent.setup();
-    auth.registerSchool.mockRejectedValue(
-      authError('CONFLICT', 'A school with this code is already registered on SmartAttend.', { field: 'school_code' })
-    );
-    await openRegister(user);
-    await fillApplication(user);
-    await send(user);
-    expect(await screen.findByRole('alert')).toHaveTextContent('already registered');
-  });
-
-  it('goes back to sign-in', async () => {
-    const user = userEvent.setup();
-    await openRegister(user);
-    await user.click(screen.getByRole('button', { name: /Back to sign in/ }));
-    expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
+  it('follows the address: the sign-in link opens the application', async () => {
+    render(<LoginScreen />);
+    await goTo('#/apply');
+    expect(screen.getByRole('heading', { name: 'Apply for your school' })).toBeInTheDocument();
+    await goTo('#/');
+    expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
   });
 });
 
-describe('LoginScreen back navigation', () => {
-  beforeEach(() => window.history.replaceState(null, '', '/#/'));
-
-  it('the application has its own address, and back returns to sign-in', async () => {
+describe('forgot password (#/forgot-password)', () => {
+  it('sends the request and shows the same answer whatever the email', async () => {
     const user = userEvent.setup();
+    session.requestPasswordHelp.mockResolvedValue('If that email has a SmartAttend account, we have sent it a link.');
+    window.history.replaceState(null, '', '/#/forgot-password');
     render(<LoginScreen />);
-    await user.click(screen.getByRole('button', { name: /Register your school/ }));
-    expect(window.location.hash).toBe('#/apply');
-    expect(screen.getByRole('heading', { name: 'Register your school' })).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Email'), 'teacher@school.ke');
+    await user.click(screen.getByRole('button', { name: 'Send reset link' }));
+    expect(session.requestPasswordHelp).toHaveBeenCalledWith('teacher@school.ke');
+    expect(await screen.findByText(/If that email has a SmartAttend account/)).toBeInTheDocument();
+  });
+});
 
-    await act(async () => {
-      window.history.back();
-      await new Promise((r) => setTimeout(r, 30));
+describe('emailed links', () => {
+  it('#/verify-email/TOKEN confirms the email', async () => {
+    session.verifyEmail.mockResolvedValue({ email: 'g.achieng@kisumuday.ac.ke', schoolName: 'Kisumu Day', schoolStatus: 'pending' });
+    window.history.replaceState(null, '', '/#/verify-email/tok123');
+    render(<LoginScreen />);
+    expect(await screen.findByRole('heading', { name: 'Email confirmed' })).toBeInTheDocument();
+    expect(session.verifyEmail).toHaveBeenCalledWith('tok123');
+  });
+
+  it('#/verify-email explains a used link', async () => {
+    session.verifyEmail.mockRejectedValue(authError('LINK', 'This link has already been used.', { state: 'used' }));
+    window.history.replaceState(null, '', '/#/verify-email/tok123');
+    render(<LoginScreen />);
+    expect(await screen.findByRole('heading', { name: 'Email already confirmed' })).toBeInTheDocument();
+  });
+
+  it('#/set-password/TOKEN greets the person and sets the password', async () => {
+    const user = userEvent.setup();
+    session.lookupEmailLink.mockResolvedValue({
+      purpose: 'setup', email: 'g.achieng@kisumuday.ac.ke', fullName: 'Grace Achieng', role: 'admin', schoolName: 'Kisumu Day',
     });
-    expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
-  });
-
-  it('opening the app on #/apply shows the application', () => {
-    window.history.replaceState(null, '', '/#/apply');
+    window.history.replaceState(null, '', '/#/set-password/tok456');
     render(<LoginScreen />);
-    expect(screen.getByRole('heading', { name: 'Register your school' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Welcome, Grace' })).toBeInTheDocument();
+    await user.type(screen.getByLabelText('New password'), 'a-good-password');
+    await user.type(screen.getByLabelText('Confirm password'), 'a-good-password');
+    await user.click(screen.getByRole('button', { name: 'Set password and sign in' }));
+    expect(auth.setPasswordFromLink).toHaveBeenCalledWith('tok456', 'a-good-password');
   });
 
-  it('"Back to sign in" steps back instead of piling up history', async () => {
+  it('#/set-password checks the two passwords match first', async () => {
     const user = userEvent.setup();
+    session.lookupEmailLink.mockResolvedValue({ purpose: 'reset', email: 'a@b.ke', fullName: 'A B', role: 'teacher', schoolName: 'S' });
+    window.history.replaceState(null, '', '/#/set-password/tok456');
     render(<LoginScreen />);
-    await user.click(screen.getByRole('button', { name: /Register your school/ }));
-    await user.click(screen.getByRole('button', { name: /Back to sign in/ }));
-    expect(screen.getByRole('heading', { name: 'Welcome back' })).toBeInTheDocument();
-    await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
-    expect(window.location.hash).not.toBe('#/apply');
+    await user.type(await screen.findByLabelText('New password'), 'a-good-password');
+    await user.type(screen.getByLabelText('Confirm password'), 'different-one');
+    await user.click(screen.getByRole('button', { name: 'Save password and sign in' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('do not match');
+    expect(auth.setPasswordFromLink).not.toHaveBeenCalled();
+  });
+
+  it('#/set-password explains an expired link', async () => {
+    session.lookupEmailLink.mockRejectedValue(authError('LINK', 'This link has expired.', { state: 'expired' }));
+    window.history.replaceState(null, '', '/#/set-password/tok456');
+    render(<LoginScreen />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('expired');
   });
 });

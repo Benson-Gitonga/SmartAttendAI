@@ -8,25 +8,22 @@ import { showToast } from '../lib/toast';
 import ConfirmDialog from './ConfirmDialog';
 import Toaster from './Toaster';
 import {
-  SearchIcon, PhoneIcon, MailIcon, LogOutIcon, CapIcon, ShieldIcon, BuildingIcon,
-  ClockIcon, CheckCircleIcon, XCircleIcon, PowerIcon, MapPinIcon, SyncIcon, UserIcon,
-  UsersIcon, ArrowRightIcon,
+  SearchIcon, LogOutIcon, CheckCircleIcon, XCircleIcon, PowerIcon, SyncIcon,
 } from './icons';
 
-const STATUS = {
-  pending: { label: 'Waiting for approval', Icon: ClockIcon, hint: 'Need your review' },
-  active: { label: 'Active', Icon: CheckCircleIcon, hint: 'Live on SmartAttend' },
-  inactive: { label: 'Disabled', Icon: PowerIcon, hint: 'Paused by you' },
-  rejected: { label: 'Rejected', Icon: XCircleIcon, hint: 'Not approved' },
+const STATUS_LABEL = {
+  pending: 'Pending review',
+  active: 'Active',
+  inactive: 'Disabled',
+  rejected: 'Rejected',
 };
-const STATUS_ORDER = ['pending', 'active', 'inactive', 'rejected'];
 
 const FILTERS = [
-  { id: 'pending', label: 'Waiting' },
+  { id: 'pending', label: 'Pending review' },
   { id: 'active', label: 'Active' },
   { id: 'inactive', label: 'Disabled' },
   { id: 'rejected', label: 'Rejected' },
-  { id: 'all', label: 'All' },
+  { id: 'all', label: 'All schools' },
 ];
 
 /**
@@ -69,11 +66,20 @@ const ACTIONS = {
   },
 };
 
+// Order matters: the last one is the primary button.
 const ACTIONS_FOR = {
   pending: ['reject', 'approve'],
   active: ['disable'],
   inactive: ['enable'],
   rejected: [],
+};
+
+// Button look per action: approve is the one primary action, the rest are secondary.
+const BUTTON_FOR = {
+  approve: 'primary',
+  reject: 'secondary',
+  disable: 'danger',
+  enable: 'secondary',
 };
 
 const toDate = (sqlite) => {
@@ -85,28 +91,18 @@ const toDate = (sqlite) => {
 const formatDate = (sqlite) =>
   toDate(sqlite)?.toLocaleDateString('en-KE', { day: 'numeric', month: 'short', year: 'numeric' }) ?? null;
 
-const daysWaiting = (sqlite) => {
+const ageOf = (sqlite) => {
   const d = toDate(sqlite);
   if (!d) return null;
   const days = Math.floor((Date.now() - d.getTime()) / 86_400_000);
-  return days <= 0 ? 'since today' : days === 1 ? '1 day' : `${days} days`;
-};
-
-const initials = (name = '') => {
-  const words = name.replace(/\b(school|secondary|high|the|of)\b/gi, '').trim().split(/\s+/).filter(Boolean);
-  const source = words.length ? words : name.trim().split(/\s+/);
-  return (source.length > 1 ? source[0][0] + source[1][0] : (source[0] ?? '?').slice(0, 2)).toUpperCase();
+  return days <= 0 ? 'today' : days === 1 ? '1 day ago' : `${days} days ago`;
 };
 
 const BOARDING = { day: 'Day', boarding: 'Boarding', mixed: 'Day and boarding' };
 const TYPE = { public: 'Public', private: 'Private' };
 
-/** "Public · Day and boarding · about 640 students", from whatever the school gave. */
-const profileLine = (s) => [
-  TYPE[s.schoolType],
-  BOARDING[s.boarding],
-  s.studentEstimate ? `about ${s.studentEstimate.toLocaleString('en-KE')} students` : null,
-].filter(Boolean).join(' · ');
+const place = (s) => [s.subCounty, s.county].filter(Boolean).join(', ');
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 const matches = (school, query) => {
   if (!query) return true;
@@ -115,12 +111,7 @@ const matches = (school, query) => {
     .some((v) => v && v.toLowerCase().includes(q));
 };
 
-const greeting = () => {
-  const h = new Date().getHours();
-  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-};
-
-/** System-admin home: approve or reject new schools, and disable or enable approved ones. */
+/** System-admin console: approve or reject new schools, and disable or enable approved ones. */
 export default function SystemAdminOverview() {
   const { user, signOut } = useAuth();
   const online = useOnlineStatus();
@@ -131,6 +122,7 @@ export default function SystemAdminOverview() {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState(null); // null until the first load picks one
   const [query, setQuery] = useState('');
+  const [openId, setOpenId] = useState(null); // school shown in the side panel
   const [pendingAction, setPendingAction] = useState(null); // { school, action }
   const [confirmSignOut, setConfirmSignOut] = useState(false);
 
@@ -151,7 +143,7 @@ export default function SystemAdminOverview() {
       setSchools(result.schools);
       setCounts(result.counts);
       setError(null);
-      // Open on the approval queue when something is waiting, otherwise on all schools.
+      // Open on the review queue when something is waiting, otherwise on all schools.
       setFilter((current) => current ?? (result.counts.pending > 0 ? 'pending' : 'all'));
     } catch (err) {
       if (!handleError(err)) setError(err.message ?? 'Could not reach the server');
@@ -168,152 +160,122 @@ export default function SystemAdminOverview() {
   );
   const total = schools?.length ?? 0;
   const waiting = counts.pending ?? 0;
+  const openSchool = schools?.find((s) => s.schoolId === openId) ?? null;
+  const ask = (school, action) => setPendingAction({ school, action });
 
   return (
-    <div className="sa">
-      <header className="sa-header">
-        <div className="sa-header__inner">
-          <div className="sa-brand">
-            <span className="sa-brand__logo"><CapIcon size={18} /></span>
-            <span className="sa-brand__name">SmartAttend</span>
-            <span className="sa-brand__tag"><ShieldIcon size={13} /> System admin</span>
-          </div>
-          <div className="sa-header__right">
-            <span className={`sa-net sa-net--${online ? 'on' : 'off'}`}>
-              <span className="sa-net__dot" />{online ? 'Online' : 'Offline'}
-            </span>
-            <span className="sa-user" title={user?.username}>
-              <span className="sa-user__avatar"><UserIcon size={15} /></span>
-              <span className="sa-user__name">{user?.username}</span>
-            </span>
-            <button
-              type="button"
-              className="sa-btn sa-btn--ghost sa-btn--sm"
-              aria-label="Sign out"
-              onClick={() => setConfirmSignOut(true)}
-            >
-              <LogOutIcon size={16} /> <span className="sa-hide-sm">Sign out</span>
-            </button>
-          </div>
+    <div className="sys">
+      <header className="sys-top">
+        <div className="sys-top__brand">
+          SmartAttend <span className="sys-top__product">Admin console</span>
+        </div>
+        <div className="sys-top__right">
+          {!online && <span className="sys-top__offline">Offline</span>}
+          <span className="sys-top__user" title={user?.username}>{user?.username}</span>
+          <button type="button" className="sys-top__signout" aria-label="Sign out" onClick={() => setConfirmSignOut(true)}>
+            <LogOutIcon size={15} /> <span className="sys-hide-sm">Sign out</span>
+          </button>
         </div>
       </header>
 
-      <main className="sa-main">
-        <section className="sa-hero">
+      <main className="sys-main">
+        <div className="sys-pagehead">
           <div>
-            <p className="sa-hero__eyebrow">{greeting()}</p>
-            <h1 className="sa-hero__title">Schools on SmartAttend</h1>
-            <p className="sa-hero__text">
-              Review new schools before they go live, and pause any school that should stop using the platform.
-            </p>
+            <h1 className="sys-pagehead__title">Schools</h1>
+            {schools && (
+              <p className="sys-pagehead__sub">
+                {plural(total, 'school')} registered
+                {waiting > 0 && <> · <b>{waiting} pending review</b></>}
+              </p>
+            )}
           </div>
-          <button type="button" className="sa-btn sa-btn--ghost" onClick={load} disabled={refreshing}>
-            <SyncIcon size={16} className={refreshing ? 'sa-spin' : undefined} /> {refreshing ? 'Refreshing…' : 'Refresh'}
+          <button type="button" className="sys-btn sys-btn--secondary" onClick={load} disabled={refreshing}>
+            <SyncIcon size={14} className={refreshing ? 'sa-spin' : undefined} /> Refresh
           </button>
-        </section>
+        </div>
 
         {error && (
-          <div className="sa-alert sa-alert--error" role="alert">
-            <XCircleIcon size={18} />
-            <span>Could not reach the server ({error}).</span>
-            <button type="button" className="sa-link" onClick={load}>Try again</button>
+          <div className="sys-banner sys-banner--error" role="alert">
+            Could not reach the server ({error}).{' '}
+            <button type="button" className="sys-linkbtn" onClick={load}>Try again</button>
           </div>
         )}
 
-        {!error && schools === null && <SkeletonGrid />}
+        <nav className="sys-tabs" role="tablist" aria-label="Filter schools by status">
+          {FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              role="tab"
+              aria-selected={filter === f.id}
+              className="sys-tab"
+              onClick={() => setFilter(f.id)}
+              disabled={!schools}
+            >
+              {f.label}
+              <span className="sys-tab__count">{f.id === 'all' ? total : counts[f.id] ?? 0}</span>
+            </button>
+          ))}
+        </nav>
 
-        {schools && (
-          <>
-            {waiting > 0 && filter !== 'pending' && (
-              <div className="sa-alert sa-alert--attention">
-                <ClockIcon size={18} />
-                <span>
-                  <b>{waiting} school{waiting === 1 ? ' is' : 's are'} waiting</b> for your review.
-                </span>
-                <button type="button" className="sa-link" onClick={() => setFilter('pending')}>
-                  Review now <ArrowRightIcon size={14} />
-                </button>
-              </div>
-            )}
+        <section className="sys-panel">
+          <div className="sys-toolbar">
+            <label className="sys-search">
+              <SearchIcon size={14} />
+              <input
+                type="search"
+                placeholder="Search by school, county, code or admin"
+                aria-label="Search schools"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+            {schools && <span className="sys-toolbar__count">{plural(visible.length, 'result')}</span>}
+          </div>
 
-            <div className="sa-stats">
-              {STATUS_ORDER.map((status) => {
-                const { label, Icon, hint } = STATUS[status];
-                return (
-                  <button
-                    key={status}
-                    type="button"
-                    className={`sa-stat sa-stat--${status}`}
-                    aria-pressed={filter === status}
-                    onClick={() => setFilter(status)}
-                  >
-                    <span className="sa-stat__icon"><Icon size={20} /></span>
-                    <span className="sa-stat__body">
-                      <span className="sa-stat__value">{counts[status] ?? 0}</span>
-                      <span className="sa-stat__label">{label}</span>
-                      <span className="sa-stat__hint">{hint}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="sa-toolbar">
-              <div className="sa-tabs" role="tablist" aria-label="Filter schools by status">
-                {FILTERS.map((f) => (
-                  <button
-                    key={f.id}
-                    type="button"
-                    role="tab"
-                    aria-selected={filter === f.id}
-                    className="sa-tab"
-                    onClick={() => setFilter(f.id)}
-                  >
-                    {f.label}
-                    <span className="sa-tab__count">{f.id === 'all' ? total : counts[f.id] ?? 0}</span>
-                  </button>
-                ))}
-              </div>
-              <label className="sa-search">
-                <SearchIcon size={16} />
-                <input
-                  type="search"
-                  placeholder="Search school, county or admin"
-                  aria-label="Search schools"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+          <table className="sys-table">
+            <thead>
+              <tr>
+                <th>School</th>
+                <th>Location</th>
+                <th>Administrator</th>
+                <th>Registered</th>
+                <th>Status</th>
+                <th className="sys-table__actions"><span className="sa-visually-hidden">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {!schools && !error && (
+                <tr><td colSpan={6} className="sys-table__empty" role="status">Loading schools…</td></tr>
+              )}
+              {schools && visible.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="sys-table__empty">
+                    {query.trim()
+                      ? `No schools match “${query.trim()}”.`
+                      : filter === 'pending'
+                        ? 'No schools are waiting for review.'
+                        : total === 0 ? 'No schools have registered yet.' : 'No schools with this status.'}
+                  </td>
+                </tr>
+              )}
+              {visible.map((s) => (
+                <SchoolRow
+                  key={s.schoolId}
+                  school={s}
+                  selected={s.schoolId === openId}
+                  onOpen={() => setOpenId(s.schoolId)}
+                  onAction={(action) => ask(s, action)}
                 />
-              </label>
-            </div>
-
-            {visible.length > 0 ? (
-              <div className="sa-grid">
-                {visible.map((s) => (
-                  <SchoolCard key={s.schoolId} school={s} onAction={(action) => setPendingAction({ school: s, action })} />
-                ))}
-              </div>
-            ) : (
-              <div className="sa-empty">
-                <span className="sa-empty__icon"><BuildingIcon size={26} /></span>
-                <p className="sa-empty__title">
-                  {query.trim()
-                    ? `No schools match “${query.trim()}”`
-                    : filter === 'pending'
-                      ? 'You are all caught up'
-                      : total === 0 ? 'No schools have registered yet' : 'No schools in this list'}
-                </p>
-                <p className="sa-empty__text">
-                  {query.trim()
-                    ? 'Try another name, county or admin email.'
-                    : filter === 'pending'
-                      ? 'No schools are waiting for approval right now.'
-                      : 'Schools appear here once their admin signs up.'}
-                </p>
-              </div>
-            )}
-          </>
-        )}
+              ))}
+            </tbody>
+          </table>
+        </section>
       </main>
+
+      {openSchool && (
+        <SchoolPanel school={openSchool} onClose={() => setOpenId(null)} onAction={(action) => ask(openSchool, action)} />
+      )}
 
       {pendingAction && (
         <SchoolActionDialog
@@ -344,98 +306,148 @@ export default function SystemAdminOverview() {
   );
 }
 
-function SchoolCard({ school: s, onAction }) {
-  const { label } = STATUS[s.status] ?? { label: s.status };
-  const reviewed = formatDate(s.reviewedAt);
-  const approvedOrPaused = s.status === 'active' || s.status === 'inactive';
+function StatusLabel({ school }) {
+  // A new application waits for the applicant to confirm their email first.
+  if (school.status === 'pending' && school.adminEmailVerified === false) {
+    return <span className="sys-status sys-status--unconfirmed">Email not confirmed</span>;
+  }
+  return <span className={`sys-status sys-status--${school.status}`}>{STATUS_LABEL[school.status] ?? school.status}</span>;
+}
+
+function ActionButtons({ school, onAction }) {
+  const actions = ACTIONS_FOR[school.status] ?? [];
+  if (actions.length === 0) return null;
+  // Approval waits until the applicant has confirmed their email.
+  const waitingForEmail = school.status === 'pending' && school.adminEmailVerified === false;
+  return actions.map((action) => (
+    <button
+      key={action}
+      type="button"
+      className={`sys-btn sys-btn--sm sys-btn--${BUTTON_FOR[action]}`}
+      disabled={action === 'approve' && waitingForEmail}
+      title={action === 'approve' && waitingForEmail ? 'The applicant has not confirmed their email yet' : undefined}
+      onClick={(e) => { e.stopPropagation(); onAction(action); }}
+    >
+      {ACTIONS[action].label}
+    </button>
+  ));
+}
+
+function SchoolRow({ school: s, selected, onOpen, onAction }) {
+  const live = s.status === 'active' || s.status === 'inactive';
+  const sub = [s.schoolCode && `Code ${s.schoolCode}`, live && `${plural(s.classCount ?? 0, 'class')}, ${plural(s.studentCount ?? 0, 'student')}`]
+    .filter(Boolean).join(' · ');
+  return (
+    <tr className={selected ? 'is-selected' : undefined} onClick={onOpen}>
+      <td data-label="School">
+        <button type="button" className="sys-table__name" onClick={(e) => { e.stopPropagation(); onOpen(); }}>
+          {s.name}
+        </button>
+        {sub && <div className="sys-table__sub">{sub}</div>}
+      </td>
+      <td data-label="Location">{place(s) || <span className="sys-muted">Not given</span>}</td>
+      <td data-label="Administrator">
+        {s.adminName || <span className="sys-muted">Not recorded</span>}
+        {s.adminEmail && <div className="sys-table__sub">{s.adminEmail}</div>}
+      </td>
+      <td data-label="Registered" className="sys-nowrap">
+        {formatDate(s.createdAt) ?? '-'}
+        {s.status === 'pending' && ageOf(s.createdAt) && <div className="sys-table__sub">{ageOf(s.createdAt)}</div>}
+      </td>
+      <td data-label="Status">
+        <StatusLabel school={s} />
+        {s.reviewNote && <div className="sys-table__sub sys-table__note" title={s.reviewNote}>{s.reviewNote}</div>}
+      </td>
+      <td className="sys-table__actions">
+        <ActionButtons school={s} onAction={onAction} />
+      </td>
+    </tr>
+  );
+}
+
+/** Side panel with everything the school sent, its review history and the actions. */
+function SchoolPanel({ school: s, onClose, onAction }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape' && !document.querySelector('[role="dialog"][aria-modal="true"]')) onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const rows = [
+    ['School code', s.schoolCode],
+    ['Type', TYPE[s.schoolType]],
+    ['Boarding', BOARDING[s.boarding]],
+    ['Students (estimate)', s.studentEstimate?.toLocaleString('en-KE')],
+    ['County', s.county],
+    ['Sub-county', s.subCounty],
+  ];
+  const contact = [
+    ['Name', s.adminName],
+    ['Email', s.adminEmail && <a href={`mailto:${s.adminEmail}`}>{s.adminEmail}</a>],
+    ['Phone', s.adminPhone && <a href={`tel:${s.adminPhone}`}>{s.adminPhone}</a>],
+  ];
+  const live = s.status === 'active' || s.status === 'inactive';
 
   return (
-    <article className={`sa-card sa-card--${s.status}`}>
-      <header className="sa-card__head">
-        <span className="sa-card__avatar" aria-hidden="true">{initials(s.name)}</span>
-        <div className="sa-card__id">
-          <h3 className="sa-card__name">{s.name}</h3>
-          <p className="sa-card__place">
-            <MapPinIcon size={13} /> {[s.subCounty, s.county ? `${s.county} County` : null].filter(Boolean).join(', ') || 'No county given'}
-          </p>
+    <>
+      <div className="sys-drawer-backdrop" onClick={onClose} role="presentation" />
+      <aside className="sys-drawer" aria-label={`${s.name} details`}>
+        <header className="sys-drawer__head">
+          <div>
+            <h2 className="sys-drawer__title">{s.name}</h2>
+            <StatusLabel school={s} />
+          </div>
+          <button type="button" className="sys-drawer__close" aria-label="Close details" onClick={onClose}>×</button>
+        </header>
+
+        <div className="sys-drawer__body">
+          <DetailList title="School" rows={rows} />
+          <DetailList title="Administrator" rows={contact} />
+          {live && (
+            <DetailList
+              title="Usage"
+              rows={[['Classes', String(s.classCount ?? 0)], ['Students enrolled', String(s.studentCount ?? 0)]]}
+            />
+          )}
+          <DetailList
+            title="History"
+            rows={[
+              ['Registered', formatDate(s.createdAt)],
+              s.reviewedAt && s.status !== 'pending' && [
+                `${STATUS_LABEL[s.status]} on`,
+                `${formatDate(s.reviewedAt)}${s.reviewedBy ? ` by ${s.reviewedBy}` : ''}`,
+              ],
+              s.reviewNote && [s.status === 'rejected' ? 'Reason' : 'Note', s.reviewNote],
+            ].filter(Boolean)}
+          />
         </div>
-        <span className={`sa-badge sa-badge--${s.status}`}><span className="sa-badge__dot" />{label}</span>
-      </header>
 
-      <dl className="sa-card__facts">
-        {(s.schoolCode || profileLine(s)) && (
-          <div>
-            <dt><BuildingIcon size={14} /> School</dt>
-            <dd>
-              {s.schoolCode && <span className="sa-card__code">Code {s.schoolCode}</span>}
-              {s.schoolCode && profileLine(s) && ' · '}
-              {profileLine(s)}
-            </dd>
-          </div>
-        )}
-        <div>
-          <dt><UserIcon size={14} /> Admin</dt>
-          <dd>{s.adminName || 'Not recorded'}</dd>
-        </div>
-        {s.adminEmail && (
-          <div>
-            <dt><MailIcon size={14} /> Email</dt>
-            <dd><a href={`mailto:${s.adminEmail}`}>{s.adminEmail}</a></dd>
-          </div>
-        )}
-        {s.adminPhone && (
-          <div>
-            <dt><PhoneIcon size={14} /> Phone</dt>
-            <dd><a href={`tel:${s.adminPhone}`}>{s.adminPhone}</a></dd>
-          </div>
-        )}
-        {approvedOrPaused ? (
-          <div>
-            <dt><UsersIcon size={14} /> Size</dt>
-            <dd>
-              {s.classCount} class{s.classCount === 1 ? '' : 'es'} · {s.studentCount} student{s.studentCount === 1 ? '' : 's'}
-            </dd>
-          </div>
-        ) : (
-          <div>
-            <dt><ClockIcon size={14} /> Registered</dt>
-            <dd>
-              {formatDate(s.createdAt) ?? '-'}
-              {s.status === 'pending' && daysWaiting(s.createdAt) && (
-                <span className="sa-card__waiting"> · waiting {daysWaiting(s.createdAt)}</span>
-              )}
-            </dd>
-          </div>
-        )}
-      </dl>
-
-      {s.reviewNote && (
-        <p className={`sa-card__note sa-card__note--${s.status}`}>
-          <b>{s.status === 'rejected' ? 'Reason' : 'Note'}:</b> {s.reviewNote}
-        </p>
-      )}
-
-      <footer className="sa-card__foot">
-        <span className="sa-card__meta">
-          {reviewed && s.status !== 'pending'
-            ? `${label} ${reviewed}${s.reviewedBy ? ` by ${s.reviewedBy}` : ''}`
-            : s.status === 'pending' ? 'New registration' : ''}
-        </span>
         {ACTIONS_FOR[s.status]?.length > 0 && (
-          <span className="sa-card__actions">
-            {ACTIONS_FOR[s.status].map((action) => {
-              const { label: text, tone, Icon } = ACTIONS[action];
-              const variant = action === 'reject' ? 'danger-outline' : tone;
-              return (
-                <button key={action} type="button" className={`sa-btn sa-btn--sm sa-btn--${variant}`} onClick={() => onAction(action)}>
-                  <Icon size={15} /> {text}
-                </button>
-              );
-            })}
-          </span>
+          <footer className="sys-drawer__foot">
+            <ActionButtons school={s} onAction={onAction} />
+          </footer>
         )}
-      </footer>
-    </article>
+      </aside>
+    </>
+  );
+}
+
+/** Label/value rows; anything the school left blank is left out. */
+function DetailList({ title, rows }) {
+  const filled = rows.filter(([, value]) => value);
+  if (filled.length === 0) return null;
+  return (
+    <section className="sys-detail">
+      <h3 className="sys-detail__title">{title}</h3>
+      <dl>
+        {filled.map(([label, value]) => (
+          <div key={label} className="sys-detail__row">
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 
@@ -490,19 +502,5 @@ function SchoolActionDialog({ school, action, onUnauthorized, onClose, onDone })
         </div>
       )}
     </ConfirmDialog>
-  );
-}
-
-function SkeletonGrid() {
-  return (
-    <div role="status">
-      <div className="sa-stats">
-        {STATUS_ORDER.map((s) => <div key={s} className="sa-stat sa-skeleton" />)}
-      </div>
-      <div className="sa-grid sa-grid--loading">
-        {[0, 1, 2, 3].map((i) => <div key={i} className="sa-card sa-skeleton sa-skeleton--card" />)}
-      </div>
-      <span className="sa-visually-hidden">Loading schools…</span>
-    </div>
   );
 }

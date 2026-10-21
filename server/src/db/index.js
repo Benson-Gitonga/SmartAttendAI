@@ -67,6 +67,23 @@ export function migrate(db) {
   }
   db.exec(`CREATE INDEX IF NOT EXISTS idx_classes_teacher ON class_groups(teacher_user_id)`);
 
+  // Accounts made before email links existed count as confirmed: their
+  // applications were made, and their codes handed over, in person.
+  const hasUsers = db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'`).get() != null;
+  if (hasUsers && !hasColumn('users', 'email_verified_at')) {
+    db.exec(`ALTER TABLE users ADD COLUMN email_verified_at TEXT`);
+    db.exec(`UPDATE users SET email_verified_at = created_at`);
+  }
+
+  // "Continue with Google": the Google account linked to a user. Google's id
+  // (sub) never changes, so a teacher whose Google email differs from the one
+  // their admin typed can still sign in once linked.
+  if (hasUsers && !hasColumn('users', 'google_sub')) {
+    db.exec(`ALTER TABLE users ADD COLUMN google_sub TEXT`);
+    db.exec(`ALTER TABLE users ADD COLUMN google_email TEXT`);
+  }
+  if (hasUsers) db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL`);
+
   // One school per code, except that a rejected school may apply again.
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_schools_code
              ON schools(upper(school_code)) WHERE school_code IS NOT NULL AND status <> 'rejected'`);

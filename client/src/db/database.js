@@ -42,6 +42,15 @@ db.version(3).stores({
   followUps: '++id, &followUpId, studentId, createdAt',
 });
 
+// v4 briefly dropped the offline PIN; v5 brings it back as the unlock for
+// the 30-minute inactivity lock (auth/inactivity.js).
+db.version(4).stores({
+  pinCredentials: null,
+});
+db.version(5).stores({
+  pinCredentials: '++id, &username',
+});
+
 export const ATTENDANCE_STATUSES = ['present', 'absent', 'late'];
 
 /**
@@ -484,6 +493,45 @@ export async function applyAssignedClasses(classes, ownerUsername) {
   });
 
   return { classes: classes.length, students: studentCount, removed };
+}
+
+/**
+ * Save attendance downloaded from the server (GET /api/teacher/classes/:id/attendance)
+ * so the at-risk list, reports and profiles have a new phone's history. Rows
+ * arrive already synced, so nothing is queued back up. A record changed on
+ * this device and not yet sent is kept: the teacher's edit wins.
+ *
+ * @returns {Promise<{added: number, updated: number}>}
+ */
+export async function applyServerAttendance(records) {
+  let added = 0;
+  let updated = 0;
+  const now = new Date().toISOString();
+  await db.transaction('rw', db.attendanceEvents, async () => {
+    for (const r of records) {
+      if (!ATTENDANCE_STATUSES.includes(r.status)) continue;
+      const reason = normalizeReason(r.status, r.reason);
+      const local = await db.attendanceEvents.where('[studentId+date]').equals([r.studentId, r.date]).first();
+      if (!local) {
+        await db.attendanceEvents.add({
+          eventId: r.eventId,
+          studentId: r.studentId,
+          date: r.date,
+          status: r.status,
+          reason,
+          captureMethod: r.captureMethod ?? 'import',
+          recordedBy: r.recordedBy ?? null,
+          createdAt: r.createdAt ?? now,
+          syncedAt: now,
+        });
+        added += 1;
+      } else if (local.syncedAt && (local.status !== r.status || (local.reason ?? null) !== reason)) {
+        await db.attendanceEvents.update(local.id, { status: r.status, reason, captureMethod: r.captureMethod ?? local.captureMethod, syncedAt: now });
+        updated += 1;
+      }
+    }
+  });
+  return { added, updated };
 }
 
 export async function getClassById(classGroupId) {

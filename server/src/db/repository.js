@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { generateCode, hashCode, looksLikeCode, CODE_TTL_MS } from '../auth/setupCodes.js';
+import { generateEmailToken, hashEmailToken, looksLikeEmailToken, EMAIL_TOKEN_TTL_MS } from '../auth/emailTokens.js';
 import { assessStudent, flagRank, FOLLOW_UP_FRESH_DAYS } from '../lib/riskModel.js';
 
 /** Local calendar date as YYYY-MM-DD. Matches the client's todayISO(). */
@@ -299,13 +300,15 @@ export function findSchoolByCode(db, schoolCode) {
 }
 
 /**
- * A school's application: the school waits as 'pending' for a system admin,
- * and the person applying gets an admin account for it straight away, so they
- * can sign in and watch for the decision. Throws RegistrationConflictError when
- * the email already has an account, or the school is already registered.
+ * A school's application: the school waits as 'pending' for a system admin.
+ * The person applying gets an admin account with no password ('invited'):
+ * they confirm their email first, and set a password from the link sent when
+ * the school is approved. (A passwordHash, from older clients, makes the
+ * account active at once.) Throws RegistrationConflictError when the email
+ * already has an account, or the school is already registered.
  *
  * @param {object} school     name, county, subCounty, schoolCode, schoolType, boarding, studentEstimate
- * @param {object} applicant  fullName, email, phone, jobTitle, passwordHash
+ * @param {object} applicant  fullName, email, phone, jobTitle, passwordHash?
  */
 export function registerSchoolApplication(db, school, applicant) {
   const email = applicant.email.trim().toLowerCase();
@@ -349,7 +352,8 @@ export function registerSchoolApplication(db, school, applicant) {
       jobTitle: applicant.jobTitle,
       role: 'admin',
       schoolId,
-      passwordHash: applicant.passwordHash,
+      passwordHash: applicant.passwordHash ?? null,
+      status: applicant.passwordHash ? 'active' : 'invited',
     });
 
     logAudit(db, {
@@ -367,7 +371,8 @@ export function registerSchoolApplication(db, school, applicant) {
 
 const USER_COLUMNS = `u.user_id AS userId, u.email, u.full_name AS fullName, u.phone,
   u.job_title AS jobTitle, u.role, u.school_id AS schoolId, u.status,
-  u.created_at AS createdAt, u.last_sign_in_at AS lastSignInAt`;
+  u.created_at AS createdAt, u.last_sign_in_at AS lastSignInAt, u.email_verified_at AS emailVerifiedAt,
+  u.google_sub AS googleSub, u.google_email AS googleEmail`;
 
 export function createUser(db, { email, fullName, phone = null, jobTitle = null, role, schoolId, passwordHash = null, status = 'active' }) {
   const userId = `user-${randomUUID()}`;
@@ -440,7 +445,10 @@ export function getAllSchools(db, { status } = {}) {
               (SELECT COUNT(*) FROM class_groups c WHERE c.school_id = s.school_id) AS classCount,
               (SELECT COUNT(*) FROM students st
                  JOIN class_groups c ON c.class_group_id = st.class_group_id
-                WHERE c.school_id = s.school_id AND st.active = 1) AS studentCount
+                WHERE c.school_id = s.school_id AND st.active = 1) AS studentCount,
+              -- The applicant clicked the confirmation link (or set a password some other way).
+              EXISTS (SELECT 1 FROM users u WHERE u.school_id = s.school_id AND u.role = 'admin'
+                         AND (u.email_verified_at IS NOT NULL OR u.password_hash IS NOT NULL)) AS adminEmailVerified
          FROM schools s
         WHERE @status IS NULL OR s.status = @status
         -- Waiting schools first, oldest first, so the queue reads top to bottom.
@@ -448,7 +456,27 @@ export function getAllSchools(db, { status } = {}) {
                  CASE s.status WHEN 'pending' THEN s.created_at END,
                  s.name`
     )
-    .all({ status: status ?? null });
+    .all({ status: status ?? null })
+    .map((s) => ({ ...s, adminEmailVerified: s.adminEmailVerified === 1 }));
+}
+
+/** True when the school's applicant has confirmed their email (or has a password already). */
+export function isSchoolAdminVerified(db, schoolId) {
+  return (
+    db
+      .prepare(`SELECT 1 FROM users WHERE school_id = ? AND role = 'admin'
+                  AND (email_verified_at IS NOT NULL OR password_hash IS NOT NULL)`)
+      .get(schoolId) != null
+  );
+}
+
+/** The school's admin accounts, with whether each has a password yet. */
+export function getSchoolAdmins(db, schoolId) {
+  return db
+    .prepare(`SELECT ${USER_COLUMNS}, (u.password_hash IS NOT NULL) AS hasPassword
+                FROM users u WHERE u.school_id = ? AND u.role = 'admin' ORDER BY u.created_at`)
+    .all(schoolId)
+    .map((u) => ({ ...u, hasPassword: u.hasPassword === 1 }));
 }
 
 /** How many schools are in each status, for the system admin's filter tabs. */
@@ -1085,6 +1113,23 @@ export function getTeacherClasses(db, userId) {
   }));
 }
 
+/**
+ * A class's attendance from `sinceISO` on, for a teacher's device to keep
+ * offline (the at-risk list and reports are worked out on the phone).
+ */
+export function getClassAttendanceSince(db, classGroupId, sinceISO) {
+  return db
+    .prepare(
+      `SELECT a.event_id AS eventId, a.student_id AS studentId, a.date, a.status, a.reason,
+              a.capture_method AS captureMethod, a.recorded_by AS recordedBy, a.created_at AS createdAt
+         FROM attendance_events a
+         JOIN students s ON s.student_id = a.student_id
+        WHERE s.class_group_id = ? AND a.date >= ?
+        ORDER BY a.date, a.student_id`
+    )
+    .all(classGroupId, sinceISO);
+}
+
 // Teacher invites and password resets (one-time codes, see auth/setupCodes.js).
 
 /**
@@ -1198,4 +1243,342 @@ export function openSetupCodes(db, userIds, now = Date.now()) {
     else open.set(r.userId, { purpose: r.purpose, expiresAt: r.expiresAt, expired: true });
   }
   return open;
+}
+
+// Links sent by email (see auth/emailTokens.js).
+
+/**
+ * A new link for a user, revoking any open link of the same purpose. Returns
+ * the plain token; it is not stored and cannot be shown again.
+ * @param {'verify_email'|'setup'|'reset'} purpose
+ */
+export function issueEmailToken(db, { userId, purpose, ttlMs = EMAIL_TOKEN_TTL_MS[purpose], now = Date.now() }) {
+  const token = generateEmailToken();
+  const expiresAt = new Date(now + ttlMs).toISOString();
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE email_tokens SET revoked_at = datetime('now')
+        WHERE user_id = ? AND purpose = ? AND used_at IS NULL AND revoked_at IS NULL`
+    ).run(userId, purpose);
+    db.prepare(`INSERT INTO email_tokens (user_id, token_hash, purpose, expires_at) VALUES (?, ?, ?, ?)`)
+      .run(userId, hashEmailToken(token), purpose, expiresAt);
+    logAudit(db, { action: `user.${purpose}_link_issued`, recordId: userId, detail: { expiresAt } });
+  })();
+  return { token, expiresAt };
+}
+
+/**
+ * What a link is for. `state` is 'ok', 'used', 'revoked', 'expired' or
+ * 'unknown'. A disabled account's links count as revoked.
+ */
+export function lookupEmailToken(db, token, now = Date.now()) {
+  if (!looksLikeEmailToken(token)) return { state: 'unknown' };
+  const row = db
+    .prepare(
+      `SELECT t.id, t.purpose, t.expires_at AS expiresAt, t.used_at AS usedAt, t.revoked_at AS revokedAt,
+              u.user_id AS userId, u.email, u.full_name AS fullName, u.role, u.status AS userStatus,
+              (u.password_hash IS NOT NULL) AS hasPassword,
+              s.school_id AS schoolId, s.name AS schoolName, s.status AS schoolStatus
+         FROM email_tokens t
+         JOIN users u ON u.user_id = t.user_id
+         JOIN schools s ON s.school_id = u.school_id
+        WHERE t.token_hash = ?`
+    )
+    .get(hashEmailToken(token));
+  if (!row) return { state: 'unknown' };
+  let state = 'ok';
+  if (row.usedAt) state = 'used';
+  else if (row.revokedAt) state = 'revoked';
+  else if (Date.parse(row.expiresAt) <= now) state = 'expired';
+  else if (row.userStatus === 'disabled') state = 'revoked';
+  return { state, ...row, hasPassword: row.hasPassword === 1 };
+}
+
+/** Confirm the email address from a 'verify_email' link. Returns the user, or null. */
+export function confirmEmailWithToken(db, token, now = Date.now()) {
+  const found = lookupEmailToken(db, token, now);
+  if (found.state !== 'ok' || found.purpose !== 'verify_email') return null;
+  db.transaction(() => {
+    db.prepare(`UPDATE email_tokens SET used_at = datetime('now') WHERE id = ?`).run(found.id);
+    db.prepare(`UPDATE users SET email_verified_at = coalesce(email_verified_at, datetime('now')) WHERE user_id = ?`).run(found.userId);
+    logAudit(db, { action: 'user.email_verified', actorId: found.email, recordId: found.userId });
+  })();
+  return getUser(db, found.userId);
+}
+
+/**
+ * Set a password from a 'setup' or 'reset' link: the link is used up, the
+ * account becomes active and its email counts as confirmed (the link reached
+ * it). Any other open set-up or reset link for the account stops working.
+ * Returns the user, or null.
+ */
+export function setPasswordWithToken(db, token, passwordHash, now = Date.now()) {
+  const found = lookupEmailToken(db, token, now);
+  if (found.state !== 'ok' || (found.purpose !== 'setup' && found.purpose !== 'reset')) return null;
+  db.transaction(() => {
+    db.prepare(`UPDATE email_tokens SET used_at = datetime('now') WHERE id = ?`).run(found.id);
+    db.prepare(
+      `UPDATE email_tokens SET revoked_at = datetime('now')
+        WHERE user_id = ? AND purpose IN ('setup', 'reset') AND used_at IS NULL AND revoked_at IS NULL`
+    ).run(found.userId);
+    // The one-time codes an admin handed out are replaced by this password too.
+    db.prepare(`UPDATE setup_codes SET revoked_at = datetime('now') WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL`)
+      .run(found.userId);
+    db.prepare(
+      `UPDATE users SET password_hash = ?, status = 'active',
+              email_verified_at = coalesce(email_verified_at, datetime('now'))
+        WHERE user_id = ?`
+    ).run(passwordHash, found.userId);
+    logAudit(db, { action: `user.${found.purpose}_link_used`, actorId: found.email, recordId: found.userId });
+  })();
+  return getUser(db, found.userId);
+}
+
+/** The user a Google account is linked to, or null. */
+export function findUserByGoogleSub(db, sub) {
+  if (!sub) return null;
+  return db.prepare(`SELECT ${USER_COLUMNS} FROM users u WHERE u.google_sub = ?`).get(String(sub)) ?? null;
+}
+
+/**
+ * Link a Google account to a user, replacing any they had linked.
+ * @returns {{ok: true, user: object} | {ok: false, reason: 'taken'}} taken: linked to someone else
+ */
+export function linkGoogleAccount(db, userId, { sub, email }) {
+  const owner = findUserByGoogleSub(db, sub);
+  if (owner && owner.userId !== userId) return { ok: false, reason: 'taken' };
+  db.prepare(`UPDATE users SET google_sub = ?, google_email = ? WHERE user_id = ?`).run(String(sub), email ?? null, userId);
+  logAudit(db, { action: 'user.google_linked', actorId: email ?? null, recordId: userId });
+  return { ok: true, user: getUser(db, userId) };
+}
+
+export function unlinkGoogleAccount(db, userId) {
+  db.prepare(`UPDATE users SET google_sub = NULL, google_email = NULL WHERE user_id = ?`).run(userId);
+  logAudit(db, { action: 'user.google_unlinked', recordId: userId });
+  return getUser(db, userId);
+}
+
+/**
+ * An invited user signed in with Google for the first time. Google has
+ * confirmed the email, so the account is set up without a password; the
+ * invite's links and codes stop working, as when a password is set.
+ */
+export function activateWithGoogle(db, userId) {
+  db.transaction(() => {
+    db.prepare(
+      `UPDATE email_tokens SET revoked_at = datetime('now')
+        WHERE user_id = ? AND purpose IN ('setup', 'reset') AND used_at IS NULL AND revoked_at IS NULL`
+    ).run(userId);
+    db.prepare(`UPDATE setup_codes SET revoked_at = datetime('now') WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL`)
+      .run(userId);
+    db.prepare(
+      `UPDATE users SET status = 'active', email_verified_at = coalesce(email_verified_at, datetime('now'))
+        WHERE user_id = ? AND status = 'invited'`
+    ).run(userId);
+  })();
+  return getUser(db, userId);
+}
+
+/** The user for an email with whether they have a password, for "forgot password". */
+export function findUserForReset(db, email) {
+  const row = db
+    .prepare(
+      `SELECT ${USER_COLUMNS}, (u.password_hash IS NOT NULL) AS hasPassword, s.status AS schoolStatus, s.name AS schoolName
+         FROM users u JOIN schools s ON s.school_id = u.school_id
+        WHERE u.email = trim(?)`
+    )
+    .get(String(email ?? ''));
+  return row ? { ...row, hasPassword: row.hasPassword === 1 } : null;
+}
+
+// Students, managed by the school admin only. Each student gets a card number
+// on enrolment; it is printed as a barcode/QR on their ID card and also works
+// on the RFID gate.
+
+export class StudentInputError extends Error {}
+
+const STUDENT_COLUMNS = `st.student_id AS studentId, st.class_group_id AS classGroupId, st.admission_no AS admissionNo,
+  st.full_name AS fullName, st.guardian_phone AS guardianPhone, st.guardian_email AS guardianEmail,
+  st.enrolled_at AS enrolledAt, st.active,
+  c.grade, c.stream,
+  (SELECT r.card_uid FROM rfid_cards r WHERE r.student_id = st.student_id AND r.active = 1) AS cardUid`;
+
+const toStudent = (row) => row && {
+  ...row,
+  active: row.active === 1,
+  className: [row.grade, row.stream].filter(Boolean).join(' '),
+};
+
+/** A new card number: 8 hex characters, unique across every card ever issued. */
+export function generateCardUid(db) {
+  const taken = db.prepare(`SELECT 1 FROM rfid_cards WHERE card_uid = ?`);
+  for (let i = 0; i < 20; i += 1) {
+    const uid = randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
+    if (!taken.get(uid)) return uid;
+  }
+  throw new Error('could not find a free card number');
+}
+
+export function getSchoolStudent(db, schoolId, studentId) {
+  return toStudent(
+    db
+      .prepare(`SELECT ${STUDENT_COLUMNS} FROM students st JOIN class_groups c ON c.class_group_id = st.class_group_id
+                 WHERE st.student_id = ? AND c.school_id = ?`)
+      .get(studentId, schoolId)
+  ) ?? null;
+}
+
+/** Every student in a school, or one class, by class then name. */
+export function getSchoolStudents(db, schoolId, { classGroupId = null, includeInactive = false } = {}) {
+  return db
+    .prepare(
+      `SELECT ${STUDENT_COLUMNS}
+         FROM students st JOIN class_groups c ON c.class_group_id = st.class_group_id
+        WHERE c.school_id = @schoolId
+          AND (@classGroupId IS NULL OR st.class_group_id = @classGroupId)
+          AND (@includeInactive = 1 OR st.active = 1)
+        ORDER BY c.grade, c.stream, st.full_name`
+    )
+    .all({ schoolId, classGroupId, includeInactive: includeInactive ? 1 : 0 })
+    .map(toStudent);
+}
+
+/** Another active student in the school already using this admission number. */
+function admissionTaken(db, schoolId, admissionNo, exceptStudentId = null) {
+  if (!admissionNo) return false;
+  return (
+    db
+      .prepare(
+        `SELECT 1 FROM students st JOIN class_groups c ON c.class_group_id = st.class_group_id
+          WHERE c.school_id = ? AND upper(trim(st.admission_no)) = upper(trim(?)) AND st.active = 1
+            AND st.student_id <> coalesce(?, '')`
+      )
+      .get(schoolId, admissionNo, exceptStudentId) != null
+  );
+}
+
+const cleanText = (v) => (typeof v === 'string' ? v.trim() : v) || null;
+
+/**
+ * Enrol one student in a class of `schoolId`, with a new card. Throws
+ * StudentInputError for a class outside the school or a duplicate admission no.
+ */
+export function enrolStudent(db, schoolId, { classGroupId, fullName, admissionNo = null, guardianPhone = null, guardianEmail = null }, { actor = null } = {}) {
+  const cls = getClassGroup(db, classGroupId);
+  if (!cls || cls.schoolId !== schoolId) throw new StudentInputError('that class is not in this school');
+  const adm = cleanText(admissionNo);
+  if (admissionTaken(db, schoolId, adm)) throw new StudentInputError(`admission number ${adm} is already used by another student`);
+
+  const studentId = `stu-${randomUUID()}`;
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO students (student_id, class_group_id, admission_no, full_name, guardian_phone, guardian_email, enrolled_at, active)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 1)`
+    ).run(studentId, classGroupId, adm ?? '', fullName.trim(), cleanText(guardianPhone), cleanText(guardianEmail), todayISO());
+    db.prepare(`INSERT INTO rfid_cards (card_uid, student_id, active) VALUES (?, ?, 1)`).run(generateCardUid(db), studentId);
+    logAudit(db, { action: 'student.enrolled', actorId: actor, recordId: studentId, detail: { classGroupId, admissionNo: adm } });
+  })();
+  return getSchoolStudent(db, schoolId, studentId);
+}
+
+/**
+ * Enrol many students into one class at once (a CSV import). All or nothing:
+ * any bad row stops the import and nothing is saved, so the admin fixes the
+ * file and tries again. Returns the new students.
+ * @throws {StudentInputError} with `.row` (1-based) for the first bad row
+ */
+export function importStudents(db, schoolId, classGroupId, rows, { actor = null } = {}) {
+  const seen = new Set();
+  rows.forEach((r, i) => {
+    const adm = cleanText(r.admissionNo)?.toUpperCase();
+    if (!adm) return;
+    if (seen.has(adm)) throw Object.assign(new StudentInputError(`row ${i + 1}: admission number ${adm} appears twice in the file`), { row: i + 1 });
+    seen.add(adm);
+  });
+  return db.transaction(() => rows.map((r, i) => {
+    try {
+      return enrolStudent(db, schoolId, { ...r, classGroupId }, { actor });
+    } catch (err) {
+      if (err instanceof StudentInputError) throw Object.assign(new StudentInputError(`row ${i + 1}: ${err.message}`), { row: i + 1 });
+      throw err;
+    }
+  }))();
+}
+
+/**
+ * Edit a student: details, move to another class of the school, or remove
+ * (`active: false`, kept with their history) and restore.
+ */
+export function updateSchoolStudent(db, schoolId, studentId, patch, { actor = null } = {}) {
+  const student = getSchoolStudent(db, schoolId, studentId);
+  if (!student) return null;
+  const sets = [];
+  const params = { studentId };
+  if (patch.fullName !== undefined) { sets.push('full_name = @fullName'); params.fullName = patch.fullName.trim(); }
+  if (patch.admissionNo !== undefined) {
+    const adm = cleanText(patch.admissionNo);
+    if (admissionTaken(db, schoolId, adm, studentId)) throw new StudentInputError(`admission number ${adm} is already used by another student`);
+    sets.push('admission_no = @admissionNo');
+    params.admissionNo = adm ?? '';
+  }
+  if (patch.guardianPhone !== undefined) { sets.push('guardian_phone = @guardianPhone'); params.guardianPhone = cleanText(patch.guardianPhone); }
+  if (patch.guardianEmail !== undefined) { sets.push('guardian_email = @guardianEmail'); params.guardianEmail = cleanText(patch.guardianEmail); }
+  if (patch.classGroupId !== undefined && patch.classGroupId !== student.classGroupId) {
+    const cls = getClassGroup(db, patch.classGroupId);
+    if (!cls || cls.schoolId !== schoolId) throw new StudentInputError('that class is not in this school');
+    sets.push('class_group_id = @classGroupId');
+    params.classGroupId = patch.classGroupId;
+  }
+  if (patch.active !== undefined) {
+    if (patch.active && !student.active && admissionTaken(db, schoolId, student.admissionNo, studentId)) {
+      throw new StudentInputError(`admission number ${student.admissionNo} is now used by another student`);
+    }
+    sets.push('active = @active');
+    params.active = patch.active ? 1 : 0;
+  }
+  if (sets.length > 0) {
+    db.prepare(`UPDATE students SET ${sets.join(', ')} WHERE student_id = @studentId`).run(params);
+    const action = patch.active === false ? 'student.removed' : patch.active === true ? 'student.restored'
+      : patch.classGroupId && patch.classGroupId !== student.classGroupId ? 'student.moved' : 'student.updated';
+    logAudit(db, { action, actorId: actor, recordId: studentId, detail: patch });
+  }
+  return getSchoolStudent(db, schoolId, studentId);
+}
+
+/** A replacement card (lost or damaged): the old number stops working. */
+export function reissueStudentCard(db, schoolId, studentId, { actor = null } = {}) {
+  const student = getSchoolStudent(db, schoolId, studentId);
+  if (!student) return null;
+  const uid = generateCardUid(db);
+  db.transaction(() => {
+    db.prepare(`UPDATE rfid_cards SET active = 0 WHERE student_id = ? AND active = 1`).run(studentId);
+    db.prepare(`INSERT INTO rfid_cards (card_uid, student_id, active) VALUES (?, ?, 1)`).run(uid, studentId);
+    logAudit(db, { action: 'student.card_reissued', actorId: actor, recordId: studentId, detail: { from: student.cardUid, to: uid } });
+  })();
+  return getSchoolStudent(db, schoolId, studentId);
+}
+
+/**
+ * A card scanned at a school's scan station (USB barcode scanner or camera).
+ * Marks the student present for today unless they already have a mark.
+ * @returns {{outcome: 'recorded'|'duplicate'|'unknown-card', student?: object, mark?: object}}
+ */
+export function recordStationScan(db, schoolId, cardUid, { actor = null } = {}) {
+  const uid = String(cardUid ?? '').trim().toUpperCase();
+  const found = findStudentByCardUid(db, uid);
+  const student = found ? getSchoolStudent(db, schoolId, found.student_id) : null;
+  if (!student || !student.active) {
+    logAudit(db, { action: 'scan.unknown_card', actorId: actor, recordId: uid, detail: { schoolId } });
+    return { outcome: 'unknown-card', cardUid: uid };
+  }
+  const date = todayISO();
+  const existing = db
+    .prepare(`SELECT event_id AS eventId, status, capture_method AS captureMethod, created_at AS createdAt
+                FROM attendance_events WHERE student_id = ? AND date = ?`)
+    .get(student.studentId, date);
+  if (existing) return { outcome: 'duplicate', student, mark: { ...existing, createdAt: toIsoTimestamp(existing.createdAt) } };
+  const mark = recordAttendance(db, {
+    studentId: student.studentId, date, status: 'present', captureMethod: 'rfid', recordedBy: actor, source: 'client',
+  });
+  return { outcome: 'recorded', student, mark };
 }

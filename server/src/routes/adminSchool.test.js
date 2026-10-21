@@ -218,6 +218,22 @@ describe('the teacher side', () => {
     assert.deepEqual(classes[0].students.map((s) => s.fullName), ['Amina', 'Brian', 'Chebet']);
   });
 
+  test("a teacher downloads their class's attendance from a date on", async () => {
+    recordAttendance(db, { studentId: 'stu-1', date: '2026-09-01', status: 'absent', captureMethod: 'manual' });
+    recordAttendance(db, { studentId: 'stu-2', date: '2026-09-02', captureMethod: 'manual' });
+    recordAttendance(db, { studentId: 'stu-4', date: '2026-09-02', captureMethod: 'manual' }); // another class
+
+    const res = await api('/api/teacher/classes/class-3a/attendance?since=2026-09-02', teacher);
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.deepEqual(body.records.map((r) => [r.studentId, r.date, r.status]), [['stu-2', '2026-09-02', 'present']]);
+  });
+
+  test("a teacher cannot download another class's attendance", async () => {
+    assert.equal((await api('/api/teacher/classes/class-4b/attendance', teacher)).status, 404);
+    assert.equal((await api('/api/teacher/classes/class-3a/attendance?since=last-week', teacher)).status, 400);
+  });
+
   test('an admin cannot use the teacher download', async () => {
     assert.equal((await api('/api/teacher/classes', admin)).status, 403);
   });
@@ -227,9 +243,10 @@ describe('the teacher side', () => {
     assert.equal((await send('POST', '/api/roster/schools', teacher, { schoolId: 'school-1', name: 'x' })).status, 403);
   });
 
-  test("a teacher edits students only in their own class", async () => {
-    assert.equal((await send('POST', '/api/roster/students', teacher, { studentId: 'stu-9', classGroupId: 'class-3a', fullName: 'New' })).status, 200);
-    assert.equal((await send('POST', '/api/roster/students', teacher, { studentId: 'stu-8', classGroupId: 'class-4b', fullName: 'Nope' })).status, 403);
-    assert.equal((await send('PATCH', '/api/roster/students/stu-4', teacher, { fullName: 'Changed' })).status, 403);
+  test('a teacher cannot add, edit or issue cards to students, even in their own class', async () => {
+    assert.equal((await send('POST', '/api/roster/students', teacher, { studentId: 'stu-9', classGroupId: 'class-3a', fullName: 'New' })).status, 403);
+    assert.equal((await send('PATCH', '/api/roster/students/stu-1', teacher, { fullName: 'Changed' })).status, 403);
+    assert.equal((await send('POST', '/api/roster/students/stu-1/card', teacher, { cardUid: 'AABBCCDD' })).status, 403);
+    assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM students WHERE student_id = 'stu-9'`).get().n, 0);
   });
 });

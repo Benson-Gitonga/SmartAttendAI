@@ -10,12 +10,13 @@
     "dev": "node --env-file-if-exists=.env --watch-path=./src src/server.js",
     "db:init": "node src/db/init.js",
     "db:seed": "node src/db/seed.js",
-    "db:seed-history": "node src/db/seedHistory.js",
-    "db:reset": "node src/db/init.js --reset && node src/db/seed.js && node src/db/seedHistory.js",
+    "db:reset": "node src/db/init.js --reset && node src/db/seed.js && node src/db/seedDemoData.js",
     "sysadmin:set": "node src/auth/setSystemAdmin.js",
-    "test": "node --test src/**/*.test.js"
+    "test": "node --test src/**/*.test.js",
+    "db:seed-demo": "node src/db/seedDemoData.js"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "3.1144.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "better-sqlite3": "^13.0.3",

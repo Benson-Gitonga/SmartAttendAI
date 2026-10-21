@@ -13,6 +13,7 @@ const SLUGS = {
   today: 'today',
   classes: 'classes',
   teachers: 'teachers',
+  scan: 'scan-station',
 };
 const TAB_BY_SLUG = Object.fromEntries(Object.entries(SLUGS).map(([tab, slug]) => [slug, tab]));
 

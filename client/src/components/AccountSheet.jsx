@@ -9,12 +9,10 @@ export default function AccountSheet({
   user,
   online,
   pending,
-  pinSession,
   pinEnrolled,
   onManagePin,
   onManageRoster,
   onSignOut,
-  onSimulateExpiry,
   onClose,
 }) {
   // The back button closes this sheet rather than leaving the page.
@@ -25,7 +23,7 @@ export default function AccountSheet({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  const roleLine = [ROLE_LABEL[user?.role] ?? 'Teacher', user?.schoolName, pinSession ? 'PIN session' : null]
+  const roleLine = [ROLE_LABEL[user?.role] ?? 'Teacher', user?.schoolName]
     .filter(Boolean)
     .join(' · ');
 
@@ -62,18 +60,11 @@ export default function AccountSheet({
           {onManagePin && (
             <button type="button" className="account-row account-row--action" onClick={onManagePin}>
               <span className="account-row__icon"><KeypadIcon size={16} /></span>
-              <span className="account-row__label">Offline PIN{pinEnrolled ? '' : ' (not set)'}</span>
+              <span className="account-row__label">Lock PIN{pinEnrolled ? '' : ' (not set)'}</span>
               <span className="account-row__go">{pinEnrolled ? 'Change' : 'Set up'}</span>
             </button>
           )}
         </div>
-
-        {onSimulateExpiry && (
-          <div className="devnote account-dev">
-            <span>Dev: simulate session expiry</span>
-            <button type="button" className="linkbtn" onClick={onSimulateExpiry}>Run</button>
-          </div>
-        )}
 
         <button type="button" className="btn btn--ghost account-signout" onClick={onSignOut}>
           <LogOutIcon size={16} />

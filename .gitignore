@@ -26,3 +26,6 @@ SCH-*.xlsx
 
 # Claude Code worktrees / job scratch
 .claude/
+
+# Browser test screenshots and logs
+.playwright-mcp/

@@ -2,8 +2,9 @@ import bcrypt from 'bcryptjs';
 import { db } from '../db/database';
 
 /**
- * Offline PIN unlock for when the app has locked itself and there is no
- * network. The PIN is stored only as a bcrypt hash.
+ * Offline PIN that opens the app after the 30-minute inactivity lock
+ * (auth/inactivity.js), with or without a network. The PIN is stored only
+ * as a bcrypt hash.
  */
 
 export const PIN_LENGTH = 4;

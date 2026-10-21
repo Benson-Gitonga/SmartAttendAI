@@ -8,7 +8,6 @@ import { validate } from '../lib/validate.js';
 import { schoolRegistrationSchema } from '../schemas/schoolRegistration.schema.js';
 import { registerSchoolApplication, getSchool, RegistrationConflictError } from '../db/repository.js';
 import { hashPassword } from '../auth/systemAdminAuth.js';
-import { describeAccount } from '../auth/userAuth.js';
 
 /** What anyone may see about a school. */
 export function publicSchool(school) {
@@ -17,7 +16,7 @@ export function publicSchool(school) {
 }
 
 const CONFLICT_MESSAGES = {
-  email: 'An account with this email already exists. Sign in instead.',
+  email: 'An account with this email already exists. Sign in, or use "Forgot password" if you have not set one yet.',
   school_code: 'A school with this code is already registered on SmartAttend.',
   school_name: 'A school with this name is already registered in this county.',
 };
@@ -25,29 +24,39 @@ const CONFLICT_MESSAGES = {
 /**
  * @param {object} opts
  * @param {import('better-sqlite3').Database} opts.db
- * @param {ReturnType<import('../auth/userAuth.js').createUserAuth>} opts.userAuth
+ * @param {ReturnType<import('../mail/accountEmails.js').createAccountEmails>} opts.emails
  */
-export function createSchoolsRouter({ db, userAuth }) {
+export function createSchoolsRouter({ db, emails }) {
   if (!db) throw new Error('createSchoolsRouter needs a db');
-  if (!userAuth) throw new Error('createSchoolsRouter needs userAuth');
+  if (!emails) throw new Error('createSchoolsRouter needs emails');
   const router = Router();
 
-  // The application. The applicant is signed in straight away (as the
-  // school's admin) so they can follow the review from the app.
-  router.post('/register', (req, res) => {
+  // The application. Nobody is signed in: the applicant confirms their email
+  // from the link sent now, and sets a password once the school is approved.
+  router.post('/register', async (req, res, next) => {
     const { valid, errors } = validate(schoolRegistrationSchema, req.body ?? {});
     if (!valid) return res.status(400).json({ error: 'invalid application', errors });
 
     const { school, applicant } = req.body;
     const { password, ...person } = applicant;
+    let created;
     try {
-      const { user } = registerSchoolApplication(db, school, { ...person, passwordHash: hashPassword(password) });
-      res.status(201).json({ ...userAuth.issueToken(user), ...describeAccount(db, user) });
+      created = registerSchoolApplication(db, school, {
+        ...person,
+        ...(password ? { passwordHash: hashPassword(password) } : {}),
+      });
     } catch (err) {
       if (err instanceof RegistrationConflictError) {
         return res.status(409).json({ error: CONFLICT_MESSAGES[err.field], field: err.field });
       }
-      throw err;
+      return next(err);
+    }
+
+    try {
+      const { sent } = await emails.applicationConfirmation(created.user, created.school);
+      res.status(201).json({ school: publicSchool(created.school), email: created.user.email, emailSent: sent });
+    } catch (err) {
+      next(err);
     }
   });
 
