@@ -1,6 +1,6 @@
 import { db } from '../db/database';
 import {
-  signIn, signInWithGoogle, refreshSession, registerSchool, loadStoredSession, authHeaders, isSessionValid, SESSION_KEY,
+  signIn, refreshSession, registerSchool, loadStoredSession, authHeaders, isSessionValid, SESSION_KEY,
 } from './session';
 
 const reply = (status, body = {}) => jest.fn().mockResolvedValue({
@@ -83,23 +83,6 @@ describe('stored sessions', () => {
   it('treats a session saved by an older build, with its one-hour lock, as signed in until the token runs out', async () => {
     const session = await signIn('a@b.ke', 'pw', { fetchImpl: reply(200, SERVER_REPLY) });
     expect(isSessionValid({ ...session, expiresAt: Date.now() - 1 })).toBe(true);
-  });
-});
-
-describe('signInWithGoogle', () => {
-  it('sends the Google credential and keeps the session the server returns', async () => {
-    const fetchImpl = reply(200, SERVER_REPLY);
-    const session = await signInWithGoogle('google.id.token', { fetchImpl });
-    expect(fetchImpl.mock.calls[0][0]).toBe('/api/auth/google');
-    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ credential: 'google.id.token' });
-    expect(session.token).toBe('signed.token');
-  });
-
-  it('says when no account uses that Google email', async () => {
-    const fetchImpl = reply(403, { reason: 'no_account', error: 'No SmartAttend account uses this Google email.', email: 'x@gmail.com' });
-    const err = await signInWithGoogle('t', { fetchImpl }).catch((e) => e);
-    expect(err).toMatchObject({ code: 'NO_ACCOUNT', email: 'x@gmail.com' });
-    expect(await loadStoredSession()).toBeNull();
   });
 });
 

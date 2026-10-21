@@ -97,37 +97,6 @@ export async function signIn(email, password, { fetchImpl = globalThis.fetch } =
 }
 
 /**
- * "Continue with Google": what the server's Google sign-in is set up as.
- * @returns {Promise<{mode: 'google'|'dev'|'off', clientId: string|null}>}
- */
-export async function getGoogleSignInConfig({ fetchImpl = globalThis.fetch } = {}) {
-  try {
-    const res = await fetchImpl('/api/auth/google');
-    if (!res.ok) return { mode: 'off', clientId: null };
-    return await res.json();
-  } catch {
-    return { mode: 'off', clientId: null };
-  }
-}
-
-/**
- * Sign in with the ID token Google Identity Services gave the page (or, in
- * development without a Google client id, "dev:<email>").
- * @throws {AuthError} NETWORK | NO_ACCOUNT | DISABLED | FAILED
- */
-export async function signInWithGoogle(credential, { fetchImpl = globalThis.fetch } = {}) {
-  if (offline()) throw new AuthError('NETWORK', 'Connect to the internet to sign in with Google.');
-  const { res, json } = await postJson('/api/auth/google', { credential }, fetchImpl);
-  if (res.ok) return persist(sessionFromServer(json));
-  if (res.status === 429) throw new AuthError('LOCKED', json.error ?? 'Too many tries. Wait a few minutes.');
-  if (res.status === 403) {
-    const code = json.reason === 'no_account' ? 'NO_ACCOUNT' : 'DISABLED';
-    throw new AuthError(code, json.error ?? 'This Google account cannot sign in.', { email: json.email });
-  }
-  throw new AuthError('FAILED', json.error ?? `Google sign-in did not work (${res.status}).`);
-}
-
-/**
  * Send a school's application. Nobody is signed in: the applicant confirms
  * their email from the link sent now, and sets a password from the link sent
  * when the school is approved.

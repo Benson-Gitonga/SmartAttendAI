@@ -43,9 +43,7 @@ CREATE TABLE IF NOT EXISTS users (
   status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'invited', 'disabled')),
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
   last_sign_in_at TEXT,
-  email_verified_at TEXT,                             -- set by an email link (confirm, set-up or reset)
-  google_sub      TEXT,                               -- Google's id for the linked account (unique, see db/index.js)
-  google_email    TEXT                                -- that account's email, shown on the account sheet
+  email_verified_at TEXT                              -- set by an email link (confirm, set-up or reset)
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_school ON users(school_id);

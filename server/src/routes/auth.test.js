@@ -190,3 +190,19 @@ describe('every school only sees itself', () => {
     assert.equal((await fetch(`${base}/api/students`, { headers: sys })).status, 200);
   });
 });
+
+describe('POST /api/auth/refresh', () => {
+  test('a signed-in device gets a new token for the same account', async () => {
+    const token = await tokenFor('teacher1@school.ke');
+    clock += 30_000;
+    const res = await post('/api/auth/refresh', {}, bearer(token));
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.ok(body.token && body.token !== token);
+    assert.equal(body.user.email, 'teacher1@school.ke');
+  });
+
+  test('401 without a token', async () => {
+    assert.equal((await post('/api/auth/refresh', {})).status, 401);
+  });
+});

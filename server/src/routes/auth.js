@@ -11,11 +11,10 @@ import {
   signInSchema, setupCodeSchema, setPasswordSchema, emailTokenSchema, forgotPasswordSchema,
 } from '../schemas/schoolRegistration.schema.js';
 import { describeAccount } from '../auth/userAuth.js';
-import { createGoogleVerifier, GoogleTokenError } from '../auth/googleAuth.js';
 import { hashPassword } from '../auth/systemAdminAuth.js';
 import { createAttemptLimiter } from '../auth/tokens.js';
 import {
-  logAudit, linkGoogleAccount, unlinkGoogleAccount, lookupSetupCode, redeemSetupCode, lookupEmailToken, confirmEmailWithToken, setPasswordWithToken,
+  logAudit, lookupSetupCode, redeemSetupCode, lookupEmailToken, confirmEmailWithToken, setPasswordWithToken,
 } from '../db/repository.js';
 
 const REFUSED = {
@@ -33,14 +32,6 @@ const LINK_PROBLEMS = {
   wrong_kind: [400, 'This link is for something else. Open it from the email it came in.'],
 };
 
-// Why a Google account cannot sign in.
-const GOOGLE_REFUSED = {
-  no_account: [403, 'No SmartAttend account uses this Google email. Ask your school admin to add you with it, or apply for your school.'],
-  unverified: [403, 'Google has not confirmed this email address yet.'],
-  disabled: [403, 'This account has been disabled. Ask your school admin.'],
-  school_inactive: [403, 'Your school is not active on SmartAttend yet, so the account cannot be set up.'],
-};
-
 const FORGOT_REPLY = 'If that email has a SmartAttend account, we have sent it a link. Check your inbox and spam folder.';
 
 // Why a code cannot be used, in words a teacher can act on.
@@ -55,7 +46,6 @@ export function createAuthRouter({
   db,
   userAuth,
   emails,
-  google = createGoogleVerifier(),
   codeLimiter = createAttemptLimiter({ maxFailures: 10, lockoutMs: 15 * 60 * 1000 }),
   // Reset emails per address and per email: enough for a typo or two, not for spamming someone.
   forgotLimiter = createAttemptLimiter({ maxFailures: 5, lockoutMs: 15 * 60 * 1000 }),
@@ -95,66 +85,6 @@ export function createAuthRouter({
   // regularly never reaches the end of their sign-in.
   router.post('/refresh', userAuth.requireUser(), (req, res) => {
     res.json({ ...userAuth.issueToken(req.user), ...describeAccount(db, req.user) });
-  });
-
-  // Whether the sign-in page shows "Continue with Google", and with which client id.
-  router.get('/google', (req, res) => {
-    res.json({ mode: google.mode, clientId: google.clientId });
-  });
-
-  router.post('/google', (req, res, next) => googleSignIn(req, res).catch(next));
-  async function googleSignIn(req, res) {
-    if (tooMany(req, res)) return undefined;
-    const credential = req.body?.credential;
-    if (typeof credential !== 'string' || !credential || credential.length > 4096) {
-      return res.status(400).json({ error: 'Missing Google sign-in.' });
-    }
-    let profile;
-    try {
-      profile = await google.verify(credential);
-    } catch (err) {
-      if (!(err instanceof GoogleTokenError)) throw err;
-      codeLimiter.fail(req.ip);
-      logAudit(db, { action: 'user.sign_in_failed', detail: { ip: req.ip, via: 'google', reason: err.message } });
-      return res.status(401).json({ error: 'Google sign-in did not work. Try again.' });
-    }
-
-    const result = userAuth.signInWithGoogle(profile);
-    if (!result.ok) {
-      logAudit(db, { action: 'user.sign_in_failed', actorId: profile.email, detail: { ip: req.ip, via: 'google', reason: result.reason } });
-      const [status, error] = GOOGLE_REFUSED[result.reason] ?? GOOGLE_REFUSED.no_account;
-      return res.status(status).json({ error, reason: result.reason, email: profile.email });
-    }
-    codeLimiter.succeed(req.ip);
-    logAudit(db, { action: 'user.signed_in', actorId: result.user.email, recordId: result.user.userId, detail: { ip: req.ip, via: 'google' } });
-    const { ok, ...body } = result; // eslint-disable-line no-unused-vars
-    res.json(body);
-  }
-
-  // A signed-in user links the Google account they want to sign in with, for
-  // when its email is not the one their school admin used.
-  router.post('/google/link', userAuth.requireUser(), (req, res, next) => linkGoogle(req, res).catch(next));
-  async function linkGoogle(req, res) {
-    const credential = req.body?.credential;
-    if (typeof credential !== 'string' || !credential || credential.length > 4096) {
-      return res.status(400).json({ error: 'Missing Google sign-in.' });
-    }
-    let profile;
-    try {
-      profile = await google.verify(credential);
-    } catch (err) {
-      if (!(err instanceof GoogleTokenError)) throw err;
-      return res.status(401).json({ error: 'Google sign-in did not work. Try again.' });
-    }
-    const result = linkGoogleAccount(db, req.user.userId, profile);
-    if (!result.ok) {
-      return res.status(409).json({ error: 'That Google account is already linked to another SmartAttend account.', reason: 'taken' });
-    }
-    res.json(describeAccount(db, result.user));
-  }
-
-  router.delete('/google/link', userAuth.requireUser(), (req, res) => {
-    res.json(describeAccount(db, unlinkGoogleAccount(db, req.user.userId)));
   });
 
   // One-time codes. Wrong codes from one address are counted, so codes

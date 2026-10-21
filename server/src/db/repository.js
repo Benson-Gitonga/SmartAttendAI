@@ -371,8 +371,7 @@ export function registerSchoolApplication(db, school, applicant) {
 
 const USER_COLUMNS = `u.user_id AS userId, u.email, u.full_name AS fullName, u.phone,
   u.job_title AS jobTitle, u.role, u.school_id AS schoolId, u.status,
-  u.created_at AS createdAt, u.last_sign_in_at AS lastSignInAt, u.email_verified_at AS emailVerifiedAt,
-  u.google_sub AS googleSub, u.google_email AS googleEmail`;
+  u.created_at AS createdAt, u.last_sign_in_at AS lastSignInAt, u.email_verified_at AS emailVerifiedAt`;
 
 export function createUser(db, { email, fullName, phone = null, jobTitle = null, role, schoolId, passwordHash = null, status = 'active' }) {
   const userId = `user-${randomUUID()}`;
@@ -1332,51 +1331,6 @@ export function setPasswordWithToken(db, token, passwordHash, now = Date.now()) 
     logAudit(db, { action: `user.${found.purpose}_link_used`, actorId: found.email, recordId: found.userId });
   })();
   return getUser(db, found.userId);
-}
-
-/** The user a Google account is linked to, or null. */
-export function findUserByGoogleSub(db, sub) {
-  if (!sub) return null;
-  return db.prepare(`SELECT ${USER_COLUMNS} FROM users u WHERE u.google_sub = ?`).get(String(sub)) ?? null;
-}
-
-/**
- * Link a Google account to a user, replacing any they had linked.
- * @returns {{ok: true, user: object} | {ok: false, reason: 'taken'}} taken: linked to someone else
- */
-export function linkGoogleAccount(db, userId, { sub, email }) {
-  const owner = findUserByGoogleSub(db, sub);
-  if (owner && owner.userId !== userId) return { ok: false, reason: 'taken' };
-  db.prepare(`UPDATE users SET google_sub = ?, google_email = ? WHERE user_id = ?`).run(String(sub), email ?? null, userId);
-  logAudit(db, { action: 'user.google_linked', actorId: email ?? null, recordId: userId });
-  return { ok: true, user: getUser(db, userId) };
-}
-
-export function unlinkGoogleAccount(db, userId) {
-  db.prepare(`UPDATE users SET google_sub = NULL, google_email = NULL WHERE user_id = ?`).run(userId);
-  logAudit(db, { action: 'user.google_unlinked', recordId: userId });
-  return getUser(db, userId);
-}
-
-/**
- * An invited user signed in with Google for the first time. Google has
- * confirmed the email, so the account is set up without a password; the
- * invite's links and codes stop working, as when a password is set.
- */
-export function activateWithGoogle(db, userId) {
-  db.transaction(() => {
-    db.prepare(
-      `UPDATE email_tokens SET revoked_at = datetime('now')
-        WHERE user_id = ? AND purpose IN ('setup', 'reset') AND used_at IS NULL AND revoked_at IS NULL`
-    ).run(userId);
-    db.prepare(`UPDATE setup_codes SET revoked_at = datetime('now') WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL`)
-      .run(userId);
-    db.prepare(
-      `UPDATE users SET status = 'active', email_verified_at = coalesce(email_verified_at, datetime('now'))
-        WHERE user_id = ? AND status = 'invited'`
-    ).run(userId);
-  })();
-  return getUser(db, userId);
 }
 
 /** The user for an email with whether they have a password, for "forgot password". */

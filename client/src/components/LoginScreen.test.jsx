@@ -16,7 +16,6 @@ jest.mock('../auth/session', () => ({
   verifyEmail: jest.fn(),
   lookupEmailLink: jest.fn(),
   lookupSetupCode: jest.fn(),
-  getGoogleSignInConfig: jest.fn(),
 }));
 
 function authError(code, message, extra = {}) {
@@ -35,9 +34,7 @@ beforeEach(() => {
     signIn: jest.fn().mockResolvedValue({}),
     registerSchool: jest.fn().mockResolvedValue({ email: 'g.achieng@kisumuday.ac.ke', emailSent: true }),
     setPasswordFromLink: jest.fn().mockResolvedValue({}),
-    signInWithGoogle: jest.fn().mockResolvedValue({}),
   });
-  session.getGoogleSignInConfig.mockResolvedValue({ mode: 'off', clientId: null });
 });
 
 async function signInAs(user, email, password) {
@@ -95,33 +92,6 @@ describe('sign in', () => {
     expect(screen.getByRole('link', { name: 'Forgot password?' })).toHaveAttribute('href', '#/forgot-password');
     expect(screen.queryByRole('radio')).not.toBeInTheDocument();
     expect(screen.queryByText(/system admin/i)).not.toBeInTheDocument();
-  });
-
-  it('shows no Google button when the server has Google sign-in off', async () => {
-    render(<LoginScreen />);
-    await act(async () => {});
-    expect(screen.queryByRole('button', { name: /Google/ })).not.toBeInTheDocument();
-  });
-
-  it('without a Google client id yet, the stand-in signs in with the Google email', async () => {
-    session.getGoogleSignInConfig.mockResolvedValue({ mode: 'dev', clientId: null });
-    const user = userEvent.setup();
-    render(<LoginScreen />);
-    await user.click(await screen.findByRole('button', { name: /Continue with Google/ }));
-    expect(screen.getByText(/Development mode/)).toBeInTheDocument();
-    await user.type(screen.getByLabelText('Google email'), 'teacher@kibera.ac.ke');
-    await user.click(screen.getByRole('button', { name: /Continue$/ }));
-    expect(auth.signInWithGoogle).toHaveBeenCalledWith('dev:teacher@kibera.ac.ke');
-  });
-
-  it('says when no account uses that Google email', async () => {
-    session.getGoogleSignInConfig.mockResolvedValue({ mode: 'dev', clientId: null });
-    auth.signInWithGoogle.mockRejectedValue(authError('NO_ACCOUNT', 'No SmartAttend account uses this Google email.'));
-    const user = userEvent.setup();
-    render(<LoginScreen />);
-    await user.click(await screen.findByRole('button', { name: /Continue with Google/ }));
-    await user.type(screen.getByLabelText('Google email'), 'stranger@gmail.com{Enter}');
-    expect(await screen.findByText(/No SmartAttend account uses this Google email/)).toBeInTheDocument();
   });
 
   it('cannot sign in for the first time while offline', () => {

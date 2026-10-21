@@ -1,7 +1,6 @@
 import { createContext, useContext, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   signIn as serverSignIn,
-  signInWithGoogle as serverGoogleSignIn,
   registerSchool as serverRegisterSchool,
   redeemSetupCode,
   setPasswordWithLink,
@@ -113,14 +112,6 @@ export function AuthProvider({ children }) {
     return { session: next };
   }, [applySession]);
 
-  /** "Continue with Google", for school admins and teachers. */
-  const signInWithGoogle = useCallback(async (credential) => {
-    const next = await serverGoogleSignIn(credential);
-    await clearLockout(next.username);
-    await applySession(next, { fresh: true });
-    return next;
-  }, [applySession]);
-
   /** A school's application. Nobody is signed in; the applicant confirms their email next. */
   const registerSchool = useCallback((application) => serverRegisterSchool(application), []);
 
@@ -191,7 +182,6 @@ export function AuthProvider({ children }) {
         }
       : null,
     signIn,
-    signInWithGoogle,
     registerSchool,
     joinWithCode,
     setPasswordFromLink,
@@ -200,7 +190,7 @@ export function AuthProvider({ children }) {
     unlockWithPin,
     enrolPin,
   }), [
-    status, session, pinState, signIn, signInWithGoogle, registerSchool, joinWithCode, setPasswordFromLink, refreshSchool,
+    status, session, pinState, signIn, registerSchool, joinWithCode, setPasswordFromLink, refreshSchool,
     signOut, unlockWithPin, enrolPin,
   ]);
 

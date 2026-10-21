@@ -3054,20 +3054,10 @@ select.pub-input { padding-right: 8px; }
 .pub-btn--primary:hover:not(:disabled) { background: var(--pub-blue-hover); }
 .pub-btn--secondary { background: #fff; color: var(--pub-ink); border-color: var(--pub-line); }
 .pub-btn--secondary:hover:not(:disabled) { background: #f3f4f6; }
-.pub-btn--google { background: #fff; color: var(--pub-ink); border-color: var(--pub-line); font-weight: 500; }
-.pub-btn--google:hover:not(:disabled) { background: #f8f9fa; }
 /* Inactivity lock: covers the app without unmounting it. */
 .lock-overlay { position: fixed; inset: 0; z-index: 1000; overflow: auto; background: var(--canvas); }
 .lock-overlay .auth { min-height: 100%; }
 
-.pub-google { display: flex; justify-content: center; min-height: 44px; }
-.pub-google--disabled { opacity: .5; pointer-events: none; }
-.pub-devgoogle { padding: 12px; border: 1px dashed var(--pub-line); border-radius: 6px; }
-.pub-devgoogle__note { margin: 0 0 10px; font-size: 12px; color: var(--pub-ink-3); line-height: 1.45; }
-.pub-devgoogle__row { display: flex; gap: 8px; }
-.pub-devgoogle__row .pub-input { flex: 1; min-width: 0; }
-.pub-divider { display: flex; align-items: center; gap: 12px; margin: 16px 0; color: var(--pub-ink-3); font-size: 12px; }
-.pub-divider::before, .pub-divider::after { content: ""; flex: 1; height: 1px; background: var(--pub-line-soft); }
 .pub-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; padding-top: 16px; border-top: 1px solid var(--pub-line-soft); }
 
 /* alerts */
