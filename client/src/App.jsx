@@ -59,6 +59,8 @@ function TeacherApp() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [studentNames, setStudentNames] = useState({});
   const [registerStatus, setRegisterStatus] = useState(null); // 'done' | 'due' | null
+  // A past day picked on Reports; the register opens on it. null = today.
+  const [registerDay, setRegisterDay] = useState(null);
   const registerDirty = useRef(false);
   const setRegisterDirty = useCallback((dirty) => { registerDirty.current = dirty; }, []);
   const role = 'teacher';
@@ -141,7 +143,12 @@ function TeacherApp() {
     navigate(next, opts);
     return true;
   }, [navigate]);
-  const goTab = useCallback((next) => go({ tab: next }), [go]);
+  const goTab = useCallback((next) => {
+    if (go({ tab: next })) setRegisterDay(null);
+  }, [go]);
+  const openRegisterDay = useCallback((date) => {
+    if (go({ tab: 'attendance' })) setRegisterDay(date);
+  }, [go]);
   const openProfile = useCallback((id) => go({ tab, studentId: id }), [go, tab]);
 
   const pickClass = useCallback((id) => {
@@ -202,7 +209,14 @@ function TeacherApp() {
       />
     );
   } else if (tab === 'heatmap') {
-    body = <Heatmap key={`${activeClassId}-${refreshKey}`} classGroupId={activeClassId} className={activeLabel} />;
+    body = (
+      <Heatmap
+        key={`${activeClassId}-${refreshKey}`}
+        classGroupId={activeClassId}
+        className={activeLabel}
+        onOpenDay={openRegisterDay}
+      />
+    );
   } else if (tab === 'alerts') {
     body = <Alerts key={`${activeClassId}-${refreshKey}`} classGroupId={activeClassId} className={activeLabel} onOpenProfile={openProfile} />;
   } else if (tab === 'students') {
@@ -212,8 +226,9 @@ function TeacherApp() {
   } else {
     body = (
       <AttendanceForm
-        key={activeClassId}
+        key={`${activeClassId}-${registerDay}`}
         classGroupId={activeClassId}
+        initialDate={registerDay}
         pending={pending}
         onRecordsChanged={handleRecordsChanged}
         onOpenProfile={openProfile}

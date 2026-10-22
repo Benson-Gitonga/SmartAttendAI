@@ -23,6 +23,11 @@ export const config = {
         ? resolve(process.env.DB_PATH)
         : join(defaultDbDir, 'smartattend', 'smartattend.db'),
 
+  // The built PWA (client/dist) to serve next to /api, so one service hosts
+  // everything (the Dockerfile at the project root sets it). Unset in
+  // development, where Vite serves the app.
+  clientDir: process.env.CLIENT_DIST ? resolve(process.env.CLIENT_DIST) : '',
+
   // Fill the Kibera demo school with three months of made-up attendance on
   // start (src/db/seedDemoData.js). Never queued for the cloud.
   demoData: process.env.DEMO_DATA !== 'false',

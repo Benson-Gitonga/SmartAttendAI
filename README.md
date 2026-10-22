@@ -98,6 +98,35 @@ files. Settings are in [`server/.env.example`](server/.env.example).
 
 Docker: `docker compose up` runs the server only.
 
+## Deploying to Railway
+
+The [`Dockerfile`](Dockerfile) at the project root builds the teacher app and
+runs the server, which serves the app and `/api` from one address.
+[`railway.json`](railway.json) tells Railway to use it.
+
+1. On [railway.com](https://railway.com), choose **New Project → Deploy from
+   GitHub repo** and pick this repo (and the branch to deploy, under
+   **Settings → Source**).
+2. Add a **volume** to the service, mounted at `/data`. The SQLite database
+   lives there; without it every deploy starts from an empty database.
+3. Under **Variables**, set:
+
+   | Variable | Value |
+   |---|---|
+   | `AUTH_TOKEN_SECRET` | a long random string (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) |
+   | `APP_URL` | the site's address, e.g. `https://smartattend-production.up.railway.app` |
+   | `DEMO_DATA` | `true` for a demo with three months of records, `false` for a real school |
+   | `SIMULATION_ENABLED` | `false` to stop the simulated gate tapping cards |
+   | `SYSTEM_ADMIN_USERNAME`, `SYSTEM_ADMIN_PASSWORD_HASH`, `SYSTEM_ADMIN_TOKEN_SECRET` | copy from `server/.env` after `npm run sysadmin:set -- sysadmin`; needed to approve new schools |
+
+   `DB_PATH`, `PORT` and `CLIENT_DIST` are already set by the Dockerfile. Leave
+   `SYNC_API_GATEWAY_URL` unset until the AWS tier exists.
+4. Under **Settings → Networking**, choose **Generate Domain**. Railway gives
+   it HTTPS, which the app needs for offline mode and the card scanner.
+
+Every push to the chosen branch then redeploys. Without Amazon SES, emails
+(set-up and reset links) are not sent; they appear in the service's logs.
+
 ## Tests
 
 | Part | Command | |

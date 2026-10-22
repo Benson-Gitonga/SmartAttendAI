@@ -1,6 +1,8 @@
 import express from 'express';
 import morgan from 'morgan';
 import { timingSafeEqual } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { join, sep } from 'node:path';
 import { createCardHandler, checkScanTime, describeOutcome } from './attendance/handler.js';
 import { rfidScanSchema } from './schemas/rfidScan.schema.js';
 import { validate } from './lib/validate.js';
@@ -34,6 +36,7 @@ import {
  * @param {ReturnType<typeof createUserAuth>} [opts.userAuth] sign-in for school staff
  * @param {ReturnType<typeof createMailer>} [opts.mailer] outgoing email (log-only by default)
  * @param {string} [opts.appUrl] where the PWA lives, for links in emails
+ * @param {string} [opts.clientDir] the built PWA to serve; '' = API only
  */
 export function createApp({
   db,
@@ -44,6 +47,7 @@ export function createApp({
   userAuth = createUserAuth({ db, ...config.auth }),
   mailer = createMailer(config.mail),
   appUrl = config.appUrl,
+  clientDir = config.clientDir,
 } = {}) {
   const app = express();
   const emails = createAccountEmails({ db, mailer, appUrl });
@@ -122,6 +126,8 @@ export function createApp({
     res.status(status).json(result);
   });
 
+  if (clientDir && existsSync(join(clientDir, 'index.html'))) serveClient(app, clientDir);
+
   app.use((req, res) => res.status(404).json({ error: 'not found' }));
 
   // eslint-disable-next-line no-unused-vars
@@ -131,6 +137,26 @@ export function createApp({
   });
 
   return app;
+}
+
+/**
+ * The PWA's files, and index.html for any other page so its own routes
+ * work on reload. Hashed files under assets/ never change, so they are
+ * cached for a year; the rest (index.html, sw.js, the manifest) are checked
+ * every time so a new deploy reaches phones.
+ */
+function serveClient(app, dir) {
+  const assets = `${sep}assets${sep}`;
+  app.use(express.static(dir, {
+    index: false,
+    setHeaders: (res, path) => {
+      res.setHeader('Cache-Control', path.includes(assets) ? 'public, max-age=31536000, immutable' : 'no-cache');
+    },
+  }));
+  app.get(/^\/(?!api\/|health$)/, (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(join(dir, 'index.html'));
+  });
 }
 
 /** Gate devices prove who they are with a shared key. An empty key turns the check off. */

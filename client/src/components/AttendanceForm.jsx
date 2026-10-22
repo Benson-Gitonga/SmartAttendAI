@@ -12,7 +12,7 @@ import { formatLongDate } from '../lib/attendanceSummary';
 import { isSchoolDay } from '../lib/riskModel';
 import { showToast } from '../lib/toast';
 import Avatar from './Avatar';
-import { SyncIcon, SearchIcon } from './icons';
+import { SyncIcon, SearchIcon, ChevronLeftIcon, ChevronRightIcon } from './icons';
 import CameraScanner from './CameraScanner';
 
 const FILTERS = [
@@ -31,6 +31,18 @@ const REASONS = [
 // A late record (e.g. from a gate scan after the bell) still counts as present here.
 const isPresent = (status) => status === 'present' || status === 'late';
 
+/** The nearest school day before (dir -1) or after (dir 1) `iso`. */
+function stepSchoolDay(iso, dir) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  for (let i = 0; i < 14; i += 1) {
+    dt.setDate(dt.getDate() + dir);
+    const next = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    if (isSchoolDay(next)) return next;
+  }
+  return null;
+}
+
 const timeOf = (iso) =>
   iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 
@@ -40,10 +52,10 @@ const timeOf = (iso) =>
  * scanned here with the camera show the time the student arrived, but they do
  * not change the default: a student who did not scan still starts present.
  */
-export default function AttendanceForm({ classGroupId, pending = 0, onRecordsChanged, onOpenProfile, onDirtyChange }) {
+export default function AttendanceForm({ classGroupId, initialDate = null, pending = 0, onRecordsChanged, onOpenProfile, onDirtyChange }) {
   const { user } = useAuth();
   const today = todayISO();
-  const [date, setDate] = useState(today);
+  const [date, setDate] = useState(initialDate && initialDate < today ? initialDate : today);
 
   const [students, setStudents] = useState([]);
   // studentId -> the saved Dexie record for this date
@@ -275,15 +287,32 @@ export default function AttendanceForm({ classGroupId, pending = 0, onRecordsCha
               Scan cards
             </button>
           )}
-          <label className="date-input">
-            <span className="sr-only">Register date</span>
-            <input
-              type="date"
-              value={date}
-              max={today}
-              onChange={(e) => changeDate(e.target.value)}
-            />
-          </label>
+          <div className="day-nav">
+            <button type="button" className="icon-btn" onClick={() => changeDate(stepSchoolDay(date, -1))} aria-label="Previous school day">
+              <ChevronLeftIcon size={16} />
+            </button>
+            <label className="date-input">
+              <span className="sr-only">Register date</span>
+              <input
+                type="date"
+                value={date}
+                max={today}
+                onChange={(e) => changeDate(e.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="icon-btn"
+              onClick={() => changeDate(stepSchoolDay(date, 1))}
+              disabled={date >= today}
+              aria-label="Next school day"
+            >
+              <ChevronRightIcon size={16} />
+            </button>
+            {date !== today && (
+              <button type="button" className="linkbtn" onClick={() => changeDate(today)}>Today</button>
+            )}
+          </div>
         </div>
       </div>
 

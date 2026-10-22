@@ -1193,6 +1193,13 @@ button.student-cell:hover .student-cell__name { color: var(--indigo-600); text-d
 .stat-strip__value small { font-size: 12.5px; font-weight: 400; color: var(--ink-muted); }
 
 .period-nav { display: flex; align-items: center; gap: 6px; }
+.day-nav { display: flex; align-items: center; gap: 6px; }
+.reg-table__daybtn {
+  display: block; width: 100%; padding: 2px 0; border: 0; border-radius: var(--radius-sm);
+  background: none; color: inherit; font: inherit; cursor: pointer;
+}
+.reg-table__daybtn:hover { background: var(--canvas); }
+.reg-table__daybtn:focus-visible { outline: 2px solid var(--indigo-600); outline-offset: 1px; }
 .period-nav__label { min-width: 150px; text-align: center; font-size: 14px; font-weight: 600; }
 .icon-btn {
   width: 32px;

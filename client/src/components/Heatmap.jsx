@@ -11,8 +11,11 @@ import { ChevronLeftIcon, ChevronRightIcon } from './icons';
 import { showToast } from '../lib/toast';
 
 const LOW_RATE = 0.85;
-const CODE = { present: 'P', late: 'L', absent: 'A', upcoming: '' };
-const STATUS_TEXT = { present: 'Present', late: 'Late', absent: 'Absent', upcoming: 'Not yet taken' };
+const CODE = { present: 'P', absent: 'A', upcoming: '' };
+const STATUS_TEXT = { present: 'Present', absent: 'Absent', upcoming: 'Not yet taken' };
+
+// The register is present or absent only; older 'late' marks count as present.
+const asPresentOrAbsent = (r) => (r.status === 'late' ? { ...r, status: 'present' } : r);
 
 function parseISO(iso) {
   const [y, m, d] = iso.split('-').map(Number);
@@ -38,13 +41,12 @@ function periodFor(mode, anchor) {
 }
 
 function downloadCsv(filename, days, rows) {
-  const head = ['Student', 'Adm. No.', ...days.map((d) => d.date), 'Present', 'Late', 'Absent', 'Rate'];
+  const head = ['Student', 'Adm. No.', ...days.map((d) => d.date), 'Present', 'Absent', 'Rate'];
   const lines = rows.map(({ student, cells, totals, rate }) => [
     student.fullName,
     student.admissionNo ?? '',
     ...cells.map((c) => CODE[c.status]),
     totals.present,
-    totals.late,
     totals.absent,
     rate == null ? '' : `${Math.round(rate * 100)}%`,
   ]);
@@ -60,8 +62,11 @@ function downloadCsv(filename, days, rows) {
   showToast(`Downloaded ${filename}`);
 }
 
-/** Attendance register report: students down the side, school days across. */
-export default function Heatmap({ classGroupId, className }) {
+/**
+ * Attendance register report: students down the side, school days across.
+ * Tapping a day opens the register for that day (`onOpenDay`).
+ */
+export default function Heatmap({ classGroupId, className, onOpenDay }) {
   const today = toISO(new Date());
   const [mode, setMode] = useState('week');
   const [anchor, setAnchor] = useState(today);
@@ -82,7 +87,7 @@ export default function Heatmap({ classGroupId, className }) {
       ]);
       if (cancelled) return;
       setStudents(roll);
-      setRecords(history.filter((r) => r.date <= period.end));
+      setRecords(history.filter((r) => r.date <= period.end).map(asPresentOrAbsent));
       setLoading(false);
     })();
     return () => { cancelled = true; };
@@ -95,7 +100,6 @@ export default function Heatmap({ classGroupId, className }) {
 
   const takenDays = days.filter((d) => d.date < today || (d.date === today && records.some((r) => r.date === today))).length;
   const absences = rows.reduce((n, r) => n + r.totals.absent, 0);
-  const lates = rows.reduce((n, r) => n + r.totals.late, 0);
   const below = rows.filter((r) => r.rate != null && r.rate < LOW_RATE).length;
 
   function step(dir) {
@@ -148,10 +152,6 @@ export default function Heatmap({ classGroupId, className }) {
           <span className="stat-strip__value">{absences}</span>
         </div>
         <div>
-          <span className="stat-strip__label">Late arrivals</span>
-          <span className="stat-strip__value">{lates}</span>
-        </div>
-        <div>
           <span className="stat-strip__label">Below {Math.round(LOW_RATE * 100)}%</span>
           <span className="stat-strip__value">{below} <small>of {rows.length}</small></span>
         </div>
@@ -175,7 +175,6 @@ export default function Heatmap({ classGroupId, className }) {
           </div>
           <div className="reg-legend">
             <span><span className="reg-code reg-code--present">P</span>Present</span>
-            <span><span className="reg-code reg-code--late">L</span>Late</span>
             <span><span className="reg-code reg-code--absent">A</span>Absent</span>
             <span><span className="reg-code reg-code--upcoming">-</span>Not taken</span>
           </div>
@@ -191,18 +190,25 @@ export default function Heatmap({ classGroupId, className }) {
               <thead>
                 <tr>
                   <th className="reg-table__name">Student</th>
-                  {days.map((d) => (
-                    <th
-                      key={d.date}
-                      className={`reg-table__day${d.date === today ? ' is-today' : ''}`}
-                      title={parseISO(d.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
-                    >
-                      <span>{mode === 'month' ? d.label[0] : d.label}</span>
-                      <b>{Number(d.date.slice(8, 10))}</b>
-                    </th>
-                  ))}
+                  {days.map((d) => {
+                    const long = parseISO(d.date).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+                    const head = (
+                      <>
+                        <span>{mode === 'month' ? d.label[0] : d.label}</span>
+                        <b>{Number(d.date.slice(8, 10))}</b>
+                      </>
+                    );
+                    return (
+                      <th key={d.date} className={`reg-table__day${d.date === today ? ' is-today' : ''}`} title={long}>
+                        {onOpenDay && d.date <= today ? (
+                          <button type="button" className="reg-table__daybtn" onClick={() => onOpenDay(d.date)} aria-label={`Open the register for ${long}`}>
+                            {head}
+                          </button>
+                        ) : head}
+                      </th>
+                    );
+                  })}
                   <th className="reg-table__num">P</th>
-                  <th className="reg-table__num">L</th>
                   <th className="reg-table__num">A</th>
                   <th className="reg-table__rate">Attendance</th>
                 </tr>
@@ -226,7 +232,6 @@ export default function Heatmap({ classGroupId, className }) {
                         </td>
                       ))}
                       <td className="reg-table__num">{totals.present}</td>
-                      <td className="reg-table__num">{totals.late}</td>
                       <td className={`reg-table__num${totals.absent ? ' is-absent' : ''}`}>{totals.absent}</td>
                       <td className="reg-table__rate">
                         <span className={`reg-rate${low ? ' reg-rate--low' : ''}`}>
@@ -245,7 +250,8 @@ export default function Heatmap({ classGroupId, className }) {
         )}
       </div>
       <p className="footnote">
-        P present, L late (counts as attended), A absent. A past school day with no record counts as absent.
+        P present, A absent. A past school day with no record counts as absent.
+        {onOpenDay ? ' Tap a date to open that day\'s register.' : ''}
         Attendance below {Math.round(LOW_RATE * 100)}% is marked.
       </p>
     </>
