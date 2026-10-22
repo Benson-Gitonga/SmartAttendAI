@@ -1,0 +1,37 @@
+# Render Blueprint: one web service from the root Dockerfile, which serves the
+# PWA and /api from one address (same image as Railway).
+#
+# The free plan has no persistent disk, so the SQLite file lives in the
+# container and is wiped on every deploy and spin-down; demo data is re-seeded
+# on start. To keep data, switch to plan: starter, uncomment the disk below and
+# set DB_PATH to /data/smartattend.db.
+services:
+  - type: web
+    name: smartattend
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    # disk:
+    #   name: smartattend-data
+    #   mountPath: /data
+    #   sizeGB: 1
+    envVars:
+      - key: DB_PATH
+        value: /app/server/data/smartattend.db
+      - key: AUTH_TOKEN_SECRET
+        generateValue: true
+      - key: SYSTEM_ADMIN_TOKEN_SECRET
+        generateValue: true
+      - key: SYSTEM_ADMIN_USERNAME
+        sync: false
+      - key: SYSTEM_ADMIN_PASSWORD_HASH
+        sync: false
+      - key: MAIL_TRANSPORT
+        value: brevo
+      - key: MAIL_FROM
+        sync: false
+      - key: BREVO_API_KEY
+        sync: false

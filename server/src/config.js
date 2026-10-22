@@ -70,8 +70,9 @@ export const config = {
     brevoApiKey: process.env.BREVO_API_KEY || '',
   },
 
-  // Where the PWA lives, for the links in emails.
-  appUrl: (process.env.APP_URL || 'http://localhost:5173').replace(/\/+$/, ''),
+  // Where the PWA lives, for the links in emails. On Render, the service's own
+  // address is used when APP_URL is not set.
+  appUrl: (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:5173').replace(/\/+$/, ''),
 
   // The one system admin account (src/auth/systemAdminAuth.js). Set with
   // `npm run sysadmin:set`; only a hash of the password is kept. With no username
