@@ -170,6 +170,20 @@ describe('password resets and disabling', () => {
     assert.equal((await send('POST', '/api/auth/login', { email: 'otieno@kibera.ac.ke', password: 'otieno-2026' })).status, 200);
   });
 
+  test('disabling frees the email for a new invite, and then the old account cannot be enabled', async () => {
+    const teacher = await activeTeacher();
+    await send('POST', `/api/admin/teachers/${teacher.userId}/disable`, {}, admin);
+
+    const { teachers } = await (await send('GET', '/api/admin/schools/school-1/teachers', undefined, admin)).json();
+    assert.equal(teachers.find((t) => t.userId === teacher.userId)?.email, 'otieno@kibera.ac.ke', 'still shown with their email');
+
+    const again = await invite();
+    assert.equal(again.status, 201);
+    const on = await send('POST', `/api/admin/teachers/${teacher.userId}/enable`, {}, admin);
+    assert.equal(on.status, 409);
+    assert.equal(db.prepare(`SELECT status FROM users WHERE user_id = ?`).get(teacher.userId).status, 'disabled');
+  });
+
   test('re-enabling a teacher who never set a password puts them back to invited', async () => {
     const { teacher } = await (await invite()).json();
     await send('POST', `/api/admin/teachers/${teacher.userId}/disable`, {}, admin);

@@ -196,7 +196,7 @@ function seedExtraClasses(db) {
   const insertTeacher = db.prepare(
     `INSERT INTO users (user_id, email, full_name, job_title, role, school_id, password_hash)
      VALUES (@user_id, @email, @full_name, @job_title, 'teacher', @school_id, @password_hash)
-     ON CONFLICT(email) DO NOTHING`
+     ON CONFLICT DO NOTHING`
   );
   const passwordHash = hashPassword(DEMO_PASSWORD);
   for (const t of EXTRA_TEACHERS) {

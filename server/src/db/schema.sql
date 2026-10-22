@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS users (
   status          TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'invited', 'disabled')),
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
   last_sign_in_at TEXT,
-  email_verified_at TEXT                              -- set by an email link (confirm, set-up or reset)
+  email_verified_at TEXT,                             -- set by an email link (confirm, set-up or reset)
+  released_email  TEXT                                -- a disabled account's address, freed for reuse (email holds a placeholder)
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_school ON users(school_id);

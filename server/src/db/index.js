@@ -75,9 +75,16 @@ export function migrate(db) {
     db.exec(`UPDATE users SET email_verified_at = created_at`);
   }
 
-  // One school per code, except that a rejected school may apply again.
+  // A disabled account gives up its email so the person can apply or be invited again.
+  if (hasUsers && !hasColumn('users', 'released_email')) {
+    db.exec(`ALTER TABLE users ADD COLUMN released_email TEXT`);
+  }
+
+  // One school per code, except that a rejected or disabled school may apply again.
+  const codeIndex = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_schools_code'`).get();
+  if (codeIndex && !codeIndex.sql.includes("'inactive'")) db.exec(`DROP INDEX idx_schools_code`);
   db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_schools_code
-             ON schools(upper(school_code)) WHERE school_code IS NOT NULL AND status <> 'rejected'`);
+             ON schools(upper(school_code)) WHERE school_code IS NOT NULL AND status NOT IN ('rejected', 'inactive')`);
 }
 
 /**

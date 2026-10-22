@@ -175,11 +175,17 @@ export function createAdminRouter({ db, userAuth, emails }) {
 
   // Disabling signs the teacher out everywhere at once (their token is
   // re-checked on every request). Their classes stay assigned until changed.
+  // Disabling also frees their email; enabling is refused once it is taken.
   for (const [action, enabled] of [['disable', false], ['enable', true]]) {
     router.post(`/teachers/:userId/${action}`, (req, res) => {
       const teacher = teacherOr404(req, res);
       if (!teacher) return undefined;
-      res.json(setTeacherEnabled(db, teacher.userId, enabled, { actor: req.user.email }));
+      try {
+        res.json(setTeacherEnabled(db, teacher.userId, enabled, { actor: req.user.email }));
+      } catch (err) {
+        if (!(err instanceof RegistrationConflictError)) throw err;
+        res.status(409).json({ error: `${teacher.email} now belongs to another account, so this teacher cannot be enabled again.`, field: 'email' });
+      }
     });
   }
 

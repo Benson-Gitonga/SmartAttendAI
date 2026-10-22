@@ -160,8 +160,8 @@ export default function AdminTeachers({ onOpenClass }) {
             ? `Enable ${toggling.fullName} again?`
             : `Are you sure you want to disable ${toggling.fullName}?`}
           body={toggling.status === 'disabled'
-            ? 'They can sign in again with their password (or a new invite code if they never set one).'
-            : 'They are signed out on every device straight away and cannot sign in until you enable them. Their classes stay assigned until you change them.'}
+            ? 'They can sign in again with their password (or a new invite code if they never set one). This is refused if their email has been used for a new account since.'
+            : 'They are signed out on every device straight away and cannot sign in until you enable them. Their email is freed, so it can be invited again. Their classes stay assigned until you change them.'}
           confirmLabel={toggling.status === 'disabled' ? 'Yes, enable' : 'Yes, disable'}
           onCancel={() => setToggling(null)}
           onConfirm={async () => {

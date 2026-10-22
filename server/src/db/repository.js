@@ -273,7 +273,7 @@ export function findSchoolByName(db, name, county = null) {
         `SELECT ${SCHOOL_COLUMNS} FROM schools s
           WHERE lower(trim(s.name)) = lower(trim(?))
             AND coalesce(lower(s.county), '') = coalesce(lower(?), '')
-            AND s.status <> 'rejected'`
+            AND s.status NOT IN ('rejected', 'inactive')`
       )
       .get(name, county) ?? null
   );
@@ -294,7 +294,7 @@ export function findSchoolByCode(db, schoolCode) {
   return (
     db
       .prepare(`SELECT ${SCHOOL_COLUMNS} FROM schools s
-                 WHERE upper(s.school_code) = upper(trim(?)) AND s.status <> 'rejected'`)
+                 WHERE upper(s.school_code) = upper(trim(?)) AND s.status NOT IN ('rejected', 'inactive')`)
       .get(schoolCode) ?? null
   );
 }
@@ -369,7 +369,9 @@ export function registerSchoolApplication(db, school, applicant) {
 // School staff accounts. Password hashes never leave this file except to the
 // sign-in check (findUserForSignIn).
 
-const USER_COLUMNS = `u.user_id AS userId, u.email, u.full_name AS fullName, u.phone,
+// A released email is still shown (and still gets a rejection email), but
+// lookups by email only match u.email, so it is free for a new account.
+const USER_COLUMNS = `u.user_id AS userId, coalesce(u.released_email, u.email) AS email, u.full_name AS fullName, u.phone,
   u.job_title AS jobTitle, u.role, u.school_id AS schoolId, u.status,
   u.created_at AS createdAt, u.last_sign_in_at AS lastSignInAt, u.email_verified_at AS emailVerifiedAt`;
 
@@ -398,6 +400,28 @@ export function getUser(db, userId) {
 
 export function findUserByEmail(db, email) {
   return db.prepare(`SELECT ${USER_COLUMNS} FROM users u WHERE u.email = trim(?)`).get(String(email)) ?? null;
+}
+
+/**
+ * Free the emails of disabled accounts, so the same person can apply or be
+ * invited again. The address moves to released_email and a placeholder that
+ * no one can type takes its place. Accounts already released are left alone.
+ */
+function releaseEmails(db, where, ...params) {
+  db.prepare(
+    `UPDATE users SET released_email = email, email = 'released:' || user_id
+      WHERE released_email IS NULL AND ${where}`
+  ).run(...params);
+}
+
+/** Give an account its email back. Throws RegistrationConflictError('email') when someone has taken it since. */
+function restoreEmail(db, userId) {
+  const { released } = db.prepare(`SELECT released_email AS released FROM users WHERE user_id = ?`).get(userId);
+  if (!released) return;
+  if (findUserByEmail(db, released)) {
+    throw new RegistrationConflictError('email', `${released} now belongs to another account`);
+  }
+  db.prepare(`UPDATE users SET email = released_email, released_email = NULL WHERE user_id = ?`).run(userId);
 }
 
 /** The user plus their password hash, for checking a sign-in only. */
@@ -502,10 +526,24 @@ const TRANSITION_ACTIONS = {
   'inactive>active': 'school.enabled',
 };
 
+/** Re-enabling a school whose name, code or admin email has since been taken by a new application. */
+export class SchoolReopenConflictError extends SchoolTransitionError {
+  constructor(reason) {
+    super('inactive', 'active');
+    this.message = `this school cannot be enabled again: ${reason}`;
+  }
+}
+
 /**
  * Move a school to a new status. Returns null for an unknown school and throws
  * SchoolTransitionError for a change that is not allowed (e.g. enabling a
  * school that was never approved).
+ *
+ * Rejecting or disabling a school frees its name, code and every account's
+ * email, so the school can apply again. Enabling it takes them back: an
+ * admin's email or the school's name or code taken in the meantime refuses the
+ * change (SchoolReopenConflictError); a teacher whose email was taken stays
+ * disabled.
  */
 export function changeSchoolStatus(db, schoolId, status, { actor = null, note = null } = {}) {
   if (!SCHOOL_STATUSES.includes(status)) throw new Error(`invalid status: ${status}`);
@@ -515,18 +553,46 @@ export function changeSchoolStatus(db, schoolId, status, { actor = null, note = 
     throw new SchoolTransitionError(school.status, status);
   }
 
-  db.prepare(
-    `UPDATE schools
-        SET status = @status, review_note = @note, reviewed_by = @actor, reviewed_at = datetime('now')
-      WHERE school_id = @schoolId`
-  ).run({ schoolId, status, note: note?.trim() || null, actor });
-  logAudit(db, {
-    action: TRANSITION_ACTIONS[`${school.status}>${status}`],
-    actorId: actor,
-    recordId: schoolId,
-    detail: { from: school.status, to: status, note: note?.trim() || null },
-  });
+  db.transaction(() => {
+    if (school.status === 'inactive' && status === 'active') reopenSchool(db, school);
+    db.prepare(
+      `UPDATE schools
+          SET status = @status, review_note = @note, reviewed_by = @actor, reviewed_at = datetime('now')
+        WHERE school_id = @schoolId`
+    ).run({ schoolId, status, note: note?.trim() || null, actor });
+    // A teacher disabled on their own keeps status 'disabled', which is how
+    // reopenSchool tells them apart from those freed with the school.
+    if (status === 'inactive' || status === 'rejected') releaseEmails(db, 'school_id = ?', schoolId);
+    logAudit(db, {
+      action: TRANSITION_ACTIONS[`${school.status}>${status}`],
+      actorId: actor,
+      recordId: schoolId,
+      detail: { from: school.status, to: status, note: note?.trim() || null },
+    });
+  })();
   return getSchool(db, schoolId);
+}
+
+function reopenSchool(db, school) {
+  if (school.schoolCode && findSchoolByCode(db, school.schoolCode)) {
+    throw new SchoolReopenConflictError(`another school has registered the code ${school.schoolCode}`);
+  }
+  if (findSchoolByName(db, school.name, school.county ?? null)) {
+    throw new SchoolReopenConflictError(`another school called ${school.name} has registered in this county`);
+  }
+  const freed = db
+    .prepare(`SELECT user_id AS userId, role FROM users
+               WHERE school_id = ? AND released_email IS NOT NULL AND status <> 'disabled'`)
+    .all(school.schoolId);
+  for (const user of freed) {
+    try {
+      restoreEmail(db, user.userId);
+    } catch (err) {
+      if (!(err instanceof RegistrationConflictError)) throw err;
+      if (user.role === 'admin') throw new SchoolReopenConflictError(err.message);
+      db.prepare(`UPDATE users SET status = 'disabled' WHERE user_id = ?`).run(user.userId);
+    }
+  }
 }
 
 export const approveSchool = (db, schoolId, opts) => changeSchoolStatus(db, schoolId, 'active', opts);
@@ -805,7 +871,7 @@ const ABSENCE_REASON_VALUES = ['fee', 'health', 'other', 'unknown'];
 export function getTeachersForSchool(db, schoolId) {
   const teachers = db
     .prepare(
-      `SELECT user_id AS userId, email, full_name AS fullName, phone, job_title AS jobTitle, status,
+      `SELECT user_id AS userId, coalesce(released_email, email) AS email, full_name AS fullName, phone, job_title AS jobTitle, status,
               last_sign_in_at AS lastSignInAt
          FROM users WHERE school_id = ? AND role = 'teacher' ORDER BY full_name`
     )
@@ -1159,7 +1225,7 @@ export function lookupSetupCode(db, code, now = Date.now()) {
   const row = db
     .prepare(
       `SELECT sc.id, sc.purpose, sc.expires_at AS expiresAt, sc.used_at AS usedAt, sc.revoked_at AS revokedAt,
-              u.user_id AS userId, u.email, u.full_name AS fullName, u.role, u.status AS userStatus,
+              u.user_id AS userId, coalesce(u.released_email, u.email) AS email, u.full_name AS fullName, u.role, u.status AS userStatus,
               s.school_id AS schoolId, s.name AS schoolName
          FROM setup_codes sc
          JOIN users u ON u.user_id = sc.user_id
@@ -1209,16 +1275,22 @@ export function getSchoolTeacher(db, schoolId, userId) {
   return user && user.schoolId === schoolId && user.role === 'teacher' ? user : null;
 }
 
-/** Disable or re-enable a teacher. Disabling also revokes any open code. */
+/**
+ * Disable or re-enable a teacher. Disabling also revokes any open code and
+ * frees their email; enabling takes it back, or throws
+ * RegistrationConflictError('email') when another account has it now.
+ */
 export function setTeacherEnabled(db, userId, enabled, { actor = null } = {}) {
   const user = getUser(db, userId);
   if (!user) return null;
   const hasPassword = db.prepare(`SELECT password_hash IS NOT NULL AS has FROM users WHERE user_id = ?`).get(userId).has === 1;
   const status = enabled ? (hasPassword ? 'active' : 'invited') : 'disabled';
   db.transaction(() => {
+    if (enabled) restoreEmail(db, userId);
     db.prepare(`UPDATE users SET status = ? WHERE user_id = ?`).run(status, userId);
     if (!enabled) {
       db.prepare(`UPDATE setup_codes SET revoked_at = datetime('now') WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL`).run(userId);
+      releaseEmails(db, 'user_id = ?', userId);
     }
     logAudit(db, { action: enabled ? 'user.enabled' : 'user.disabled', actorId: actor, recordId: userId });
   })();
@@ -1275,7 +1347,7 @@ export function lookupEmailToken(db, token, now = Date.now()) {
   const row = db
     .prepare(
       `SELECT t.id, t.purpose, t.expires_at AS expiresAt, t.used_at AS usedAt, t.revoked_at AS revokedAt,
-              u.user_id AS userId, u.email, u.full_name AS fullName, u.role, u.status AS userStatus,
+              u.user_id AS userId, coalesce(u.released_email, u.email) AS email, u.full_name AS fullName, u.role, u.status AS userStatus,
               (u.password_hash IS NOT NULL) AS hasPassword,
               s.school_id AS schoolId, s.name AS schoolName, s.status AS schoolStatus
          FROM email_tokens t

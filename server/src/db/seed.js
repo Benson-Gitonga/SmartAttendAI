@@ -84,11 +84,12 @@ export function seed(db) {
     );
     for (const school of PENDING_SCHOOLS) insertPending.run(school);
 
-    // Inserted once; a re-seed never resets a password someone changed.
+    // Inserted once; a re-seed never resets a password someone changed, or
+    // brings back a disabled account whose email was freed.
     const insertUser = db.prepare(
       `INSERT INTO users (user_id, email, full_name, job_title, role, school_id, password_hash)
        VALUES (@user_id, @email, @full_name, @job_title, @role, @school_id, @password_hash)
-       ON CONFLICT(email) DO NOTHING`
+       ON CONFLICT DO NOTHING`
     );
     const passwordHash = hashPassword(DEMO_PASSWORD);
     for (const user of DEMO_USERS) {

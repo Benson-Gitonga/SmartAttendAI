@@ -181,6 +181,13 @@ describe('POST /api/schools/register', () => {
     assert.notEqual(body.school.schoolId, first.body.school.schoolId);
   });
 
+  test('a rejected school can apply again with the same email', async () => {
+    const first = await register();
+    await post(`/api/system-admin/schools/${first.body.school.schoolId}/reject`, { note: 'Missing documents' });
+    const { res } = await register();
+    assert.equal(res.status, 201);
+  });
+
   test('a failed application leaves nothing behind', async () => {
     await register();
     await register({ name: 'Renamed School' }, { email: 'other@example.com' }); // 409 on the code
@@ -319,6 +326,27 @@ describe('approval flow', () => {
 
     const actions = db.prepare(`SELECT action FROM audit_log WHERE record_id = ? ORDER BY id`).all(schoolId).map((r) => r.action);
     assert.deepEqual(actions, ['school.registered', 'school.approved', 'school.disabled', 'school.enabled']);
+  });
+
+  test('enabling a disabled school gives its admin their email back', async () => {
+    await post(`/api/system-admin/schools/${schoolId}/approve`);
+    await post(`/api/system-admin/schools/${schoolId}/disable`);
+    assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM users WHERE email = 'g.achieng@kisumuday.ac.ke'`).get().n, 0);
+
+    assert.equal((await post(`/api/system-admin/schools/${schoolId}/enable`)).status, 200);
+    assert.equal(db.prepare(`SELECT school_id FROM users WHERE email = 'g.achieng@kisumuday.ac.ke'`).get().school_id, schoolId);
+  });
+
+  test('a disabled school can apply again, and then the old one cannot be enabled', async () => {
+    await post(`/api/system-admin/schools/${schoolId}/approve`);
+    await post(`/api/system-admin/schools/${schoolId}/disable`, { note: 'Subscription lapsed' });
+
+    const { res } = await register();
+    assert.equal(res.status, 201, 'same name, code and email');
+
+    const on = await post(`/api/system-admin/schools/${schoolId}/enable`);
+    assert.equal(on.status, 409);
+    assert.equal(statusOf(), 'inactive');
   });
 
   for (const [label, action] of [
