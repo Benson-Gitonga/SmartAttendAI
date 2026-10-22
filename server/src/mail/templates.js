@@ -87,8 +87,8 @@ export function schoolRejectedEmail({ fullName, schoolName, reason }) {
   };
 }
 
-/** A school admin invited a teacher. The code is the fallback for teachers who cannot open the link. */
-export function teacherInviteEmail({ fullName, schoolName, invitedBy, link, code }) {
+/** A school admin invited a teacher: a link to set up their account. */
+export function teacherInviteEmail({ fullName, schoolName, invitedBy, link }) {
   return {
     subject: `${schoolName} invited you to SmartAttend`,
     link,
@@ -97,7 +97,6 @@ export function teacherInviteEmail({ fullName, schoolName, invitedBy, link, code
       paragraphs: [
         `${invitedBy ? `${invitedBy} has` : 'Your school admin has'} added you as a teacher at ${schoolName} on SmartAttend, where you take your class register.`,
         'Set a password to finish setting up your account. The link works for 7 days.',
-        ...(code ? [`Or open SmartAttend, choose "I have an invite code" and enter: ${code}`] : []),
       ],
       button: 'Set up your account',
       link,

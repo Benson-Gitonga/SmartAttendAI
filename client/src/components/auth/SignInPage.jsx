@@ -6,7 +6,7 @@ import { PUBLIC_PAGES } from './publicRoute';
 
 /**
  * Sign-in for everyone: school staff with their email, the system admin with
- * their username (no @). Applying, invite codes and forgotten passwords are
+ * their username (no @). Applying and forgotten passwords are
  * links off this page, not part of it.
  */
 export default function SignInPage({ notice = null, initialEmail = '' }) {
@@ -71,11 +71,6 @@ export default function SignInPage({ notice = null, initialEmail = '' }) {
         <button className="pub-btn pub-btn--primary pub-btn--block" type="submit" disabled={busy || !online || !email.trim() || !password}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
-
-
-        <p className="pub-alt">
-          Teacher with an invite code? <a className="pub-link" href={PUBLIC_PAGES.join}>Enter your code</a>
-        </p>
       </form>
 
       <div className="pub-card__foot">

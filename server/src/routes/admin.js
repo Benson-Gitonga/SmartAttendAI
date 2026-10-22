@@ -125,8 +125,8 @@ export function createAdminRouter({ db, userAuth, emails }) {
   });
 
   // Invite a teacher: an account with no password yet. They get an email with
-  // a set-up link; the one-time code (shown only once) is the fallback the
-  // admin can pass on by WhatsApp, SMS or paper.
+  // a set-up link; the code returned (shown only once) makes the #/join link
+  // the admin can also send by WhatsApp or SMS.
   router.post('/schools/:schoolId/teachers', async (req, res, next) => {
     const { valid, errors } = validate(inviteTeacherSchema, req.body ?? {});
     if (!valid) return invalid(res, errors);
@@ -141,7 +141,7 @@ export function createAdminRouter({ db, userAuth, emails }) {
     }
     try {
       const { teacher, code, expiresAt } = invite;
-      const { sent } = await emails.teacherInvite(teacher, { invitedBy: req.user.fullName, code });
+      const { sent } = await emails.teacherInvite(teacher, { invitedBy: req.user.fullName });
       res.status(201).json({ teacher, code, expiresAt, purpose: 'invite', emailSent: sent });
     } catch (err) {
       next(err);
@@ -165,7 +165,7 @@ export function createAdminRouter({ db, userAuth, emails }) {
       const purpose = teacher.status === 'invited' ? 'invite' : 'reset';
       const issued = issueSetupCode(db, { userId: teacher.userId, purpose, createdBy: req.user.email });
       const { sent } = purpose === 'invite'
-        ? await emails.teacherInvite(teacher, { invitedBy: req.user.fullName, code: issued.code })
+        ? await emails.teacherInvite(teacher, { invitedBy: req.user.fullName })
         : await emails.passwordReset(teacher);
       res.status(201).json({ teacher, ...issued, emailSent: sent });
     } catch (err) {

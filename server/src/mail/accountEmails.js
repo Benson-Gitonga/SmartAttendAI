@@ -55,11 +55,11 @@ export function createAccountEmails({ db, mailer, appUrl }) {
     return { sent: results.length > 0 && results.every((r) => r.sent) };
   }
 
-  /** A teacher's invite, with the admin-visible code as a fallback. */
-  function teacherInvite(teacher, { invitedBy, code } = {}) {
+  /** A teacher's invite: a link to set up their account. */
+  function teacherInvite(teacher, { invitedBy } = {}) {
     const school = getSchool(db, teacher.schoolId);
     return send(teacher.email, teacherInviteEmail({
-      fullName: teacher.fullName, schoolName: school?.name ?? 'your school', invitedBy, code, link: link(teacher.userId, 'setup', EMAIL_TOKEN_TTL_MS.invite),
+      fullName: teacher.fullName, schoolName: school?.name ?? 'your school', invitedBy, link: link(teacher.userId, 'setup', EMAIL_TOKEN_TTL_MS.invite),
     }));
   }
 

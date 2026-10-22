@@ -34,7 +34,7 @@ export default function ForgotPasswordPage() {
         <h1 className="pub-title">Check your email</h1>
         <Alert tone="info">{sent}</Alert>
         <p className="pub-sub">
-          The link works for 1 hour. Teachers can also ask their school admin for a new invite code.
+          The link works for 1 hour. Teachers can also ask their school admin for a new link.
         </p>
         <div className="pub-card__foot">
           <a className="pub-link" href={PUBLIC_PAGES.signin}>Back to sign in</a>

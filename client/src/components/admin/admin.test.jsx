@@ -209,7 +209,7 @@ describe('AdminTeachers', () => {
     expect(onOpenClass).toHaveBeenCalledWith('class-3b');
   });
 
-  it('invites a teacher and shows the code once, ready to send', async () => {
+  it('invites a teacher and shows the link, ready to send', async () => {
     const user = userEvent.setup();
     const expiresAt = new Date(Date.now() + 7 * 86_400_000).toISOString();
     api.inviteTeacher.mockResolvedValue({ teacher: INVITED, code: 'K7QM-4XPA', expiresAt, purpose: 'invite' });
@@ -226,10 +226,10 @@ describe('AdminTeachers', () => {
     expect(api.inviteTeacher).toHaveBeenCalledWith('school-1', { fullName: 'Mr. Kamau', email: 'kamau@kibera.ac.ke', phone: '0711222333' });
 
     const shown = await screen.findByRole('dialog', { name: 'Mr. Kamau is invited' });
-    expect(within(shown).getByLabelText('Invite code')).toHaveTextContent('K7QM-4XPA');
+    expect(within(shown).queryByLabelText('Invite code')).not.toBeInTheDocument();
     const wa = within(shown).getByRole('link', { name: 'WhatsApp' });
     expect(wa.getAttribute('href').startsWith('https://wa.me/254711222333?text=')).toBe(true);
-    expect(decodeURIComponent(wa.getAttribute('href'))).toContain('K7QM-4XPA');
+    expect(decodeURIComponent(wa.getAttribute('href'))).toContain('/#/join/K7QM-4XPA');
     expect(within(shown).getByRole('link', { name: 'SMS' }).getAttribute('href').startsWith('sms:0711222333?&body=')).toBe(true);
     expect(within(shown).getByRole('link', { name: 'Email' }).getAttribute('href').startsWith('mailto:kamau@kibera.ac.ke?subject=')).toBe(true);
   });
@@ -246,7 +246,7 @@ describe('AdminTeachers', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('already has a SmartAttend account');
   });
 
-  it('shows invited teachers and gives them a new code', async () => {
+  it('shows invited teachers and sends them a new link', async () => {
     const user = userEvent.setup();
     api.getTeachers.mockResolvedValue([OTIENO, INVITED]);
     api.newTeacherCode.mockResolvedValue({ teacher: INVITED, code: 'ABCD-EFGH', expiresAt: new Date().toISOString(), purpose: 'invite' });
@@ -254,9 +254,10 @@ describe('AdminTeachers', () => {
     const card = (await screen.findByText('Mr. Kamau')).closest('article');
     expect(within(card).getByText('Invited')).toBeInTheDocument();
     expect(within(card).getByText(/Invite sent/)).toBeInTheDocument();
-    await user.click(within(card).getByRole('button', { name: /New invite code/ }));
+    await user.click(within(card).getByRole('button', { name: /Send new link/ }));
     expect(api.newTeacherCode).toHaveBeenCalledWith('user-new');
-    expect(await screen.findByLabelText('Invite code')).toHaveTextContent('ABCD-EFGH');
+    const shown = await screen.findByRole('dialog', { name: 'Mr. Kamau is invited' });
+    expect(decodeURIComponent(within(shown).getByRole('link', { name: 'WhatsApp' }).getAttribute('href'))).toContain('/#/join/ABCD-EFGH');
   });
 
   it('resets a password for a teacher who has signed in', async () => {

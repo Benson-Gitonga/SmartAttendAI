@@ -34,12 +34,12 @@ const LINK_PROBLEMS = {
 
 const FORGOT_REPLY = 'If that email has a SmartAttend account, we have sent it a link. Check your inbox and spam folder.';
 
-// Why a code cannot be used, in words a teacher can act on.
+// Why a set-up link (#/join/CODE) cannot be used, in words a teacher can act on.
 const CODE_PROBLEMS = {
-  unknown: [404, 'That code is not right. Check it with your school admin.'],
-  used: [410, 'That code has already been used. Sign in with your password, or ask your school admin for a new code.'],
-  revoked: [410, 'That code no longer works. Ask your school admin for a new one.'],
-  expired: [410, 'That code has expired. Ask your school admin for a new one.'],
+  unknown: [404, 'This link is not valid. Ask your school admin for a new one.'],
+  used: [410, 'This link has already been used. Sign in with your password, or ask your school admin for a new link.'],
+  revoked: [410, 'This link no longer works. Ask your school admin for a new one.'],
+  expired: [410, 'This link has expired. Ask your school admin for a new one.'],
 };
 
 export function createAuthRouter({

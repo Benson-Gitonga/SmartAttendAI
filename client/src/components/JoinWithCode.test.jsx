@@ -14,15 +14,10 @@ beforeEach(() => {
 });
 
 describe('JoinWithCode', () => {
-  it('checks the code, says who it is for, then sets the password', async () => {
+  it('checks the link, says who it is for, then sets the password', async () => {
     const user = userEvent.setup();
     lookupSetupCode.mockResolvedValue(INVITE);
-    render(<JoinWithCode onBack={jest.fn()} />);
-
-    const input = screen.getByLabelText('Invite code');
-    await user.type(input, 'k7qm4xpa');
-    expect(input).toHaveValue('K7QM-4XPA');
-    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    render(<JoinWithCode initialCode="k7qm4xpa" onBack={jest.fn()} />);
     expect(lookupSetupCode).toHaveBeenCalledWith('K7QM-4XPA');
 
     expect(await screen.findByRole('heading', { name: 'Welcome, Mary' })).toBeInTheDocument();
@@ -39,13 +34,17 @@ describe('JoinWithCode', () => {
     expect(await screen.findByRole('heading', { name: 'Welcome, Mary' })).toBeInTheDocument();
   });
 
-  it('explains a code that does not work', async () => {
-    const user = userEvent.setup();
-    lookupSetupCode.mockRejectedValue(Object.assign(new Error('That code has expired. Ask your school admin for a new one.'), { code: 'CODE', state: 'expired' }));
-    render(<JoinWithCode onBack={jest.fn()} />);
-    await user.type(screen.getByLabelText('Invite code'), 'K7QM4XPA');
-    await user.click(screen.getByRole('button', { name: 'Continue' }));
+  it('explains a link that does not work', async () => {
+    lookupSetupCode.mockRejectedValue(Object.assign(new Error('This link has expired. Ask your school admin for a new one.'), { code: 'CODE', state: 'expired' }));
+    render(<JoinWithCode initialCode="K7QM-4XPA" onBack={jest.fn()} />);
     expect(await screen.findByRole('alert')).toHaveTextContent('expired');
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+  });
+
+  it('a page with no code in it says the link does not work', () => {
+    render(<JoinWithCode onBack={jest.fn()} />);
+    expect(screen.getByRole('heading', { name: 'This link does not work' })).toBeInTheDocument();
+    expect(lookupSetupCode).not.toHaveBeenCalled();
   });
 
   it('checks the passwords on the device first', async () => {
@@ -59,7 +58,7 @@ describe('JoinWithCode', () => {
     expect(mockAuth.joinWithCode).not.toHaveBeenCalled();
   });
 
-  it('a reset code says so', async () => {
+  it('a reset link says so', async () => {
     lookupSetupCode.mockResolvedValue({ ...INVITE, purpose: 'reset' });
     render(<JoinWithCode initialCode="K7QM-4XPA" onBack={jest.fn()} />);
     expect(await screen.findByRole('heading', { name: 'Choose a new password, Mary' })).toBeInTheDocument();

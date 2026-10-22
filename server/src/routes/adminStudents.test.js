@@ -167,7 +167,7 @@ describe('the scan station', () => {
 });
 
 describe('teacher invites by email', () => {
-  test('the invite is emailed with a set-up link and the code', async () => {
+  test('the invite is emailed with a set-up link and no code', async () => {
     const res = await send('POST', '/api/admin/schools/school-1/teachers', admin, { fullName: 'Ms. Otieno', email: 'otieno@kibera.ac.ke' });
     const body = await res.json();
     assert.equal(res.status, 201);
@@ -175,7 +175,7 @@ describe('teacher invites by email', () => {
     const [email] = mailer.outbox();
     assert.equal(email.to, 'otieno@kibera.ac.ke');
     assert.match(email.link, /#\/set-password\//);
-    assert.ok(email.text.includes(body.code), 'the code is in the email as a fallback');
+    assert.ok(!email.text.includes(body.code), 'only the link, no code to type');
 
     const set = await send('POST', '/api/auth/set-password', { 'content-type': 'application/json' }, {
       token: email.link.split('/').pop(), password: 'teacher-pass-1',

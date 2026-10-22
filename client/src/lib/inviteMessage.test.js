@@ -3,12 +3,11 @@ import { inviteMessage, shareLinks, internationalPhone, joinLink } from './invit
 describe('invite messages', () => {
   const base = { fullName: 'Mr. Kamau', schoolName: 'Kibera Secondary School', code: 'K7QM-4XPA', expiresAt: '2026-10-26T09:00:00Z', origin: 'https://app.smartattend.ke' };
 
-  it('includes the school, the code, a link and how long it lasts', () => {
+  it('includes the school, the link and how long it lasts, with no code to type', () => {
     const text = inviteMessage(base);
     expect(text).toContain('Kibera Secondary School');
-    expect(text).toContain('K7QM-4XPA');
     expect(text).toContain('https://app.smartattend.ke/#/join/K7QM-4XPA');
-    expect(text).toContain('I have an invite code');
+    expect(text.replace('#/join/K7QM-4XPA', '')).not.toContain('K7QM-4XPA');
     expect(text).toMatch(/until/);
   });
 

@@ -42,7 +42,7 @@ const ACTIONS = {
   reject: {
     label: 'Reject', run: rejectSchool, tone: 'danger', Icon: XCircleIcon, note: 'required',
     title: (s) => `Are you sure you want to reject ${s.name}?`,
-    body: 'The school admin will see your reason. A rejected school cannot be approved later, but they can apply again with the same email.',
+    body: 'The school admin will see your reason.',
     noteLabel: 'Reason for rejecting',
     notePlaceholder: 'e.g. We could not confirm this school with the county education office',
     confirm: 'Yes, reject',
@@ -51,7 +51,7 @@ const ACTIONS = {
   disable: {
     label: 'Disable', run: disableSchool, tone: 'danger', Icon: PowerIcon, note: 'optional',
     title: (s) => `Are you sure you want to disable ${s.name}?`,
-    body: 'Its staff will be locked out of the dashboard and the server will stop accepting its records until you enable it again. Records already on their devices are kept. Their emails are freed, so the school can apply again.',
+    body: 'Its staff will be signed out until you enable it again.',
     noteLabel: 'Reason (optional)',
     notePlaceholder: 'e.g. Subscription not renewed',
     confirm: 'Yes, disable',
@@ -60,7 +60,7 @@ const ACTIONS = {
   enable: {
     label: 'Enable', run: enableSchool, tone: 'success', Icon: PowerIcon,
     title: (s) => `Are you sure you want to enable ${s.name} again?`,
-    body: 'The school goes live again, and its devices send any attendance they held while it was disabled. This is refused if the school has applied again since.',
+    body: 'Its staff can sign in again.',
     confirm: 'Yes, enable',
     done: (s) => `${s.name} enabled`,
   },

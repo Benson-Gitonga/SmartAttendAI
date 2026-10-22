@@ -11,35 +11,25 @@ const formatCode = (raw) => {
 };
 
 /**
- * A teacher (or anyone the school admin gave a code) sets their password.
- * Step 1: the code, which tells them who it is for. Step 2: a password.
- * The emailed link is the usual way in; the code is for teachers who got it
- * by WhatsApp, SMS or on paper. A link can carry the code (#/join/K7QM-4XPA).
+ * A teacher sets their password from the link the school admin sent by
+ * WhatsApp, SMS or email (#/join/K7QM-4XPA). The link says who it is for,
+ * then they choose a password.
  */
 export default function JoinWithCode({ initialCode = '', onBack }) {
   const { joinWithCode } = useAuth();
-  const [code, setCode] = useState(formatCode(initialCode));
-  const [invite, setInvite] = useState(null); // who the code is for
+  const code = formatCode(initialCode);
+  const [invite, setInvite] = useState(null); // who the link is for
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState(code.length === 9);
 
-  async function check(value = code) {
-    setError(null);
-    setBusy(true);
-    try {
-      setInvite(await lookupSetupCode(value));
-    } catch (err) {
-      setError(err.message ?? 'That code is not right.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // A link with the code in it goes straight to step 2.
   useEffect(() => {
-    if (formatCode(initialCode).length === 9) check(formatCode(initialCode));
+    if (code.length !== 9) return;
+    lookupSetupCode(code)
+      .then(setInvite)
+      .catch((err) => setError(err.message ?? 'This link is not valid.'))
+      .finally(() => setBusy(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -58,11 +48,7 @@ export default function JoinWithCode({ initialCode = '', onBack }) {
     return undefined;
   }
 
-  const back = invite ? (
-    <button type="button" className="pub-back pub-linkbtn" onClick={() => { setInvite(null); setError(null); }}>
-      ← Use a different code
-    </button>
-  ) : onBack ? (
+  const back = onBack ? (
     <button type="button" className="pub-back pub-linkbtn" onClick={onBack}>← Back to sign in</button>
   ) : (
     <a className="pub-back" href={PUBLIC_PAGES.signin}>← Back to sign in</a>
@@ -71,33 +57,16 @@ export default function JoinWithCode({ initialCode = '', onBack }) {
   if (!invite) {
     return (
       <AuthLayout>
-        <form onSubmit={(e) => { e.preventDefault(); check(); }} noValidate>
-          {back}
-          <h1 className="pub-title">Enter your invite code</h1>
-          <p className="pub-sub">
-            The 8-character code from your school admin. It works once and lasts 7 days. If you got an
-            invite email, its link does the same thing.
-          </p>
-          {error && <Alert>{error}</Alert>}
-          <Field id="join-code" label="Invite code">
-            <input
-              id="join-code"
-              className="pub-input pub-input--code"
-              type="text"
-              autoComplete="one-time-code"
-              autoCapitalize="characters"
-              spellCheck={false}
-              placeholder="XXXX-XXXX"
-              value={code}
-              onChange={(e) => setCode(formatCode(e.target.value))}
-              disabled={busy}
-              autoFocus
-            />
-          </Field>
-          <button className="pub-btn pub-btn--primary pub-btn--block" type="submit" disabled={busy || code.length !== 9}>
-            {busy ? 'Checking…' : 'Continue'}
-          </button>
-        </form>
+        {back}
+        {busy ? (
+          <p className="pub-sub">Checking your link…</p>
+        ) : (
+          <>
+            <h1 className="pub-title">This link does not work</h1>
+            <p className="pub-sub">Ask your school admin to send you a new one.</p>
+            {error && <Alert>{error}</Alert>}
+          </>
+        )}
       </AuthLayout>
     );
   }

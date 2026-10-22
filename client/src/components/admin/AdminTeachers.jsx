@@ -5,7 +5,7 @@ import { inviteMessage, shareLinks, joinLink } from '../../lib/inviteMessage';
 import { showToast } from '../../lib/toast';
 import ConfirmDialog from '../ConfirmDialog';
 import Avatar from '../Avatar';
-import { MailIcon, PhoneIcon, UsersIcon, KeypadIcon, PowerIcon, CheckCircleIcon } from '../icons';
+import { MailIcon, PhoneIcon, UsersIcon, PowerIcon, CheckCircleIcon } from '../icons';
 
 const KENYAN_PHONE = /^(\+254|0)[17]\d{8}$/;
 const classLabel = (c) => [c.grade, c.stream].filter(Boolean).join(' ') || 'Class';
@@ -23,7 +23,7 @@ const STATUS = {
   disabled: { label: 'Disabled', tone: 'absent' },
 };
 
-/** The school's teachers: invite them, give them a new code, disable or enable them. */
+/** The school's teachers: invite them, send a new link, disable or enable them. */
 export default function AdminTeachers({ onOpenClass }) {
   const { user } = useAuth();
   const schoolId = user?.schoolId;
@@ -50,7 +50,7 @@ export default function AdminTeachers({ onOpenClass }) {
       setIssued(await newTeacherCode(teacher.userId));
       await load();
     } catch (err) {
-      showToast(err.message ?? 'Could not make a new code', { tone: 'error' });
+      showToast(err.message ?? 'Could not make a new link', { tone: 'error' });
     }
   }
 
@@ -78,7 +78,7 @@ export default function AdminTeachers({ onOpenClass }) {
         <div className="ad-empty">
           <span className="ad-empty__icon"><UsersIcon size={24} /></span>
           <p className="ad-empty__title">No teachers yet</p>
-          <p className="ad-empty__text">Invite a teacher with their name and email. You will get a code to send them on WhatsApp, SMS or email.</p>
+          <p className="ad-empty__text">Invite a teacher with their name and email. They get a link to set up their account.</p>
           <button type="button" className="btn btn--sm" onClick={() => setInviting(true)}>+ Invite teacher</button>
         </div>
       )}
@@ -96,8 +96,8 @@ export default function AdminTeachers({ onOpenClass }) {
                     <span className="ad-person__meta">
                       {t.status === 'invited'
                         ? t.openCode && !t.openCode.expired
-                          ? `Invite sent · code works until ${shortDate(t.openCode.expiresAt)}`
-                          : 'Invite code has expired'
+                          ? `Invite sent · link works until ${shortDate(t.openCode.expiresAt)}`
+                          : 'Invite link has expired'
                         : lastSeen(t.lastSignInAt)}
                     </span>
                   </div>
@@ -121,7 +121,7 @@ export default function AdminTeachers({ onOpenClass }) {
                 <div className="ad-person__actions">
                   {t.status !== 'disabled' && (
                     <button type="button" className="btn btn--outline btn--sm" onClick={() => giveNewCode(t)}>
-                      <KeypadIcon size={15} /> {t.status === 'invited' ? 'New invite code' : 'Reset password'}
+                      <MailIcon size={15} /> {t.status === 'invited' ? 'Send new link' : 'Reset password'}
                     </button>
                   )}
                   <button
@@ -150,7 +150,7 @@ export default function AdminTeachers({ onOpenClass }) {
         />
       )}
 
-      {issued && <CodeDialog issued={issued} schoolName={user?.schoolName} onClose={() => setIssued(null)} />}
+      {issued && <LinkDialog issued={issued} schoolName={user?.schoolName} onClose={() => setIssued(null)} />}
 
       {toggling && (
         <ConfirmDialog
@@ -160,8 +160,8 @@ export default function AdminTeachers({ onOpenClass }) {
             ? `Enable ${toggling.fullName} again?`
             : `Are you sure you want to disable ${toggling.fullName}?`}
           body={toggling.status === 'disabled'
-            ? 'They can sign in again with their password (or a new invite code if they never set one). This is refused if their email has been used for a new account since.'
-            : 'They are signed out on every device straight away and cannot sign in until you enable them. Their email is freed, so it can be invited again. Their classes stay assigned until you change them.'}
+            ? 'They can sign in again.'
+            : 'They will be signed out straight away.'}
           confirmLabel={toggling.status === 'disabled' ? 'Yes, enable' : 'Yes, disable'}
           onCancel={() => setToggling(null)}
           onConfirm={async () => {
@@ -209,7 +209,7 @@ function InviteDialog({ schoolId, onClose, onInvited }) {
       tone="primary"
       Icon={UsersIcon}
       title="Invite a teacher"
-      body="You will get a one-time code to send them. They use it to choose their own password."
+      body="They get an email with a link to set up their account."
       confirmLabel="Create invite"
       busy={busy}
       error={error}
@@ -236,14 +236,14 @@ function InviteDialog({ schoolId, onClose, onInvited }) {
   );
 }
 
-/** The new code, shown once, with ways to send it. */
-function CodeDialog({ issued, schoolName, onClose }) {
-  const { teacher, code, expiresAt, purpose } = issued;
+/** The new set-up link, with ways to send it. */
+function LinkDialog({ issued, schoolName, onClose }) {
+  const { teacher, code, expiresAt, purpose, emailSent } = issued;
   const message = inviteMessage({ fullName: teacher.fullName, schoolName: schoolName || 'your school', code, expiresAt, purpose });
   const links = shareLinks({
     phone: teacher.phone,
     email: teacher.email,
-    subject: purpose === 'reset' ? 'Your SmartAttend password reset code' : 'Your SmartAttend invite',
+    subject: purpose === 'reset' ? 'Reset your SmartAttend password' : 'Your SmartAttend invite',
     message,
   });
 
@@ -260,19 +260,17 @@ function CodeDialog({ issued, schoolName, onClose }) {
     <ConfirmDialog
       tone="success"
       Icon={CheckCircleIcon}
-      title={purpose === 'reset' ? `New password code for ${teacher.fullName}` : `${teacher.fullName} is invited`}
-      body={`Send them this code. It works once, until ${new Date(expiresAt).toLocaleDateString('en-KE', { weekday: 'long', day: 'numeric', month: 'long' })}. You will not see it again, but you can always make a new one.`}
+      title={purpose === 'reset' ? `Password reset for ${teacher.fullName}` : `${teacher.fullName} is invited`}
+      body={emailSent ? 'We emailed them a link. You can also send it yourself.' : 'Send them this link.'}
       confirmLabel="Done"
       hideCancel
       onCancel={onClose}
       onConfirm={onClose}
     >
-      <div className="ad-code" aria-label="Invite code">{code}</div>
       <div className="ad-share">
         <a className="ad-share__btn ad-share__btn--wa" href={links.whatsapp} target="_blank" rel="noreferrer">WhatsApp</a>
         <a className="ad-share__btn" href={links.sms}>SMS</a>
         <a className="ad-share__btn" href={links.email}>Email</a>
-        <button type="button" className="ad-share__btn" onClick={() => copy(message, 'Message')}>Copy message</button>
         <button type="button" className="ad-share__btn" onClick={() => copy(joinLink(code), 'Link')}>Copy link</button>
       </div>
     </ConfirmDialog>

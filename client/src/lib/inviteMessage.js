@@ -1,5 +1,5 @@
 /**
- * The message a school admin sends a teacher with their one-time code, and
+ * The message a school admin sends a teacher with their one-time set-up link, and
  * links that open WhatsApp, SMS or email on the admin's own phone with it
  * filled in. Nothing is sent by SmartAttend itself, so it costs nothing.
  */
@@ -21,8 +21,8 @@ export function inviteMessage({ fullName, schoolName, code, expiresAt, purpose =
   const link = joinLink(code, origin);
   const first = String(fullName ?? '').trim() || 'there';
   return purpose === 'reset'
-    ? `Hi ${first}, here is a code to reset your SmartAttend password for ${schoolName}: ${code}\n\nOpen ${link} and choose a new password. The code works once, until ${until}.`
-    : `Hi ${first}, you have been added to SmartAttend for ${schoolName}.\n\nOpen ${link} to set your password, or open SmartAttend, tap "I have an invite code" and enter: ${code}\n\nThe code works once, until ${until}.`;
+    ? `Hi ${first}, open this link to reset your SmartAttend password for ${schoolName}:\n${link}\n\nIt works once, until ${until}.`
+    : `Hi ${first}, you have been added to SmartAttend for ${schoolName}. Open this link to set up your account:\n${link}\n\nIt works once, until ${until}.`;
 }
 
 /** { whatsapp, sms, email } hrefs with the message filled in. */
