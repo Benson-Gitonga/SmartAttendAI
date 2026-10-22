@@ -8,6 +8,10 @@
  *   MAIL_TRANSPORT=ses  sent with Amazon SES (v2 API). Needs MAIL_FROM (a
  *                       verified sender) and AWS credentials in the environment
  *                       (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION).
+ *   MAIL_TRANSPORT=brevo  sent with Brevo's HTTP API, for use until SES is set
+ *                       up. Needs BREVO_API_KEY and MAIL_FROM (a sender verified
+ *                       in Brevo). HTTP, not SMTP, so it also works on hosts that
+ *                       block outgoing SMTP.
  *
  * send() never throws: a failed email is logged and reported as { sent: false },
  * so a sign-up or an approval still goes through and the link can be resent.
@@ -16,18 +20,38 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const OUTBOX_SIZE = 50;
+const BREVO_URL = 'https://api.brevo.com/v3/smtp/email';
+
+/** "SmartAttend <no-reply@example.com>" -> { name, email }. */
+export function parseAddress(address) {
+  const match = /^\s*(.*?)\s*<([^>]+)>\s*$/.exec(address);
+  if (!match) return { email: address.trim() };
+  const name = match[1].replace(/^"|"$/g, '');
+  return name ? { name, email: match[2].trim() } : { email: match[2].trim() };
+}
 
 /**
  * @param {object} opts
- * @param {'log'|'ses'} [opts.transport]
+ * @param {'log'|'ses'|'brevo'} [opts.transport]
  * @param {string} [opts.from]     e.g. "SmartAttend <no-reply@example.com>"
  * @param {string} [opts.region]   SES region
+ * @param {string} [opts.brevoApiKey] Brevo API key
+ * @param {typeof fetch} [opts.fetchImpl] for Brevo (tests)
  * @param {boolean} [opts.quiet]   log transport: do not print (tests)
  * @param {string} [opts.outboxFile] log transport: keep the outbox in this JSON file, so a
  *                                  server restart (node --watch) does not lose the links
  * @param {(msg: object) => Promise<void>} [opts.sendImpl] replaces the transport (tests)
  */
-export function createMailer({ transport = 'log', from = 'SmartAttend <no-reply@smartattend.local>', region, quiet = false, outboxFile = null, sendImpl } = {}) {
+export function createMailer({
+  transport = 'log',
+  from = 'SmartAttend <no-reply@smartattend.local>',
+  region,
+  brevoApiKey = '',
+  fetchImpl = fetch,
+  quiet = false,
+  outboxFile = null,
+  sendImpl,
+} = {}) {
   const outbox = [];
   if (outboxFile) {
     try { outbox.push(...JSON.parse(readFileSync(outboxFile, 'utf8')).slice(0, OUTBOX_SIZE)); } catch { /* no outbox yet */ }
@@ -52,6 +76,26 @@ export function createMailer({ transport = 'log', from = 'SmartAttend <no-reply@
     }));
   }
 
+  async function sendWithBrevo({ to, subject, text, html }) {
+    if (!brevoApiKey) throw new Error('BREVO_API_KEY is not set');
+    const res = await fetchImpl(BREVO_URL, {
+      method: 'POST',
+      headers: { 'api-key': brevoApiKey, 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({
+        sender: parseAddress(from),
+        to: [{ email: to }],
+        subject,
+        textContent: text,
+        ...(html ? { htmlContent: html } : {}),
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(`Brevo answered ${res.status}${body.message ? `: ${body.message}` : ''}`);
+    }
+  }
+
   function keep(message) {
     outbox.unshift({ ...message, at: new Date().toISOString() });
     outbox.length = Math.min(outbox.length, OUTBOX_SIZE);
@@ -65,10 +109,11 @@ export function createMailer({ transport = 'log', from = 'SmartAttend <no-reply@
     try {
       if (sendImpl) await sendImpl(message);
       else if (transport === 'ses') await sendWithSes(message);
+      else if (transport === 'brevo') await sendWithBrevo(message);
       else if (!quiet) {
         console.log(`[mail] to ${message.to}: ${message.subject}${message.link ? `\n[mail]   ${message.link}` : ''}`);
       }
-      if (transport !== 'ses') keep(message);
+      if (transport === 'log') keep(message);
       return { sent: true };
     } catch (err) {
       console.error(`[mail] could not send "${message.subject}" to ${message.to}: ${err.message}`);

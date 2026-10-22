@@ -124,8 +124,12 @@ runs the server, which serves the app and `/api` from one address.
 4. Under **Settings → Networking**, choose **Generate Domain**. Railway gives
    it HTTPS, which the app needs for offline mode and the card scanner.
 
-Every push to the chosen branch then redeploys. Without Amazon SES, emails
-(set-up and reset links) are not sent; they appear in the service's logs.
+Every push to the chosen branch then redeploys.
+
+Emails (confirm, set-up and reset links) are only printed to the service's
+logs until a sender is set. Until Amazon SES is ready, use Brevo (free for
+300 emails a day): set `MAIL_TRANSPORT=brevo`, `BREVO_API_KEY`, and
+`MAIL_FROM=SmartAttend <you@example.com>` with a sender verified in Brevo.
 
 ## Tests
 

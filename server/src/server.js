@@ -25,7 +25,11 @@ const app = createApp({ db, cardHandler, mailer });
 const server = app.listen(config.port, () => {
   console.log(`SmartAttend server listening on http://localhost:${config.port}`);
   console.log(`  DB: ${config.dbPath}`);
-  console.log(`  Email: ${config.mail.transport === 'ses' ? `Amazon SES from ${config.mail.from}` : 'not sent, printed here and listed at /#/dev/outbox'}`);
+  const email = {
+    ses: `Amazon SES from ${config.mail.from}`,
+    brevo: `Brevo from ${config.mail.from}${config.mail.brevoApiKey ? '' : ' (no BREVO_API_KEY, nothing will send)'}`,
+  };
+  console.log(`  Email: ${email[config.mail.transport] ?? 'not sent, printed here and listed at /#/dev/outbox'}`);
   console.log(`  Demo data: ${demo ? `on, ${demo.schoolDays} school days back (${demo.records} new records)` : 'off (DEMO_DATA=false)'}`);
   console.log(`  Cloud sync: ${config.sync.apiUrl && !config.sync.workerDisabled ? config.sync.apiUrl : 'off, no SYNC_API_GATEWAY_URL (records wait in sync_queue)'}`);
   console.log(`  Gate device key: ${config.deviceApiKey ? 'required (DEVICE_API_KEY)' : 'off, /api/rfid/scan is open'}`);

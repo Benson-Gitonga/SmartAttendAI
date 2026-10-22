@@ -62,11 +62,12 @@ export const config = {
   },
 
   // Outgoing email (src/mail/mailer.js). 'log' prints each email and keeps it
-  // in the dev outbox; 'ses' sends it with Amazon SES.
+  // in the dev outbox; 'ses' sends it with Amazon SES; 'brevo' with Brevo.
   mail: {
-    transport: process.env.MAIL_TRANSPORT === 'ses' ? 'ses' : 'log',
+    transport: ['ses', 'brevo'].includes(process.env.MAIL_TRANSPORT) ? process.env.MAIL_TRANSPORT : 'log',
     from: process.env.MAIL_FROM || 'SmartAttend <no-reply@smartattend.local>',
     region: process.env.AWS_REGION || process.env.SES_REGION || undefined,
+    brevoApiKey: process.env.BREVO_API_KEY || '',
   },
 
   // Where the PWA lives, for the links in emails.
