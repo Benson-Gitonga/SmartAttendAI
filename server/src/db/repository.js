@@ -183,11 +183,20 @@ export function getClassAttendanceForDate(db, classGroupId, date = todayISO()) {
     .map((r) => ({ ...r, verified: r.verified === 1, createdAt: toIsoTimestamp(r.createdAt) }));
 }
 
-/** When the gate hardware last recorded anyone - the phone's "is the gate alive?" signal. */
-export function getLastGateScanAt(db) {
+/**
+ * When a card was last scanned at this school - the phone's "are cards being
+ * scanned today?" signal. Only this school's students count, so schools never
+ * see each other's scan times.
+ */
+export function getLastGateScanAt(db, schoolId) {
   const row = db
-    .prepare(`SELECT MAX(created_at) AS at FROM attendance_events WHERE capture_method IN ('rfid', 'fingerprint')`)
-    .get();
+    .prepare(`SELECT MAX(a.created_at) AS at
+                FROM attendance_events a
+                JOIN students s     ON s.student_id = a.student_id
+                JOIN class_groups c ON c.class_group_id = s.class_group_id
+               WHERE a.capture_method IN ('rfid', 'fingerprint')
+                 AND c.school_id = ?`)
+    .get(schoolId);
   return toIsoTimestamp(row.at);
 }
 

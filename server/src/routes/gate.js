@@ -44,7 +44,7 @@ export function createGateRouter({ db, userAuth }) {
     res.json({
       classGroupId: req.params.id,
       date,
-      gate: { lastScanAt: getLastGateScanAt(db) },
+      gate: { lastScanAt: getLastGateScanAt(db, req.user.schoolId) },
       records: getClassAttendanceForDate(db, req.params.id, date),
     });
   });

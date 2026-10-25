@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  setAttendance,
   setAttendanceBatch,
   getStudentsByClass,
   getAttendanceForDate,
@@ -46,11 +47,21 @@ function stepSchoolDay(iso, dir) {
 const timeOf = (iso) =>
   iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 
+const without = (obj, key) => {
+  const next = { ...obj };
+  delete next[key];
+  return next;
+};
+
 /**
- * Class register. Every student starts ticked present and the teacher unticks
- * whoever is absent, with a reason if they know it. Gate scans and cards
- * scanned here with the camera show the time the student arrived, but they do
- * not change the default: a student who did not scan still starts present.
+ * Class register. With no card scans, every student starts ticked present and
+ * the teacher unticks whoever is absent, with a reason if they know it.
+ *
+ * Once cards are scanned for the class today (with this phone's camera, or at
+ * the school's scan station), the register follows the cards: scanned students
+ * are present, everyone else starts absent, and the teacher ticks anyone who
+ * is here without a card. A scan on this phone is saved straight away, so it
+ * works offline and is not lost if the app closes before the teacher saves.
  */
 export default function AttendanceForm({ classGroupId, initialDate = null, pending = 0, onRecordsChanged, onOpenProfile, onDirtyChange }) {
   const { user } = useAuth();
@@ -74,7 +85,6 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
   const [checkingGate, setCheckingGate] = useState(false);
   const [conflicts, setConflicts] = useState([]);
   const [scanning, setScanning] = useState(false);
-  const [scannedAt, setScannedAt] = useState({}); // studentId -> ISO time, cards scanned on this phone
   const headerRef = useRef(null);
 
   const readLocal = useCallback(async () => {
@@ -120,8 +130,13 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
     [saved],
   );
 
-  // A student with no record yet starts present; the teacher unticks absentees.
-  const defaultStatus = 'present';
+  const isGateRecord = (studentId) => GATE_CAPTURE_METHODS.includes(saved[studentId]?.captureMethod);
+  const atGateCount = students.filter((s) => isGateRecord(s.studentId)).length;
+
+  // No scans: a student with no record starts present and the teacher unticks
+  // absentees. Cards scanned: a student with no scan starts absent and the
+  // teacher ticks whoever is here without a card.
+  const defaultStatus = atGateCount > 0 ? 'absent' : 'present';
 
   const valueFor = useCallback(
     (studentId) => (studentId in draft ? draft[studentId] : recorded[studentId] ?? defaultStatus),
@@ -142,9 +157,6 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
     }),
     [students, valueFor, recorded, reasonFor, savedReason],
   );
-
-  const isGateRecord = (studentId) => GATE_CAPTURE_METHODS.includes(saved[studentId]?.captureMethod);
-  const atGateCount = students.filter((s) => isGateRecord(s.studentId)).length;
 
   const counts = useMemo(() => {
     const c = { all: students.length, present: 0, absent: 0 };
@@ -220,16 +232,32 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
     setDate(next);
   }
 
-  // A card read by the camera: tick that student present and note the time.
-  function onCardScanned(code) {
+  // A card read by the camera: save that student present straight away (on
+  // this phone, synced later), so the scan survives the app closing offline.
+  async function onCardScanned(code) {
     const uid = code.replace(/[^A-Z0-9]/gi, '').toUpperCase();
     const student = students.find((s) => (s.cardUid ?? '').toUpperCase() === uid);
     if (!student) {
       showToast(`Card ${uid} is not in this class`, { tone: 'error' });
       return;
     }
-    setPresent([student.studentId], true);
-    setScannedAt((prev) => ({ ...prev, [student.studentId]: prev[student.studentId] ?? new Date().toISOString() }));
+    const id = student.studentId;
+    if (isPresent(recorded[id])) {
+      showToast(`${student.fullName}: already present`);
+      return;
+    }
+    try {
+      await setAttendance({
+        studentId: id, date, status: 'present', captureMethod: 'rfid', recordedBy: user?.username ?? null,
+      });
+    } catch (err) {
+      showToast(`Could not save ${student.fullName}: ${err.message}`, { tone: 'error' });
+      return;
+    }
+    setDraft((prev) => without(prev, id));
+    setReasonDraft((prev) => without(prev, id));
+    await readLocal();
+    onRecordsChanged?.();
     showToast(`${student.fullName}: present`);
   }
 
@@ -326,7 +354,7 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
             {conflicts.map((c) => (
               <div key={c.studentId}>
                 {nameOf(c.studentId)} {GATE_CAPTURE_METHODS.includes(c.captureMethod)
-                  ? `scanned in at the gate at ${timeOf(c.createdAt)}`
+                  ? `scanned their card at ${timeOf(c.createdAt)}`
                   : `was already marked ${c.serverStatus} on the school system`}
                 {' '}- your &quot;{c.localStatus}&quot; mark was replaced.
               </div>
@@ -342,7 +370,7 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
           {result.failed.length} record(s) could not be saved.
         </div>
       )}
-      {nothingSaved && !result && students.length > 0 && (
+      {nothingSaved && !result && students.length > 0 && date !== today && (
         <div className="notice notice--info" role="status">
           Everyone is ticked as present. Untick the students who are absent, add a reason if you know it, then save.
         </div>
@@ -460,10 +488,8 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
                         )}
                         {fromGate ? (
                           <span className="state-note">
-                            gate {timeOf(record.createdAt)}{record.captureMethod === 'fingerprint' ? ' (fingerprint)' : ''}
+                            scanned {timeOf(record.updatedAt ?? record.createdAt)}{record.captureMethod === 'fingerprint' ? ' (fingerprint)' : ''}
                           </span>
-                        ) : scannedAt[id] && present ? (
-                          <span className="state-note">scanned {timeOf(scannedAt[id])}</span>
                         ) : changed ? (
                           <span className="state-note">changed</span>
                         ) : !(id in recorded) ? (
@@ -509,7 +535,7 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
 
       {scanning && (
         <CameraScanner
-          hint={`Scan cards for ${formatLongDate(date)}. Each card ticks that student present.`}
+          hint={`Scan cards for ${formatLongDate(date)}. Each card marks that student present and saves at once.`}
           onCode={onCardScanned}
           onClose={() => setScanning(false)}
         />
@@ -518,30 +544,31 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
   );
 }
 
-/** What the gate knows, or why the teacher is on a full manual roll call. */
+/**
+ * How today's register is being taken: by card scans (on this phone or at the
+ * school's scan station), or as a tick-everyone roll call.
+ */
 function GateBanner({ gate, checking, atGateCount, total, onRefresh }) {
-  if (!gate) {
-    return <div className="notice notice--info gate-banner" role="status"><span>Checking the school gate…</span></div>;
-  }
-
-  const copy = {
-    active: {
+  const rollCall = 'Scan cards, or untick the students who are absent, then save.';
+  let copy;
+  if (atGateCount > 0) {
+    copy = {
       tone: 'ok',
-      text: `${atGateCount} of ${total} scanned in at the gate (last scan ${timeOf(gate.lastScanAt)}). Everyone is ticked present: untick anyone who is not here.`,
-    },
-    'no-scans': {
-      tone: 'warn',
-      text: 'No gate scans yet today. If students have arrived, the gate may be down: take a full roll call.',
-    },
-    unreachable: {
-      tone: 'info',
-      text: "Can't reach the school gate, so take a full roll call. Marks save on this device and sync later.",
-    },
-    'unknown-class': {
-      tone: 'info',
-      text: "This class isn't on the school gate yet. Take the roll call as usual.",
-    },
-  }[gate.status];
+      text: `${atGateCount} of ${total} scanned in by card. Everyone else starts absent: tick anyone who is here without a card, then save.`,
+    };
+  } else if (!gate) {
+    copy = { tone: 'info', text: 'Checking the school for card scans…' };
+  } else {
+    copy = {
+      active: { tone: 'info', text: `No cards scanned for this class yet. ${rollCall}` },
+      'no-scans': { tone: 'info', text: `No cards scanned yet today. ${rollCall}` },
+      unreachable: {
+        tone: 'info',
+        text: `Offline. ${rollCall} Everything saves on this phone and syncs when you are back online.`,
+      },
+      'unknown-class': { tone: 'info', text: `This class isn't on the school system yet. ${rollCall}` },
+    }[gate.status];
+  }
 
   return (
     <div className={`notice notice--${copy.tone} gate-banner`} role="status">
