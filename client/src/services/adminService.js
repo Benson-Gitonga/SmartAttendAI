@@ -137,12 +137,15 @@ export function reissueCard(studentId) {
 }
 
 /**
- * One card read at the scan station. Resolves to { outcome: 'recorded'|'duplicate', student, mark }
- * or, for a card the school does not know, { outcome: 'unknown-card', cardUid }.
+ * One card read at the scan station (any of the school's staff can run one).
+ * Resolves to { outcome: 'recorded'|'duplicate', student, mark } or, for a
+ * card the school does not know, { outcome: 'unknown-card', cardUid }. Pass
+ * `scannedAt` for a scan the station saved while offline. With no connection
+ * it throws an AdminApiError with code 'NETWORK'.
  */
-export async function stationScan(cardUid) {
+export async function stationScan(cardUid, { scannedAt } = {}) {
   try {
-    return await request('/api/admin/scan', { method: 'POST', body: { cardUid } });
+    return await request('/api/gate/scan', { method: 'POST', body: { cardUid, ...(scannedAt ? { scannedAt } : {}) } });
   } catch (err) {
     if (err.status === 404) return { outcome: 'unknown-card', cardUid };
     throw err;

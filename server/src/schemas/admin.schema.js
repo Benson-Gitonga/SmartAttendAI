@@ -120,7 +120,10 @@ export const updateStudentSchema = {
   },
 };
 
-/** POST /api/admin/scan: one card read by a scan station. */
+/**
+ * POST /api/gate/scan: one card read by a scan station. `scannedAt` is set when
+ * the station was offline and sends the scan later.
+ */
 export const stationScanSchema = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   $id: 'https://smartattend.example/schemas/admin-station-scan.json',
@@ -129,5 +132,6 @@ export const stationScanSchema = {
   required: ['cardUid'],
   properties: {
     cardUid: { type: 'string', minLength: 4, maxLength: 32, pattern: '^[A-Za-z0-9]+$' },
+    scannedAt: { type: 'string', format: 'date-time' },
   },
 };

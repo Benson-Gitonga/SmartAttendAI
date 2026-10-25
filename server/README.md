@@ -71,6 +71,7 @@ All optional. Copy `.env.example` to `.env` to override.
 | POST | `/api/rfid/scan` | fire one scan now, body `{ "cardUid": "04A1B2C3" }` |
 | POST | `/api/sync` | inbound attendance batch from the offline PWA (see below) |
 | GET | `/api/gate/classes/:id/attendance?date=YYYY-MM-DD` | one class's records for a day (default today) plus `gate.lastScanAt` - the PWA pulls this before roll call (see below) |
+| POST | `/api/gate/scan` | scan station: body `{ "cardUid", "scannedAt"? }` marks the student present; `scannedAt` is for scans an offline station sends later |
 | * | `/api/roster/*` | roster upserts pushed from the PWA (schools, classes, students, cards) |
 | GET | `/api/admin/schools/:id/today?date=` | every class's register for a day (school admin) |
 | POST/PATCH | `/api/admin/schools/:id/classes`, `/api/admin/classes/:id` | create a class, rename it or change its teacher |
@@ -124,6 +125,7 @@ returns a token signed with `AUTH_TOKEN_SECRET` that lasts
 | `/api/roster/*` | admin or teacher | another school's row is a `403` |
 | `/api/sync` | admin or teacher | a batch with another school's student is a `403` |
 | `/api/gate/classes/:id/attendance` | admin or teacher | another school's class is a `404` |
+| `/api/gate/scan` | admin or teacher | another school's card is `unknown-card` (`404`) |
 | `/api/students`, `/attendance`, `/challenges`, `/stats` | system admin | platform-wide debug lists |
 
 All of them also answer `403` while the school is pending, rejected or

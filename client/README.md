@@ -45,10 +45,11 @@ device, so no `.env` is needed here. `auth/session.js`:
   `/api/system-admin/login` instead.
 - **Register your school** sends `POST /api/schools/register`: the school's
   details and the applicant, who becomes its admin and is signed in to wait.
-- The app locks itself on the device after an hour; the **offline PIN**
+- The app locks itself after 30 minutes without use; the **offline PIN**
   unlocks it without the network. That never extends the server token, so
   the first sign-in on a device needs a connection.
-- Teachers do not sign up. Their school admin will invite them (next step).
+- Teachers do not sign up. Their school admin invites them by email, and the
+  teacher sets a password from the link.
 - Sessions from older builds that were never issued by the server are
   dropped on load.
 
@@ -93,6 +94,5 @@ rule-based risk model, the heatmap grid, and both sync-queue drain services.
 - A configurable API base URL. `services/*.js` call relative paths
   (`/api/sync`, `/api/admin/...`), so the app must be served from the same
   origin as Tier 2 or behind a proxy that routes `/api` there.
-- Teacher invites and password resets (the school admin will manage these)
 - Risk scoring in a Web Worker (`lib/riskModel.js` has no React or Dexie
   dependencies, so it is ready for this)

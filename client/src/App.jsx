@@ -14,6 +14,7 @@ import StudentProfile from './components/StudentProfile';
 import BottomNav from './components/BottomNav';
 import SideNav from './components/SideNav';
 import AdminApp from './components/admin/AdminApp';
+import ScanStation from './components/ScanStation';
 import SystemAdminOverview from './components/SystemAdminOverview';
 import SchoolStatusGate from './components/SchoolStatusGate';
 import TopBar from './components/TopBar';
@@ -36,6 +37,7 @@ const TITLES = {
   heatmap: 'Reports',
   alerts: 'At-risk Students',
   students: 'Students',
+  scan: 'Scan station',
 };
 
 const ACTIVE_CLASS_KEY = 'smartattend:activeClass';
@@ -206,8 +208,11 @@ function TeacherApp() {
         onTakeAttendance={() => goTab('attendance')}
         onOpenAlerts={() => goTab('alerts')}
         onOpenProfile={openProfile}
+        onOpenScanStation={() => goTab('scan')}
       />
     );
+  } else if (tab === 'scan') {
+    body = <ScanStation />;
   } else if (tab === 'heatmap') {
     body = (
       <Heatmap

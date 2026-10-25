@@ -1595,10 +1595,11 @@ export function reissueStudentCard(db, schoolId, studentId, { actor = null } = {
 
 /**
  * A card scanned at a school's scan station (USB barcode scanner or camera).
- * Marks the student present for today unless they already have a mark.
+ * Marks the student present for the day of the scan unless they already have
+ * a mark. `scannedAt` is when an offline station read the card, if not now.
  * @returns {{outcome: 'recorded'|'duplicate'|'unknown-card', student?: object, mark?: object}}
  */
-export function recordStationScan(db, schoolId, cardUid, { actor = null } = {}) {
+export function recordStationScan(db, schoolId, cardUid, { actor = null, scannedAt = null } = {}) {
   const uid = String(cardUid ?? '').trim().toUpperCase();
   const found = findStudentByCardUid(db, uid);
   const student = found ? getSchoolStudent(db, schoolId, found.student_id) : null;
@@ -1606,7 +1607,7 @@ export function recordStationScan(db, schoolId, cardUid, { actor = null } = {}) 
     logAudit(db, { action: 'scan.unknown_card', actorId: actor, recordId: uid, detail: { schoolId } });
     return { outcome: 'unknown-card', cardUid: uid };
   }
-  const date = todayISO();
+  const date = todayISO(scannedAt ? new Date(scannedAt) : new Date());
   const existing = db
     .prepare(`SELECT event_id AS eventId, status, capture_method AS captureMethod, created_at AS createdAt
                 FROM attendance_events WHERE student_id = ? AND date = ?`)
@@ -1614,6 +1615,7 @@ export function recordStationScan(db, schoolId, cardUid, { actor = null } = {}) 
   if (existing) return { outcome: 'duplicate', student, mark: { ...existing, createdAt: toIsoTimestamp(existing.createdAt) } };
   const mark = recordAttendance(db, {
     studentId: student.studentId, date, status: 'present', captureMethod: 'rfid', recordedBy: actor, source: 'client',
+    createdAt: scannedAt,
   });
   return { outcome: 'recorded', student, mark };
 }

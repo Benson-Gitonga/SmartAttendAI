@@ -21,6 +21,8 @@ export function navItems(role) {
     { id: 'alerts', label: 'At-risk Students', short: 'At-risk', Icon: BellIcon },
   ];
   items.push({ id: 'students', label: 'Students', short: 'Students', Icon: UsersIcon, section: 'Manage' });
+  // For gate duty. Phones reach it from the dashboard instead.
+  items.push({ id: 'scan', label: 'Scan station', short: 'Scan', Icon: KeypadIcon, section: 'Tools', desktopOnly: true });
   return items;
 }
 

@@ -50,6 +50,25 @@ db.version(4).stores({
 db.version(5).stores({
   pinCredentials: '++id, &username',
 });
+// v6: card scans the scan station read while offline, waiting to be sent.
+db.version(6).stores({
+  stationScans: '++id, scannedAt',
+});
+
+/** Keep a scan the station could not send; it goes up when back online. */
+export async function queueStationScan(cardUid, scannedAt = new Date().toISOString()) {
+  const id = await db.stationScans.add({ cardUid, scannedAt });
+  return { id, cardUid, scannedAt };
+}
+
+/** Offline scans, oldest first. */
+export function getQueuedStationScans() {
+  return db.stationScans.orderBy('scannedAt').toArray();
+}
+
+export function removeQueuedStationScan(id) {
+  return db.stationScans.delete(id);
+}
 
 export const ATTENDANCE_STATUSES = ['present', 'absent', 'late'];
 

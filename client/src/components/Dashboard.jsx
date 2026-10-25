@@ -78,7 +78,7 @@ function RateChart({ days }) {
   );
 }
 
-export default function Dashboard({ classGroupId, className, onTakeAttendance, onOpenAlerts, onOpenProfile }) {
+export default function Dashboard({ classGroupId, className, onTakeAttendance, onOpenAlerts, onOpenProfile, onOpenScanStation }) {
   const { loading, students, history, flagged } = useClassRisk(classGroupId);
   const today = todayISO();
 
@@ -119,6 +119,11 @@ export default function Dashboard({ classGroupId, className, onTakeAttendance, o
           <p className="page-head__sub">{className} · {formatLongDate(today)}</p>
         </div>
         <div className="page-head__actions">
+          {onOpenScanStation && (
+            <button type="button" className="btn btn--outline btn--sm" onClick={onOpenScanStation}>
+              Gate scan station
+            </button>
+          )}
           <button type="button" className="btn btn--sm" onClick={onTakeAttendance}>
             <CheckCircleIcon size={16} />
             Take attendance

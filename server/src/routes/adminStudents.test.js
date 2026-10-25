@@ -132,7 +132,7 @@ describe('editing, moving and removing', () => {
     const res = await send('POST', `/api/admin/students/${student.studentId}/card`, admin);
     const updated = await res.json();
     assert.notEqual(updated.cardUid, student.cardUid);
-    const scanOld = await send('POST', '/api/admin/scan', admin, { cardUid: student.cardUid });
+    const scanOld = await send('POST', '/api/gate/scan', admin, { cardUid: student.cardUid });
     assert.equal(scanOld.status, 404);
   });
 
@@ -145,7 +145,7 @@ describe('editing, moving and removing', () => {
 describe('the scan station', () => {
   test('a scan marks the student present for today, once', async () => {
     const student = await (await enrol({ fullName: 'Amina Hassan' })).json();
-    const first = await send('POST', '/api/admin/scan', admin, { cardUid: student.cardUid.toLowerCase() });
+    const first = await send('POST', '/api/gate/scan', admin, { cardUid: student.cardUid.toLowerCase() });
     const body = await first.json();
     assert.equal(first.status, 200);
     assert.equal(body.outcome, 'recorded');
@@ -154,15 +154,47 @@ describe('the scan station', () => {
     const row = db.prepare('SELECT * FROM attendance_events').get();
     assert.deepEqual([row.date, row.status, row.capture_method], [todayISO(), 'present', 'rfid']);
 
-    const again = await (await send('POST', '/api/admin/scan', admin, { cardUid: student.cardUid })).json();
+    const again = await (await send('POST', '/api/gate/scan', admin, { cardUid: student.cardUid })).json();
     assert.equal(again.outcome, 'duplicate');
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM attendance_events').get().n, 1);
   });
 
   test("another school's card is unknown here", async () => {
     const student = await (await enrol({ fullName: 'Amina Hassan' })).json();
-    const res = await send('POST', '/api/admin/scan', otherAdmin, { cardUid: student.cardUid });
+    const res = await send('POST', '/api/gate/scan', otherAdmin, { cardUid: student.cardUid });
     assert.equal(res.status, 404);
+  });
+
+  test('a teacher on gate duty can run the station', async () => {
+    const student = await (await enrol({ fullName: 'Amina Hassan' })).json();
+    const teacher = staffHeaders(db, testUserAuth(db), { schoolId: 'school-1', role: 'teacher', email: 'gate@kibera.ac.ke' });
+    const res = await send('POST', '/api/gate/scan', teacher, { cardUid: student.cardUid });
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).outcome, 'recorded');
+    assert.equal(db.prepare('SELECT recorded_by FROM attendance_events').get().recorded_by, 'gate@kibera.ac.ke');
+  });
+
+  test('a scan saved offline and sent later lands on the day it happened', async () => {
+    const student = await (await enrol({ fullName: 'Amina Hassan' })).json();
+    const yesterday = new Date(Date.now() - 24 * 3600_000);
+    yesterday.setHours(7, 15, 0, 0);
+    const body = { cardUid: student.cardUid, scannedAt: yesterday.toISOString() };
+
+    assert.equal((await (await send('POST', '/api/gate/scan', admin, body)).json()).outcome, 'recorded');
+    const row = db.prepare('SELECT date, created_at FROM attendance_events').get();
+    assert.equal(row.date, todayISO(yesterday));
+    // sending it again (the station retried) is a harmless duplicate
+    assert.equal((await (await send('POST', '/api/gate/scan', admin, body)).json()).outcome, 'duplicate');
+    // and today is still open for a scan
+    assert.equal((await (await send('POST', '/api/gate/scan', admin, { cardUid: student.cardUid })).json()).outcome, 'recorded');
+  });
+
+  test('a scan time in the future is refused', async () => {
+    const student = await (await enrol({ fullName: 'Amina Hassan' })).json();
+    const res = await send('POST', '/api/gate/scan', admin, {
+      cardUid: student.cardUid, scannedAt: new Date(Date.now() + 3600_000).toISOString(),
+    });
+    assert.equal(res.status, 422);
   });
 });
 

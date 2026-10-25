@@ -11,7 +11,7 @@ import { Router } from 'express';
 import { validate } from '../lib/validate.js';
 import {
   createClassSchema, updateClassSchema, registerOverrideSchema, inviteTeacherSchema,
-  enrolStudentSchema, importStudentsSchema, updateStudentSchema, stationScanSchema,
+  enrolStudentSchema, importStudentsSchema, updateStudentSchema,
 } from '../schemas/admin.schema.js';
 import {
   getSchoolOverview,
@@ -40,7 +40,6 @@ import {
   importStudents,
   updateSchoolStudent,
   reissueStudentCard,
-  recordStationScan,
   StudentInputError,
 } from '../db/repository.js';
 
@@ -273,15 +272,6 @@ export function createAdminRouter({ db, userAuth, emails }) {
   router.post('/students/:id/card', (req, res) => {
     if (!ownsStudent(req)) return notMine(res, 'student');
     res.json(reissueStudentCard(db, req.user.schoolId, req.params.id, { actor: req.user.email }));
-  });
-
-  // A scan station: a USB barcode scanner (or a camera) at the gate or office
-  // reads a student's card and marks them present for today.
-  router.post('/scan', (req, res) => {
-    const { valid, errors } = validate(stationScanSchema, req.body ?? {});
-    if (!valid) return invalid(res, errors);
-    const result = recordStationScan(db, req.user.schoolId, req.body.cardUid, { actor: req.user.email });
-    res.status(result.outcome === 'unknown-card' ? 404 : 200).json(result);
   });
 
   router.get('/schools/:schoolId/flagged', (req, res) => {

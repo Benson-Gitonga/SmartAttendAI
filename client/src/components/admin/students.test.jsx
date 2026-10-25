@@ -1,7 +1,6 @@
-import { render, screen, within, waitFor } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AdminStudents from './AdminStudents';
-import AdminScanStation from './AdminScanStation';
 import * as api from '../../services/adminService';
 
 jest.mock('../../services/adminService', () => ({
@@ -11,12 +10,10 @@ jest.mock('../../services/adminService', () => ({
   importStudents: jest.fn(),
   updateStudent: jest.fn(),
   reissueCard: jest.fn(),
-  stationScan: jest.fn(),
 }));
 jest.mock('../../auth/AuthContext', () => ({
   useAuth: () => ({ user: { username: 'admin@moigirls.ac.ke', schoolId: 'school-1', schoolName: 'Moi Girls', role: 'admin' } }),
 }));
-jest.mock('../CameraScanner', () => () => null);
 
 jest.setTimeout(20_000);
 
@@ -121,31 +118,5 @@ describe('AdminStudents', () => {
       { fullName: 'Amina Hassan', admissionNo: 'MG/001' },
       { fullName: 'Brenda Wanjiru', admissionNo: 'MG/002' },
     ]);
-  });
-});
-
-describe('AdminScanStation', () => {
-  const scan = async (user, code) => {
-    const input = screen.getByLabelText('Card number');
-    await user.type(input, `${code}{Enter}`);
-  };
-
-  it('marks the student present and lists the scan', async () => {
-    const user = userEvent.setup();
-    api.stationScan.mockResolvedValue({ outcome: 'recorded', student: AMINA, mark: { status: 'present', createdAt: new Date().toISOString() } });
-    render(<AdminScanStation />);
-    await scan(user, 'ac221f07');
-    expect(api.stationScan).toHaveBeenCalledWith('AC221F07');
-    const status = screen.getByRole('status');
-    await waitFor(() => expect(status).toHaveTextContent('Amina Hassan'));
-    expect(status).toHaveTextContent(/marked present/);
-  });
-
-  it('says so for a card the school does not know', async () => {
-    const user = userEvent.setup();
-    api.stationScan.mockResolvedValue({ outcome: 'unknown-card', cardUid: 'ZZZZ9999' });
-    render(<AdminScanStation />);
-    await scan(user, 'ZZZZ9999');
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Card not recognised'));
   });
 });

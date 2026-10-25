@@ -151,7 +151,6 @@ teacher link with absence reasons, and the risk model inside both.
 
 Not done yet:
 
-- Teacher accounts: the server checks every sign-in now, but school admins cannot invite teachers yet (next step). The demo seed has a teacher account.
 - The cloud tier is written but not deployed.
 - Absence reasons are recorded but not yet used in the risk score (the fee and illness features are still 0).
-- The scan station needs a connection and only the school admin can open it.
+- No per-student explanation of a risk score yet (SHAP).

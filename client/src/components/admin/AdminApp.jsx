@@ -15,7 +15,7 @@ import AdminClasses from './AdminClasses';
 import AdminClassPage from './AdminClassPage';
 import AdminTeachers from './AdminTeachers';
 import AdminStudents from './AdminStudents';
-import AdminScanStation from './AdminScanStation';
+import ScanStation from '../ScanStation';
 import StudentIdCards from './StudentIdCards';
 import { LogOutIcon } from '../icons';
 
@@ -83,7 +83,7 @@ export default function AdminApp() {
   } else if (tab === 'students') {
     body = <AdminStudents onPrintCards={(students, title) => setCardSheet({ students, title })} />;
   } else if (tab === 'scan') {
-    body = <AdminScanStation />;
+    body = <ScanStation />;
   } else if (tab === 'teachers') {
     body = <AdminTeachers onOpenClass={openClass} />;
   } else if (tab === 'overview') {

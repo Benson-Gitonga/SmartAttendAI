@@ -2790,7 +2790,7 @@ div.followup-badge {
 /* ================================================= system admin console === */
 /* Plain admin-console look: dark top bar, underline tabs, one dense table,
    a details panel on the right. Neutral greys, one blue, small radii. */
-.sys, .ad, .idsheet, .camscan {
+.sys, .ad, .ad-console, .idsheet, .camscan {
   --sys-bg: #f6f7f9;
   --sys-line: #e3e5e8;
   --sys-line-strong: #d0d4d9;
@@ -3152,6 +3152,8 @@ select.pub-input { padding-right: 8px; }
 
 /* scan station */
 .scanst { padding: 20px; }
+.sys-banner--warn { background: #fff8eb; border-color: #f3d9a4; color: #7a4a00; }
+.scanst-wait { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 0; }
 .scanst__input { height: 48px; font-size: 20px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.06em; }
 .scanst__result { margin-top: 16px; padding: 18px 16px; border: 1px solid var(--sys-line); border-left-width: 4px; border-radius: 4px; background: #fafbfc; }
 .scanst__result--ok { border-left-color: #1a7f37; background: #f2faf4; }
