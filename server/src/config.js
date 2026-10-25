@@ -44,7 +44,7 @@ export const config = {
   // Start the RFID simulation loop when the server boots.
   simulationEnabled: process.env.SIMULATION_ENABLED !== 'false',
 
-  // Gate devices (hardware/wokwi-gate) send this in the X-Device-Key header.
+  // Gate devices send this in the X-Device-Key header.
   // Empty means POST /api/rfid/scan is open, as before.
   deviceApiKey: process.env.DEVICE_API_KEY || '',
 

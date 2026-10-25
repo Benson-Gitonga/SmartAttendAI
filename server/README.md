@@ -91,8 +91,7 @@ All optional. Copy `.env.example` to `.env` to override.
 
 Valid `cardUid` values are the 10 seeded cards: `04A1B2C3`, `04D4E5F6`,
 `0417A8B9`, `04C2D3E4`, `0455667788`, `01020304`, `11223344`, `55667788`,
-`AABBCCDD`, `04112233`. The last five are the Wokwi MFRC522 preset cards
-used by the simulated gate in [`hardware/wokwi-gate`](../hardware/wokwi-gate).
+`AABBCCDD`, `04112233`.
 
 A gate device with a fingerprint step sends `"interactive": true`. If the scan
 is picked for a fingerprint check the reply is `"outcome": "fingerprint-required"`

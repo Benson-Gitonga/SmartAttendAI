@@ -153,7 +153,7 @@ describe('createCardHandler - gate device reports the fingerprint', () => {
     assert.equal(countAttendance(), 1);
   });
 
-  test('a Wokwi preset card resolves to its demo student', () => {
+  test('a seeded card resolves to its demo student', () => {
     const handle = createCardHandler({ db, challengeRate: 0 });
     const result = handle({ cardUid: '01020304' }); // Blue Card
 

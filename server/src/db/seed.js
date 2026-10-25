@@ -49,10 +49,8 @@ export const DEMO_CLASS = {
   academic_year: 2026,
 };
 
-// 4-byte hex UIDs, like a MIFARE Classic card. Students 006-010 hold the
-// Wokwi MFRC522 preset cards (Blue, Green, Yellow, Red, NFC Tag) so the
-// simulated gate in hardware/wokwi-gate scans real roster cards. The Wokwi
-// Key Fob (C0FFEE99) is deliberately unregistered.
+// 4-byte hex UIDs, like a MIFARE Classic card. C0FFEE99 is deliberately
+// unregistered, to test an unknown card.
 export const DEMO_STUDENTS = [
   { student_id: 'stu-form3b-001', admission_no: '3B/001', full_name: 'Amina Wanjiru',   card_uid: '04A1B2C3' },
   { student_id: 'stu-form3b-002', admission_no: '3B/002', full_name: 'Brian Kamau',     card_uid: '04D4E5F6' },
@@ -63,7 +61,7 @@ export const DEMO_STUDENTS = [
   { student_id: 'stu-form3b-007', admission_no: '3B/007', full_name: 'Kevin Odhiambo',  card_uid: '11223344' },
   { student_id: 'stu-form3b-008', admission_no: '3B/008', full_name: 'Lydia Chebet',    card_uid: '55667788' },
   { student_id: 'stu-form3b-009', admission_no: '3B/009', full_name: 'Moses Kipchoge',  card_uid: 'AABBCCDD' },
-  { student_id: 'stu-form3b-010', admission_no: '3B/010', full_name: 'Naomi Waweru',    card_uid: '04112233' }, // Wokwi NFC Tag reads as its first 4 bytes
+  { student_id: 'stu-form3b-010', admission_no: '3B/010', full_name: 'Naomi Waweru',    card_uid: '04112233' },
 ].map((s) => ({ ...s, class_group_id: DEMO_CLASS.class_group_id, enrolled_at: '2026-01-06' }));
 
 

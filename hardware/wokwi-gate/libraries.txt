@@ -1,5 +1,0 @@
-# Wokwi Library List
-MFRC522
-Adafruit SSD1306
-Adafruit GFX Library
-ArduinoJson

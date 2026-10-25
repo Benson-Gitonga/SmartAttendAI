@@ -11,17 +11,19 @@ teacher only has to deal with whoever did not scan.
 
 ## Plans
 
-SmartAttend is one product with an optional add-on:
+SmartAttend needs no special hardware:
 
-| | Standard | Premium |
-|---|---|---|
-| Teacher app (PWA) | Teacher takes the full roll call | Teacher confirms the gate's scans and marks only students who did not scan |
-| Gate box (Raspberry Pi + RFID + fingerprint) | — | Students tap in; fingerprint checks stop buddy-punching |
-| Risk model, alerts, cloud | Yes | Yes |
+| | What it does |
+|---|---|
+| Teacher app (PWA) | Teacher takes the roll call by ticking students, or by scanning their cards |
+| Student ID cards | The school admin prints them (QR code + barcode, laminated); the teacher's phone camera reads them, offline too |
+| Scan station (optional) | A phone, laptop camera or cheap USB barcode scanner at the gate or office marks students present as they arrive |
+| Risk model, alerts, cloud | Yes |
 
-**The teacher app is the fallback.** If the gate is down, unreachable or has
-no scans yet, the app says so and the teacher takes a normal full roll call.
-Attendance is never lost because the gate failed.
+**Ticking is the fallback.** Once cards are scanned for a class, scanned
+students are present and everyone else starts absent, so the teacher only
+ticks whoever came without a card. With no scans, the teacher takes a normal
+full roll call. Attendance is never lost because a card or scanner failed.
 
 ## How it fits together
 
@@ -151,6 +153,5 @@ Not done yet:
 
 - Teacher accounts: the server checks every sign-in now, but school admins cannot invite teachers yet (next step). The demo seed has a teacher account.
 - The cloud tier is written but not deployed.
-- The gate is simulated; real Raspberry Pi, RFID reader and fingerprint drivers are still to come.
 - Absence reasons are recorded but not yet used in the risk score (the fee and illness features are still 0).
-- Schools without a gate see a "can't reach the school gate" notice; this should follow the school's plan.
+- The scan station needs a connection and only the school admin can open it.

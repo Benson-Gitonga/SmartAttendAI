@@ -35,7 +35,7 @@ export function checkScanTime(
  * Turn an RFID scan into an attendance record. Some scans (`challengeRate`)
  * also need a fingerprint match; a failed match rejects the scan.
  *
- * A gate device with a real (or Wokwi) fingerprint button sends
+ * A gate device with a fingerprint button sends
  * `interactive: true`. If the scan is picked for a challenge the handler
  * returns 'fingerprint-required' without writing anything, and the device
  * sends the scan again with `fingerprint: 'match' | 'no_match'`. Without
