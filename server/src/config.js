@@ -61,6 +61,14 @@ export const config = {
     tokenTtlMs: num(process.env.AUTH_TOKEN_TTL_DAYS, 30) * 24 * 60 * 60 * 1000,
   },
 
+  // "Continue with Google" (src/auth/googleAuth.js). The OAuth web client id
+  // from Google Cloud; the PWA reads it from GET /api/auth/google. Without one,
+  // a development-only stand-in is used unless NODE_ENV=production.
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID || '',
+    devMode: process.env.NODE_ENV !== 'production' && process.env.GOOGLE_SIGNIN !== 'off',
+  },
+
   // Outgoing email (src/mail/mailer.js). 'log' prints each email and keeps it
   // in the dev outbox; 'ses' sends it with Amazon SES; 'brevo' with Brevo.
   mail: {

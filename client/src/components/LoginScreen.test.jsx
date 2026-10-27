@@ -16,6 +16,7 @@ jest.mock('../auth/session', () => ({
   verifyEmail: jest.fn(),
   lookupEmailLink: jest.fn(),
   lookupSetupCode: jest.fn(),
+  getGoogleSignInConfig: jest.fn(),
 }));
 
 function authError(code, message, extra = {}) {
@@ -34,7 +35,10 @@ beforeEach(() => {
     signIn: jest.fn().mockResolvedValue({}),
     registerSchool: jest.fn().mockResolvedValue({ email: 'g.achieng@kisumuday.ac.ke', emailSent: true }),
     setPasswordFromLink: jest.fn().mockResolvedValue({}),
+    signInWithGoogle: jest.fn().mockResolvedValue({}),
+    setUpWithGoogle: jest.fn().mockResolvedValue({}),
   });
+  session.getGoogleSignInConfig.mockResolvedValue({ mode: 'off', clientId: null });
 });
 
 async function signInAs(user, email, password) {
@@ -68,6 +72,22 @@ describe('sign in', () => {
     render(<LoginScreen />);
     await signInAs(user, 'teacher@school.ke', 'password123');
     expect(auth.signIn).toHaveBeenCalledWith('teacher@school.ke', 'password123');
+  });
+
+  it('Continue with Google signs in, when the server has it on', async () => {
+    const user = userEvent.setup();
+    session.getGoogleSignInConfig.mockResolvedValue({ mode: 'dev', clientId: null });
+    render(<LoginScreen />);
+    await user.click(await screen.findByRole('button', { name: /Continue with Google/ }));
+    await user.type(screen.getByLabelText('Google email'), 'mary@gmail.com');
+    await user.click(screen.getByRole('button', { name: /^Continue$/ }));
+    expect(auth.signInWithGoogle).toHaveBeenCalledWith('dev:mary@gmail.com');
+  });
+
+  it('shows no Google button when the server has it off', async () => {
+    render(<LoginScreen />);
+    await act(async () => {});
+    expect(screen.queryByRole('button', { name: /Continue with Google/ })).not.toBeInTheDocument();
   });
 
   it('accepts the system admin username on the same form', async () => {
@@ -193,6 +213,22 @@ describe('emailed links', () => {
     await user.type(screen.getByLabelText('Confirm password'), 'a-good-password');
     await user.click(screen.getByRole('button', { name: 'Set password and sign in' }));
     expect(auth.setPasswordFromLink).toHaveBeenCalledWith('tok456', 'a-good-password');
+  });
+
+  it('#/set-password can link Google instead of a password', async () => {
+    const user = userEvent.setup();
+    session.getGoogleSignInConfig.mockResolvedValue({ mode: 'dev', clientId: null });
+    session.lookupEmailLink.mockResolvedValue({
+      purpose: 'setup', email: 'g.achieng@kisumuday.ac.ke', fullName: 'Grace Achieng', role: 'admin', schoolName: 'Kisumu Day',
+    });
+    window.history.replaceState(null, '', '/#/set-password/tok456');
+    render(<LoginScreen />);
+    await user.click(await screen.findByRole('button', { name: /Continue with Google/ }));
+    await user.clear(screen.getByLabelText('Google email'));
+    await user.type(screen.getByLabelText('Google email'), 'grace@gmail.com');
+    await user.click(screen.getByRole('button', { name: /^Continue$/ }));
+    expect(auth.setUpWithGoogle).toHaveBeenCalledWith({ token: 'tok456' }, 'dev:grace@gmail.com');
+    expect(auth.setPasswordFromLink).not.toHaveBeenCalled();
   });
 
   it('#/set-password checks the two passwords match first', async () => {

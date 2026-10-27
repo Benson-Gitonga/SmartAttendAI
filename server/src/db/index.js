@@ -80,6 +80,15 @@ export function migrate(db) {
     db.exec(`ALTER TABLE users ADD COLUMN released_email TEXT`);
   }
 
+  // "Continue with Google": the Google account linked to a user, from their
+  // invite or set-up link, or from the account sheet. Google's id (sub) never
+  // changes, so it can differ from the email the admin typed.
+  if (hasUsers && !hasColumn('users', 'google_sub')) {
+    db.exec(`ALTER TABLE users ADD COLUMN google_sub TEXT`);
+    db.exec(`ALTER TABLE users ADD COLUMN google_email TEXT`);
+  }
+  if (hasUsers) db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub ON users(google_sub) WHERE google_sub IS NOT NULL`);
+
   // One school per code, except that a rejected or disabled school may apply again.
   const codeIndex = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_schools_code'`).get();
   if (codeIndex && !codeIndex.sql.includes("'inactive'")) db.exec(`DROP INDEX idx_schools_code`);

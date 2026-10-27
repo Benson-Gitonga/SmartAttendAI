@@ -3,6 +3,7 @@ import { useAuth } from '../auth/AuthContext';
 import { lookupSetupCode } from '../auth/session';
 import AuthLayout, { Field, PasswordInput, Alert } from './auth/AuthLayout';
 import { PUBLIC_PAGES } from './auth/publicRoute';
+import GoogleSignInButton from './auth/GoogleSignInButton';
 
 const PASSWORD_MIN = 8;
 const formatCode = (raw) => {
@@ -16,7 +17,7 @@ const formatCode = (raw) => {
  * then they choose a password.
  */
 export default function JoinWithCode({ initialCode = '', onBack }) {
-  const { joinWithCode } = useAuth();
+  const { joinWithCode, setUpWithGoogle } = useAuth();
   const code = formatCode(initialCode);
   const [invite, setInvite] = useState(null); // who the link is for
   const [password, setPassword] = useState('');
@@ -93,6 +94,13 @@ export default function JoinWithCode({ initialCode = '', onBack }) {
         <button className="pub-btn pub-btn--primary pub-btn--block" type="submit" disabled={busy}>
           {busy ? 'Setting up…' : invite.purpose === 'reset' ? 'Save password and sign in' : 'Finish and sign in'}
         </button>
+
+        {/* The invite link proves the email, so any Google account can be linked instead of a password. */}
+        <GoogleSignInButton
+          email={invite.email}
+          disabled={busy}
+          action={(credential) => setUpWithGoogle({ code }, credential)}
+        />
       </form>
     </AuthLayout>
   );

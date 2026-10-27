@@ -1480,6 +1480,15 @@ button.student-cell:hover .student-cell__name { color: var(--indigo-600); text-d
 .account-row__icon { flex: none; color: var(--ink-muted); display: inline-flex; }
 .account-row__label { flex: 1; min-width: 0; }
 .account-row__go { font-size: 12.5px; font-weight: 700; color: var(--indigo-600); }
+.account-row__btn { flex: none; border: none; background: none; padding: 4px 0; cursor: pointer; font-family: inherit; }
+.account-row__btn:disabled { opacity: .5; cursor: default; }
+.account-row__error { display: block; margin-top: 4px; font-size: 12px; color: var(--risk-red); }
+/* Google's button (or its dev stand-in) inside the sheet; borrows the sign-in page's colours. */
+.account-row__google {
+  display: block; margin-top: 10px;
+  --pub-line: #d0d4d9; --pub-line-soft: #e3e5e8; --pub-ink: #1f2328; --pub-ink-2: #59636e; --pub-ink-3: #818b98;
+  --pub-blue: #0b5cd5; --pub-blue-hover: #0a4fb8; --pub-red: #c62828;
+}
 
 
 .account-signout {
@@ -1851,6 +1860,7 @@ div.followup-badge {
 .ad-person__meta { font-size: 12.5px; color: var(--ink-muted); }
 .ad-person__contact { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; }
 .ad-person__contact a { display: inline-flex; align-items: center; gap: 4px; color: var(--indigo-600); text-decoration: none; overflow-wrap: anywhere; }
+.ad-person__contact span { color: var(--ink-muted); overflow-wrap: anywhere; }
 .ad-person__classes { display: flex; flex-wrap: wrap; gap: 6px; }
 .ad-person__none { font-size: 13px; color: var(--ink-muted); }
 .ad-class-chip {
@@ -3061,10 +3071,20 @@ select.pub-input { padding-right: 8px; }
 .pub-btn--primary:hover:not(:disabled) { background: var(--pub-blue-hover); }
 .pub-btn--secondary { background: #fff; color: var(--pub-ink); border-color: var(--pub-line); }
 .pub-btn--secondary:hover:not(:disabled) { background: #f3f4f6; }
+.pub-btn--google { background: #fff; color: var(--pub-ink); border-color: var(--pub-line); font-weight: 500; }
+.pub-btn--google:hover:not(:disabled) { background: #f8f9fa; }
 /* Inactivity lock: covers the app without unmounting it. */
 .lock-overlay { position: fixed; inset: 0; z-index: 1000; overflow: auto; background: var(--canvas); }
 .lock-overlay .auth { min-height: 100%; }
 
+.pub-google { display: flex; justify-content: center; min-height: 44px; }
+.pub-google--disabled { opacity: .5; pointer-events: none; }
+.pub-devgoogle { padding: 12px; border: 1px dashed var(--pub-line); border-radius: 6px; }
+.pub-devgoogle__note { margin: 0 0 10px; font-size: 12px; color: var(--pub-ink-3); line-height: 1.45; }
+.pub-devgoogle__row { display: flex; gap: 8px; }
+.pub-devgoogle__row .pub-input { flex: 1; min-width: 0; }
+.pub-divider { display: flex; align-items: center; gap: 12px; margin: 16px 0; color: var(--pub-ink-3); font-size: 12px; }
+.pub-divider::before, .pub-divider::after { content: ""; flex: 1; height: 1px; background: var(--pub-line-soft); }
 .pub-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; padding-top: 16px; border-top: 1px solid var(--pub-line-soft); }
 
 /* alerts */

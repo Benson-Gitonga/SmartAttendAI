@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import Avatar from './Avatar';
+import GoogleLinkRow from './GoogleLinkRow';
 import { useBackToClose } from '../hooks/useBackToClose';
 import { SyncIcon, RosterIcon, KeypadIcon, LogOutIcon } from './icons';
 
@@ -64,6 +65,8 @@ export default function AccountSheet({
               <span className="account-row__go">{pinEnrolled ? 'Change' : 'Set up'}</span>
             </button>
           )}
+
+          <GoogleLinkRow online={online} />
         </div>
 
         <button type="button" className="btn btn--ghost account-signout" onClick={onSignOut}>

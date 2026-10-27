@@ -382,7 +382,8 @@ export function registerSchoolApplication(db, school, applicant) {
 // lookups by email only match u.email, so it is free for a new account.
 const USER_COLUMNS = `u.user_id AS userId, coalesce(u.released_email, u.email) AS email, u.full_name AS fullName, u.phone,
   u.job_title AS jobTitle, u.role, u.school_id AS schoolId, u.status,
-  u.created_at AS createdAt, u.last_sign_in_at AS lastSignInAt, u.email_verified_at AS emailVerifiedAt`;
+  u.created_at AS createdAt, u.last_sign_in_at AS lastSignInAt, u.email_verified_at AS emailVerifiedAt,
+  u.google_email AS googleEmail`;
 
 export function createUser(db, { email, fullName, phone = null, jobTitle = null, role, schoolId, passwordHash = null, status = 'active' }) {
   const userId = `user-${randomUUID()}`;
@@ -882,7 +883,7 @@ export function getTeachersForSchool(db, schoolId) {
   const teachers = db
     .prepare(
       `SELECT user_id AS userId, coalesce(released_email, email) AS email, full_name AS fullName, phone, job_title AS jobTitle, status,
-              last_sign_in_at AS lastSignInAt
+              last_sign_in_at AS lastSignInAt, google_email AS googleEmail
          FROM users WHERE school_id = ? AND role = 'teacher' ORDER BY full_name`
     )
     .all(schoolId);
@@ -1293,7 +1294,8 @@ export function getSchoolTeacher(db, schoolId, userId) {
 export function setTeacherEnabled(db, userId, enabled, { actor = null } = {}) {
   const user = getUser(db, userId);
   if (!user) return null;
-  const hasPassword = db.prepare(`SELECT password_hash IS NOT NULL AS has FROM users WHERE user_id = ?`).get(userId).has === 1;
+  // Google counts as a way in, like a password.
+  const hasPassword = db.prepare(`SELECT (password_hash IS NOT NULL OR google_sub IS NOT NULL) AS has FROM users WHERE user_id = ?`).get(userId).has === 1;
   const status = enabled ? (hasPassword ? 'active' : 'invited') : 'disabled';
   db.transaction(() => {
     if (enabled) restoreEmail(db, userId);
@@ -1413,6 +1415,81 @@ export function setPasswordWithToken(db, token, passwordHash, now = Date.now()) 
     logAudit(db, { action: `user.${found.purpose}_link_used`, actorId: found.email, recordId: found.userId });
   })();
   return getUser(db, found.userId);
+}
+
+// "Continue with Google" (auth/googleAuth.js). Google only signs in to an
+// account it was linked to, and linking needs proof of the account's email:
+// its invite or set-up link, or being signed in already.
+
+/**
+ * The user a Google account is linked to, or null. An account whose email was
+ * released (disabled, or its school closed) cannot sign in, as with a password.
+ */
+export function findUserByGoogleSub(db, sub) {
+  if (!sub) return null;
+  return db
+    .prepare(`SELECT ${USER_COLUMNS} FROM users u WHERE u.google_sub = ? AND u.released_email IS NULL`)
+    .get(String(sub)) ?? null;
+}
+
+/**
+ * Link a Google account to a user, replacing any they had linked. A Google
+ * account still linked to a disabled or released account moves over.
+ * @returns {{ok: true, user: object} | {ok: false, reason: 'taken'}} taken: linked to someone else
+ */
+export function linkGoogleAccount(db, userId, { sub, email }) {
+  return db.transaction(() => {
+    const owner = db
+      .prepare(`SELECT user_id AS userId, status, released_email AS releasedEmail FROM users WHERE google_sub = ?`)
+      .get(String(sub));
+    if (owner && owner.userId !== userId) {
+      if (owner.status !== 'disabled' && !owner.releasedEmail) return { ok: false, reason: 'taken' };
+      db.prepare(`UPDATE users SET google_sub = NULL, google_email = NULL WHERE user_id = ?`).run(owner.userId);
+    }
+    db.prepare(`UPDATE users SET google_sub = ?, google_email = ? WHERE user_id = ?`).run(String(sub), email ?? null, userId);
+    logAudit(db, { action: 'user.google_linked', actorId: email ?? null, recordId: userId });
+    return { ok: true, user: getUser(db, userId) };
+  })();
+}
+
+/** Unlink Google. Refused when it is the account's only way in. */
+export function unlinkGoogleAccount(db, userId) {
+  const { has } = db.prepare(`SELECT password_hash IS NOT NULL AS has FROM users WHERE user_id = ?`).get(userId);
+  if (has !== 1) return { ok: false, reason: 'no_password' };
+  db.prepare(`UPDATE users SET google_sub = NULL, google_email = NULL WHERE user_id = ?`).run(userId);
+  logAudit(db, { action: 'user.google_unlinked', recordId: userId });
+  return { ok: true, user: getUser(db, userId) };
+}
+
+/**
+ * Finish setting up an account with Google instead of a password, from a good
+ * set-up or reset link (`token`) or an invite or reset code (`code`). Like
+ * setting a password from them: the link or code is used up, the account's
+ * other open links and codes stop working, and it becomes active.
+ * @returns {{ok: true, user: object} | {ok: false, reason: 'invalid'|'taken'}}
+ */
+export function setUpWithGoogle(db, { token = null, code = null, google }, now = Date.now()) {
+  const found = token ? lookupEmailToken(db, token, now) : lookupSetupCode(db, code, now);
+  const usable = found.state === 'ok' && (code || found.purpose === 'setup' || found.purpose === 'reset');
+  if (!usable) return { ok: false, reason: 'invalid' };
+  return db.transaction(() => {
+    const linked = linkGoogleAccount(db, found.userId, google);
+    if (!linked.ok) return linked;
+    if (token) db.prepare(`UPDATE email_tokens SET used_at = datetime('now') WHERE id = ?`).run(found.id);
+    else db.prepare(`UPDATE setup_codes SET used_at = datetime('now') WHERE id = ?`).run(found.id);
+    db.prepare(
+      `UPDATE email_tokens SET revoked_at = datetime('now')
+        WHERE user_id = ? AND purpose IN ('setup', 'reset') AND used_at IS NULL AND revoked_at IS NULL`
+    ).run(found.userId);
+    db.prepare(`UPDATE setup_codes SET revoked_at = datetime('now') WHERE user_id = ? AND used_at IS NULL AND revoked_at IS NULL`)
+      .run(found.userId);
+    db.prepare(
+      `UPDATE users SET status = 'active', email_verified_at = coalesce(email_verified_at, datetime('now'))
+        WHERE user_id = ?`
+    ).run(found.userId);
+    logAudit(db, { action: `user.${found.purpose}_${token ? 'link' : 'code'}_used`, actorId: found.email, recordId: found.userId, detail: { via: 'google' } });
+    return { ok: true, user: getUser(db, found.userId) };
+  })();
 }
 
 /** The user for an email with whether they have a password, for "forgot password". */

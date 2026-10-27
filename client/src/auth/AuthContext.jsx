@@ -1,6 +1,8 @@
 import { createContext, useContext, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   signIn as serverSignIn,
+  signInWithGoogle as serverGoogleSignIn,
+  setUpWithGoogle as serverGoogleSetUp,
   registerSchool as serverRegisterSchool,
   redeemSetupCode,
   setPasswordWithLink,
@@ -112,6 +114,22 @@ export function AuthProvider({ children }) {
     return { session: next };
   }, [applySession]);
 
+  /** "Continue with Google" on the sign-in page: only a linked Google account works. */
+  const signInWithGoogle = useCallback(async (credential) => {
+    const next = await serverGoogleSignIn(credential);
+    await clearLockout(next.username);
+    await applySession(next, { fresh: true });
+    return next;
+  }, [applySession]);
+
+  /** Finish setting up with Google from a set-up link ({ token }) or invite code ({ code }). */
+  const setUpWithGoogle = useCallback(async (proof, credential) => {
+    const next = await serverGoogleSetUp(proof, credential);
+    await clearLockout(next.username);
+    await applySession(next, { fresh: true });
+    return next;
+  }, [applySession]);
+
   /** A school's application. Nobody is signed in; the applicant confirms their email next. */
   const registerSchool = useCallback((application) => serverRegisterSchool(application), []);
 
@@ -182,6 +200,8 @@ export function AuthProvider({ children }) {
         }
       : null,
     signIn,
+    signInWithGoogle,
+    setUpWithGoogle,
     registerSchool,
     joinWithCode,
     setPasswordFromLink,
@@ -190,7 +210,7 @@ export function AuthProvider({ children }) {
     unlockWithPin,
     enrolPin,
   }), [
-    status, session, pinState, signIn, registerSchool, joinWithCode, setPasswordFromLink, refreshSchool,
+    status, session, pinState, signIn, signInWithGoogle, setUpWithGoogle, registerSchool, joinWithCode, setPasswordFromLink, refreshSchool,
     signOut, unlockWithPin, enrolPin,
   ]);
 

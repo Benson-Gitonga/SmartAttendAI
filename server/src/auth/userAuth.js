@@ -14,7 +14,7 @@
 
 import { verifyPassword, hashPassword } from './systemAdminAuth.js';
 import { createTokenSigner, createAttemptLimiter, bearerToken } from './tokens.js';
-import { findUserForSignIn, getUser, getSchool, recordSignIn } from '../db/repository.js';
+import { findUserForSignIn, findUserByGoogleSub, getUser, getSchool, recordSignIn } from '../db/repository.js';
 
 // Checked against when the email is unknown, so a wrong email takes as long
 // as a wrong password and the reply time does not say which it was.
@@ -31,6 +31,7 @@ export function describeAccount(db, user) {
       role: user.role,
       jobTitle: user.jobTitle,
       schoolId: user.schoolId,
+      googleEmail: user.googleEmail ?? null,
     },
     school: school && {
       schoolId: school.schoolId,
@@ -99,6 +100,23 @@ export function createUserAuth({
     return { ok: true, ...issueToken(user), ...describeAccount(db, user) };
   }
 
+  /**
+   * Sign in with a Google account (auth/googleAuth.js). Only an account the
+   * Google account was linked to, from an invite or set-up link or the
+   * account sheet; Google's email alone is never enough.
+   *
+   * @param {{sub: string}} google
+   * @returns {{ok:true, token:string, expiresAt:number, user:object, school:object}
+   *         | {ok:false, reason:'not_linked'|'disabled'}}
+   */
+  function signInWithGoogle(google) {
+    const user = findUserByGoogleSub(db, google?.sub);
+    if (!user) return { ok: false, reason: 'not_linked' };
+    if (user.status !== 'active') return { ok: false, reason: 'disabled' };
+    recordSignIn(db, user.userId);
+    return { ok: true, ...issueToken(user), ...describeAccount(db, user) };
+  }
+
   /** The current user for a token, or null when the token or account is no longer good. */
   function userForToken(token) {
     const claims = signer.verify(token, now());
@@ -136,5 +154,5 @@ export function createUserAuth({
     next();
   }
 
-  return { signIn, issueToken, userForToken, requireUser, requireActiveSchool };
+  return { signIn, signInWithGoogle, issueToken, userForToken, requireUser, requireActiveSchool };
 }

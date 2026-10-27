@@ -4,6 +4,7 @@ import { lookupEmailLink } from '../../auth/session';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import AuthLayout, { Field, PasswordInput, Alert } from './AuthLayout';
 import { PUBLIC_PAGES } from './publicRoute';
+import GoogleSignInButton from './GoogleSignInButton';
 
 const PASSWORD_MIN = 8;
 const firstName = (fullName = '') => fullName.replace(/^(Mr|Mrs|Ms|Miss|Dr)\.?\s+/i, '').split(' ')[0];
@@ -14,7 +15,7 @@ const firstName = (fullName = '') => fullName.replace(/^(Mr|Mrs|Ms|Miss|Dr)\.?\s
  * Saving signs straight in.
  */
 export default function SetPasswordPage({ token }) {
-  const { setPasswordFromLink } = useAuth();
+  const { setPasswordFromLink, setUpWithGoogle } = useAuth();
   const online = useOnlineStatus();
   const [link, setLink] = useState({ status: 'checking' });
   const [password, setPassword] = useState('');
@@ -93,6 +94,14 @@ export default function SetPasswordPage({ token }) {
         <button className="pub-btn pub-btn--primary pub-btn--block" type="submit" disabled={busy || !online}>
           {busy ? 'Saving…' : reset ? 'Save password and sign in' : 'Set password and sign in'}
         </button>
+
+        {/* The link proves the email, so any Google account can be linked here instead of a password. */}
+        <GoogleSignInButton
+          email={link.email}
+          disabled={busy || !online}
+          action={(credential) => setUpWithGoogle({ token }, credential)}
+          onSignedIn={leaveLink}
+        />
       </form>
     </AuthLayout>
   );

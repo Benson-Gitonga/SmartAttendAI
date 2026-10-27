@@ -106,6 +106,7 @@ export default function AdminTeachers({ onOpenClass }) {
                 <div className="ad-person__contact">
                   <a href={`mailto:${t.email}`}><MailIcon size={14} /> {t.email}</a>
                   {t.phone && <a href={`tel:${t.phone}`}><PhoneIcon size={14} /> {t.phone}</a>}
+                  {t.googleEmail && <span title="Signs in with this Google account">Google: {t.googleEmail}</span>}
                 </div>
                 <div className="ad-person__classes">
                   {t.classes.length === 0 ? (

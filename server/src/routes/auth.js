@@ -1,8 +1,10 @@
 /**
  * /api/auth/*: school staff sign in, look up who they are, set a password
  * with a one-time code from their school admin or a link sent by email,
- * confirm their email, and ask for a password reset. See auth/userAuth.js,
- * auth/setupCodes.js and auth/emailTokens.js.
+ * confirm their email, and ask for a password reset. "Continue with Google"
+ * works once a Google account is linked, from the invite or set-up link or the
+ * account sheet. See auth/userAuth.js, auth/googleAuth.js, auth/setupCodes.js
+ * and auth/emailTokens.js.
  */
 
 import { Router } from 'express';
@@ -11,10 +13,12 @@ import {
   signInSchema, setupCodeSchema, setPasswordSchema, emailTokenSchema, forgotPasswordSchema,
 } from '../schemas/schoolRegistration.schema.js';
 import { describeAccount } from '../auth/userAuth.js';
+import { createGoogleVerifier, GoogleTokenError } from '../auth/googleAuth.js';
 import { hashPassword } from '../auth/systemAdminAuth.js';
 import { createAttemptLimiter } from '../auth/tokens.js';
 import {
   logAudit, lookupSetupCode, redeemSetupCode, lookupEmailToken, confirmEmailWithToken, setPasswordWithToken,
+  setUpWithGoogle, linkGoogleAccount, unlinkGoogleAccount,
 } from '../db/repository.js';
 
 const REFUSED = {
@@ -32,6 +36,13 @@ const LINK_PROBLEMS = {
   wrong_kind: [400, 'This link is for something else. Open it from the email it came in.'],
 };
 
+// Why a Google account cannot sign in.
+const GOOGLE_REFUSED = {
+  not_linked: [403, 'This Google account is not linked to SmartAttend. Open the invite link from your school admin and choose Continue with Google, or sign in with your password and link Google from your account.'],
+  disabled: [403, 'This account has been disabled. Ask your school admin.'],
+};
+const GOOGLE_TAKEN = 'That Google account is already linked to another SmartAttend account.';
+
 const FORGOT_REPLY = 'If that email has a SmartAttend account, we have sent it a link. Check your inbox and spam folder.';
 
 // Why a set-up link (#/join/CODE) cannot be used, in words a teacher can act on.
@@ -46,6 +57,7 @@ export function createAuthRouter({
   db,
   userAuth,
   emails,
+  google = createGoogleVerifier(),
   codeLimiter = createAttemptLimiter({ maxFailures: 10, lockoutMs: 15 * 60 * 1000 }),
   // Reset emails per address and per email: enough for a typo or two, not for spamming someone.
   forgotLimiter = createAttemptLimiter({ maxFailures: 5, lockoutMs: 15 * 60 * 1000 }),
@@ -174,6 +186,96 @@ export function createAuthRouter({
     codeLimiter.succeed(req.ip);
     logAudit(db, { action: 'user.signed_in', actorId: user.email, recordId: user.userId, detail: { ip: req.ip, via: `${found.purpose}_link` } });
     res.json({ ...userAuth.issueToken(user), ...describeAccount(db, user) });
+  });
+
+  // "Continue with Google". The ID token from Google Identity Services is
+  // checked here (or "dev:<email>" in development without a client id).
+  const googleProfile = async (req, res) => {
+    const credential = req.body?.credential;
+    if (typeof credential !== 'string' || !credential || credential.length > 4096) {
+      res.status(400).json({ error: 'Missing Google sign-in.' });
+      return null;
+    }
+    try {
+      return await google.verify(credential);
+    } catch (err) {
+      if (!(err instanceof GoogleTokenError)) throw err;
+      codeLimiter.fail(req.ip);
+      logAudit(db, { action: 'user.sign_in_failed', detail: { ip: req.ip, via: 'google', reason: err.message } });
+      res.status(401).json({ error: 'Google sign-in did not work. Try again.' });
+      return null;
+    }
+  };
+
+  // Whether the PWA shows "Continue with Google", and with which client id.
+  router.get('/google', (req, res) => {
+    res.json({ mode: google.mode, clientId: google.clientId });
+  });
+
+  router.post('/google', (req, res, next) => googleSignIn(req, res).catch(next));
+  async function googleSignIn(req, res) {
+    if (tooMany(req, res)) return undefined;
+    const profile = await googleProfile(req, res);
+    if (!profile) return undefined;
+    const result = userAuth.signInWithGoogle(profile);
+    if (!result.ok) {
+      logAudit(db, { action: 'user.sign_in_failed', actorId: profile.email, detail: { ip: req.ip, via: 'google', reason: result.reason } });
+      const [status, error] = GOOGLE_REFUSED[result.reason];
+      return res.status(status).json({ error, reason: result.reason, email: profile.email });
+    }
+    codeLimiter.succeed(req.ip);
+    logAudit(db, { action: 'user.signed_in', actorId: result.user.email, recordId: result.user.userId, detail: { ip: req.ip, via: 'google' } });
+    const { ok, ...body } = result; // eslint-disable-line no-unused-vars
+    res.json(body);
+  }
+
+  // Set up an account with Google instead of a password, from an emailed
+  // set-up or reset link ({ token }) or an invite link's code ({ code }).
+  // Opening the link proves the email, so any Google account may be linked.
+  router.post('/google/setup', (req, res, next) => googleSetup(req, res).catch(next));
+  async function googleSetup(req, res) {
+    if (tooMany(req, res)) return undefined;
+    const { token, code } = req.body ?? {};
+    const byToken = typeof token === 'string' && token.length > 0;
+    if (!byToken && !(typeof code === 'string' && code.length > 0)) return refuseLink(req, res, 'unknown');
+
+    const found = byToken ? lookupEmailToken(db, token) : lookupSetupCode(db, code);
+    if (found.state !== 'ok') return byToken ? refuseLink(req, res, found.state) : refuse(req, res, found.state);
+    if (byToken && found.purpose === 'verify_email') return refuseLink(req, res, 'wrong_kind');
+    if (byToken && found.schoolStatus !== 'active') {
+      return res.status(403).json({ error: 'Your school is not active on SmartAttend right now, so the account cannot be set up yet.', state: 'school_inactive' });
+    }
+
+    const profile = await googleProfile(req, res);
+    if (!profile) return undefined;
+    if (!profile.emailVerified) {
+      return res.status(403).json({ error: 'Google has not confirmed the email of this Google account yet.', reason: 'unverified' });
+    }
+
+    const result = setUpWithGoogle(db, byToken ? { token, google: profile } : { code, google: profile });
+    if (!result.ok && result.reason === 'taken') return res.status(409).json({ error: GOOGLE_TAKEN, reason: 'taken' });
+    if (!result.ok) return byToken ? refuseLink(req, res, 'revoked') : refuse(req, res, 'revoked');
+    codeLimiter.succeed(req.ip);
+    logAudit(db, { action: 'user.signed_in', actorId: result.user.email, recordId: result.user.userId, detail: { ip: req.ip, via: 'google_setup' } });
+    res.json({ ...userAuth.issueToken(result.user), ...describeAccount(db, result.user) });
+  }
+
+  // A signed-in user links (or unlinks) the Google account they want to use.
+  router.post('/google/link', userAuth.requireUser(), (req, res, next) => linkGoogle(req, res).catch(next));
+  async function linkGoogle(req, res) {
+    const profile = await googleProfile(req, res);
+    if (!profile) return undefined;
+    const result = linkGoogleAccount(db, req.user.userId, profile);
+    if (!result.ok) return res.status(409).json({ error: GOOGLE_TAKEN, reason: 'taken' });
+    res.json(describeAccount(db, result.user));
+  }
+
+  router.delete('/google/link', userAuth.requireUser(), (req, res) => {
+    const result = unlinkGoogleAccount(db, req.user.userId);
+    if (!result.ok) {
+      return res.status(409).json({ error: 'Set a password first (Forgot password on the sign-in page), so you can still sign in without Google.', reason: 'no_password' });
+    }
+    res.json(describeAccount(db, result.user));
   });
 
   // Always the same reply, so nobody can find out which emails have accounts.

@@ -3,6 +3,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import AuthLayout, { Field, PasswordInput, Alert } from './AuthLayout';
 import { PUBLIC_PAGES } from './publicRoute';
+import GoogleSignInButton from './GoogleSignInButton';
 
 /**
  * Sign-in for everyone: school staff with their email, the system admin with
@@ -71,6 +72,9 @@ export default function SignInPage({ notice = null, initialEmail = '' }) {
         <button className="pub-btn pub-btn--primary pub-btn--block" type="submit" disabled={busy || !online || !email.trim() || !password}>
           {busy ? 'Signing in…' : 'Sign in'}
         </button>
+
+        {/* Only for a Google account linked from an invite link or the account sheet. */}
+        <GoogleSignInButton disabled={busy || !online} />
       </form>
 
       <div className="pub-card__foot">

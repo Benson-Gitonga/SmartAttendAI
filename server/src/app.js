@@ -16,6 +16,7 @@ import { createGateRouter } from './routes/gate.js';
 import { createSystemAdminAuth } from './auth/systemAdminAuth.js';
 import { createUserAuth } from './auth/userAuth.js';
 import { createAuthRouter } from './routes/auth.js';
+import { createGoogleVerifier } from './auth/googleAuth.js';
 import { createTeacherRouter } from './routes/teacher.js';
 import { createMailer } from './mail/mailer.js';
 import { createAccountEmails } from './mail/accountEmails.js';
@@ -36,6 +37,7 @@ import {
  * @param {ReturnType<typeof createUserAuth>} [opts.userAuth] sign-in for school staff
  * @param {ReturnType<typeof createMailer>} [opts.mailer] outgoing email (log-only by default)
  * @param {string} [opts.appUrl] where the PWA lives, for links in emails
+ * @param {ReturnType<typeof createGoogleVerifier>} [opts.google] checks "Continue with Google" tokens
  * @param {string} [opts.clientDir] the built PWA to serve; '' = API only
  */
 export function createApp({
@@ -48,6 +50,7 @@ export function createApp({
   mailer = createMailer(config.mail),
   appUrl = config.appUrl,
   clientDir = config.clientDir,
+  google = createGoogleVerifier(config.google),
 } = {}) {
   const app = express();
   const emails = createAccountEmails({ db, mailer, appUrl });
@@ -81,7 +84,7 @@ export function createApp({
     res.json(getStats(db, req.query.date || todayISO()));
   });
 
-  app.use('/api/auth', createAuthRouter({ db, userAuth, emails }));
+  app.use('/api/auth', createAuthRouter({ db, userAuth, emails, google }));
 
   // Without SES, emails only go to the console and this outbox, so the links
   // in them can still be followed while developing.

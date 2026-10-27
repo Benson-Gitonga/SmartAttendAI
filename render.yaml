@@ -35,3 +35,6 @@ services:
         sync: false
       - key: BREVO_API_KEY
         sync: false
+      # "Continue with Google"; hidden until set (see server/.env.example).
+      - key: GOOGLE_CLIENT_ID
+        sync: false

@@ -97,6 +97,76 @@ export async function signIn(email, password, { fetchImpl = globalThis.fetch } =
 }
 
 /**
+ * "Continue with Google": what the server's Google sign-in is set up as.
+ * @returns {Promise<{mode: 'google'|'dev'|'off', clientId: string|null}>}
+ */
+export async function getGoogleSignInConfig({ fetchImpl = globalThis.fetch } = {}) {
+  try {
+    const res = await fetchImpl('/api/auth/google');
+    if (!res.ok) return { mode: 'off', clientId: null };
+    return await res.json();
+  } catch {
+    return { mode: 'off', clientId: null };
+  }
+}
+
+/**
+ * Sign in with the ID token Google Identity Services gave the page (or, in
+ * development without a Google client id, "dev:<email>"). Only works for a
+ * Google account already linked to a SmartAttend account.
+ * @throws {AuthError} NETWORK | NOT_LINKED | DISABLED | LOCKED | FAILED
+ */
+export async function signInWithGoogle(credential, { fetchImpl = globalThis.fetch } = {}) {
+  if (offline()) throw new AuthError('NETWORK', 'Connect to the internet to sign in with Google.');
+  const { res, json } = await postJson('/api/auth/google', { credential }, fetchImpl);
+  if (res.ok) return persist(sessionFromServer(json));
+  if (res.status === 429) throw new AuthError('LOCKED', json.error ?? 'Too many tries. Wait a few minutes.');
+  if (res.status === 403) {
+    throw new AuthError(json.reason === 'not_linked' ? 'NOT_LINKED' : 'DISABLED', json.error ?? 'This Google account cannot sign in.');
+  }
+  throw new AuthError('FAILED', json.error ?? `Google sign-in did not work (${res.status}).`);
+}
+
+/**
+ * Finish setting up an account with Google instead of a password, from an
+ * emailed link ({ token }) or an invite link's code ({ code }), and sign in.
+ * @throws {AuthError} NETWORK | TAKEN | LINK | CODE | LOCKED | FAILED
+ */
+export async function setUpWithGoogle({ token, code }, credential, { fetchImpl = globalThis.fetch } = {}) {
+  if (offline()) throw new AuthError('NETWORK', 'Connect to the internet to finish setting up your account.');
+  const body = token ? { token, credential } : { code: code.trim(), credential };
+  const { res, json } = await postJson('/api/auth/google/setup', body, fetchImpl);
+  if (res.ok) return persist(sessionFromServer(json));
+  if (res.status === 429) throw new AuthError('LOCKED', json.error ?? 'Too many tries. Wait a few minutes.');
+  if (res.status === 409) throw new AuthError('TAKEN', json.error ?? 'That Google account is already linked to another account.');
+  if (json.state) throw new AuthError(token ? 'LINK' : 'CODE', json.error ?? 'This link does not work.', { state: json.state });
+  throw new AuthError('FAILED', json.error ?? `Google sign-in did not work (${res.status}).`);
+}
+
+/**
+ * Link (credential) or unlink (null) the Google account the signed-in user
+ * signs in with. Returns the account as GET /api/auth/me does.
+ * @throws {AuthError} NETWORK | TAKEN | NO_PASSWORD | FAILED
+ */
+export async function setLinkedGoogle(credential, { fetchImpl = globalThis.fetch } = {}) {
+  if (offline()) throw new AuthError('NETWORK', 'Connect to the internet first.');
+  let res;
+  try {
+    res = await fetchImpl('/api/auth/google/link', {
+      method: credential ? 'POST' : 'DELETE',
+      headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+      body: credential ? JSON.stringify({ credential }) : undefined,
+    });
+  } catch {
+    throw new AuthError('NETWORK', 'Could not reach the SmartAttend server. Check your connection and try again.');
+  }
+  const json = await res.json().catch(() => ({}));
+  if (res.ok) return json;
+  if (res.status === 409) throw new AuthError(json.reason === 'no_password' ? 'NO_PASSWORD' : 'TAKEN', json.error);
+  throw new AuthError('FAILED', json.error ?? `The server answered ${res.status}.`);
+}
+
+/**
  * Send a school's application. Nobody is signed in: the applicant confirms
  * their email from the link sent now, and sets a password from the link sent
  * when the school is approved.

@@ -1,16 +1,18 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import JoinWithCode from './JoinWithCode';
-import { lookupSetupCode } from '../auth/session';
+import { lookupSetupCode, getGoogleSignInConfig } from '../auth/session';
 
 const mockAuth = { joinWithCode: jest.fn() };
 jest.mock('../auth/AuthContext', () => ({ useAuth: () => mockAuth }));
-jest.mock('../auth/session', () => ({ lookupSetupCode: jest.fn() }));
+jest.mock('../auth/session', () => ({ lookupSetupCode: jest.fn(), getGoogleSignInConfig: jest.fn() }));
 
 const INVITE = { fullName: 'Ms. Mary Otieno', email: 'otieno@kibera.ac.ke', schoolName: 'Kibera Secondary School', purpose: 'invite', expiresAt: '2026-10-26T00:00:00Z' };
 
 beforeEach(() => {
   mockAuth.joinWithCode = jest.fn().mockResolvedValue({});
+  mockAuth.setUpWithGoogle = jest.fn().mockResolvedValue({});
+  getGoogleSignInConfig.mockResolvedValue({ mode: 'off', clientId: null });
 });
 
 describe('JoinWithCode', () => {
@@ -26,6 +28,19 @@ describe('JoinWithCode', () => {
     await user.type(screen.getByLabelText('Confirm password'), 'otieno-2026');
     await user.click(screen.getByRole('button', { name: 'Finish and sign in' }));
     expect(mockAuth.joinWithCode).toHaveBeenCalledWith('K7QM-4XPA', 'otieno-2026');
+  });
+
+  it('the invite link can link a Google account instead of a password', async () => {
+    const user = userEvent.setup();
+    lookupSetupCode.mockResolvedValue(INVITE);
+    getGoogleSignInConfig.mockResolvedValue({ mode: 'dev', clientId: null });
+    render(<JoinWithCode initialCode="K7QM-4XPA" onBack={jest.fn()} />);
+    await user.click(await screen.findByRole('button', { name: /Continue with Google/ }));
+    await user.clear(screen.getByLabelText('Google email'));
+    await user.type(screen.getByLabelText('Google email'), 'mary.otieno@gmail.com');
+    await user.click(screen.getByRole('button', { name: /^Continue$/ }));
+    expect(mockAuth.setUpWithGoogle).toHaveBeenCalledWith({ code: 'K7QM-4XPA' }, 'dev:mary.otieno@gmail.com');
+    expect(mockAuth.joinWithCode).not.toHaveBeenCalled();
   });
 
   it('a link with the code goes straight to choosing a password', async () => {
