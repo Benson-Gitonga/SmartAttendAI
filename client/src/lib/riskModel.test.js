@@ -187,6 +187,23 @@ describe('computeMlExtraFeatures', () => {
     expect(f.attendance_rate_term).not.toBeNull();
   });
 
+  it('career rate counts term-time school days from the first record', () => {
+    // Present 2026-07-27..08-07 (end of Term 2), then nothing until AS_OF
+    // (2026-09-07): the Aug holiday is skipped, Sep 1-4 count as absences.
+    const history = historyEndingBefore('2026-08-08', 10, () => 'present');
+    const f = computeMlExtraFeatures(history, AS_OF);
+    expect(f.attendance_rate_career).toBeCloseTo(10 / 14, 6);
+  });
+
+  it('career rate skips public holidays and is null with no history', () => {
+    // Term 2 from 2026-05-25 to 06-05: 10 weekdays, two of them holidays
+    // (Idd-ul-Azha 05-27, Madaraka Day 06-01). Present on the other 8.
+    const history = historyEndingBefore('2026-06-06', 10, () => 'present')
+      .filter((r) => r.date !== '2026-05-27' && r.date !== '2026-06-01');
+    expect(computeMlExtraFeatures(history, '2026-06-06').attendance_rate_career).toBe(1);
+    expect(computeMlExtraFeatures([], AS_OF).attendance_rate_career).toBeNull();
+  });
+
   it('fee/health absence rate are always 0 (no reason data collected yet)', () => {
     const f = computeMlExtraFeatures(historyEndingBefore(AS_OF, 20, () => 'absent'), AS_OF);
     expect(f.fee_absence_rate).toBe(0);

@@ -212,6 +212,54 @@ def test_new_features_dont_change_original_seven_when_omitted():
     assert feats["dow_concentration"] == pytest.approx(1.0)
 
 
+def test_career_rate_counts_from_first_record_only():
+    # First record on 2026-01-19: the two school weeks before it are not
+    # absences, so a student present ever since scores 1.0.
+    feats = compute_features(records(ALWAYS_PRESENT, start=date(2026, 1, 19)), AS_OF)
+    assert feats["attendance_rate_career"] == pytest.approx(1.0)
+
+
+def test_career_rate_spans_beyond_the_short_windows():
+    # Absent all of Term 1, present all of Term 2: the 6-week windows only see
+    # Term 2, but the career rate remembers Term 1.
+    history = records(ALWAYS_ABSENT, end=date(2026, 4, 4)) + records(
+        ALWAYS_PRESENT, start=date(2026, 5, 4), end=date(2026, 7, 6)
+    )
+    as_of = date(2026, 7, 6)
+    feats = compute_features(history, as_of)
+    assert feats["attendance_rate_w1"] == pytest.approx(1.0)
+    assert feats["attendance_rate_w3"] == pytest.approx(1.0)
+    term1 = CAL.count_school_days(date(2026, 1, 5), date(2026, 4, 4))
+    term2 = CAL.count_school_days(date(2026, 5, 4), as_of)
+    assert feats["attendance_rate_career"] == pytest.approx(term2 / (term1 + term2))
+
+
+def test_career_rate_counts_unrecorded_days_after_the_first_record_as_absent():
+    # Present 2026-01-05..01-16, then no records: 10 attended of the school
+    # days up to AS_OF.
+    feats = compute_features(records(ALWAYS_PRESENT, end=date(2026, 1, 17)), AS_OF)
+    expected = 10 / CAL.count_school_days(date(2026, 1, 5), AS_OF)
+    assert feats["attendance_rate_career"] == pytest.approx(expected)
+
+
+def test_career_rate_ignores_future_records_and_is_nan_without_history():
+    future_only = records(ALWAYS_PRESENT, start=AS_OF)
+    assert math.isnan(compute_features(future_only, AS_OF)["attendance_rate_career"])
+    assert math.isnan(compute_features([], AS_OF)["attendance_rate_career"])
+
+
+def test_count_school_days_matches_school_days():
+    for start, end in [
+        (date(2026, 1, 1), date(2026, 12, 31)),
+        (date(2026, 4, 1), date(2026, 5, 6)),
+        (date(2026, 4, 10), date(2026, 4, 20)),
+        (date(2026, 3, 1), date(2026, 2, 1)),
+    ]:
+        days = CAL.school_days(start, end)
+        assert CAL.count_school_days(start, end) == len(days)
+        assert all(start <= d < end for d in days)
+
+
 # Feature computation: edge cases
 
 
@@ -347,6 +395,22 @@ def test_build_training_table_shape_and_columns():
     assert (table.loc[table["student_id"] == "chronic", LABEL_NAME] == 1.0).all()
     assert (table.loc[table["student_id"] == "regular", LABEL_NAME] == 0.0).all()
     assert table["as_of"].is_monotonic_increasing
+
+
+def test_build_training_table_extra_horizon_label():
+    # Absent 6 school days from 2026-02-16: 6 of 20 in the four-week window
+    # (30%, label 1), far under 30% of the eight-week window (label 0).
+    absent_six_days = lambda d: "absent" if date(2026, 2, 16) <= d < date(2026, 2, 24) else "present"
+    events = records(absent_six_days, end=date(2026, 4, 4))
+    table = build_training_table(
+        events,
+        CAL,
+        reference_dates=[date(2026, 2, 16)],
+        extra_horizons={"label_8w": timedelta(days=56)},
+    )
+    assert list(table.columns) == ["student_id", "as_of", *FEATURE_NAMES, LABEL_NAME, "label_8w"]
+    assert table[LABEL_NAME].iloc[0] == 1.0
+    assert table["label_8w"].iloc[0] == 0.0
 
 
 def test_build_training_table_empty_input():

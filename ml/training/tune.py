@@ -2,7 +2,8 @@
 """Hyperparameter and decision-threshold tuning on top of train.py.
 
   1. Tunes RandomForest and HistGradientBoosting with RandomizedSearchCV on
-     out-of-time folds (ForwardChainingCV).
+     out-of-time folds (ForwardChainingCV), scored by PR-AUC. No class
+     weighting, so predicted probabilities stay calibrated (the app shows them).
   2. Picks the F1-maximising threshold from out-of-fold predictions on the
      SCH-01 training period only.
   3. Compares the tuned models with the baselines on SCH-01 test and SCH-02.
@@ -13,6 +14,11 @@ Usage
 -----
     cd ml && ./venv/Scripts/python.exe training/tune.py
     ./venv/Scripts/python.exe training/tune.py --n-iter 8 --n-jobs 2
+    ./venv/Scripts/python.exe training/tune.py --label 8w   # eight-week label experiment
+
+``--label 8w`` predicts >= 30% absence over the next eight weeks instead of
+four. It writes tuning_report_8w.json and best_model_8w.pkl, so the shipped
+four-week model and its report are left alone.
 """
 
 from __future__ import annotations
@@ -38,11 +44,13 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
+from compute_labels import LABEL_NAME  # noqa: E402
 from feature_engineering import FEATURE_NAMES  # noqa: E402
 from temporal_split import ForwardChainingCV, temporal_train_test_split  # noqa: E402
 from train import (  # noqa: E402
     ENROLMENT_MARGIN_DAYS,
-    LABEL_HORIZON_DAYS,
+    LABEL_8W,
+    LABEL_HORIZONS,
     MODEL_LABELS,
     MODELS_DIR,
     RESULTS_DIR,
@@ -68,7 +76,7 @@ def rf_search_space() -> dict:
         "rf__min_samples_leaf": randint(2, 40),
         "rf__min_samples_split": randint(2, 20),
         "rf__max_features": ["sqrt", "log2", 0.5, 0.7, None],
-        "rf__class_weight": ["balanced", "balanced_subsample"],
+        "rf__class_weight": [None],  # unweighted, so predict_proba stays calibrated
     }
 
 
@@ -93,7 +101,7 @@ def make_rf_pipeline() -> Pipeline:
 
 
 def make_hgb() -> HistGradientBoostingClassifier:
-    return HistGradientBoostingClassifier(random_state=SEED, class_weight="balanced")
+    return HistGradientBoostingClassifier(random_state=SEED)
 
 
 # Threshold selection
@@ -148,7 +156,12 @@ def main(argv=None) -> int:
     ap.add_argument("--n-iter", type=int, default=25, help="RandomizedSearchCV iterations per model")
     ap.add_argument("--cv-splits", type=int, default=4, help="ForwardChainingCV folds")
     ap.add_argument("--n-jobs", type=int, default=3, help="parallel workers (kept modest - low-memory box)")
+    ap.add_argument("--label", choices=("4w", "8w"), default="4w", help="label horizon (default: 4w, the shipped model)")
     args = ap.parse_args(argv)
+
+    label = LABEL_NAME if args.label == "4w" else LABEL_8W
+    gap = LABEL_HORIZONS[label]
+    suffix = "" if args.label == "4w" else "_8w"
 
     sch01_path = args.sch01 or _locate("SCH-01")
     sch02_path = args.sch02 or _locate("SCH-02")
@@ -156,16 +169,18 @@ def main(argv=None) -> int:
     print("Loading cached supervised tables (from train.py's cache)...")
     table01 = supervised_table(sch01_path)
     table02 = supervised_table(sch02_path)
+    table01 = table01.dropna(subset=[label]).reset_index(drop=True)
+    table02 = table02.dropna(subset=[label]).reset_index(drop=True)
 
     train01, test01 = temporal_train_test_split(
-        table01, test_size=TEST_SIZE, date_col="as_of", gap=LABEL_HORIZON_DAYS
+        table01, test_size=TEST_SIZE, date_col="as_of", gap=gap
     )
-    X_train, y_train = _xy(train01)
-    X_test, y_test = _xy(test01)
-    X_holdout, y_holdout = _xy(table02)
+    X_train, y_train = _xy(train01, label)
+    X_test, y_test = _xy(test01, label)
+    X_holdout, y_holdout = _xy(table02, label)
     groups = train01["as_of"].to_numpy()
 
-    cv = ForwardChainingCV(n_splits=args.cv_splits, gap=LABEL_HORIZON_DAYS)
+    cv = ForwardChainingCV(n_splits=args.cv_splits, gap=gap)
 
     report: dict = {
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
@@ -174,14 +189,16 @@ def main(argv=None) -> int:
             "seed": SEED,
             "n_iter": args.n_iter,
             "cv_splits": args.cv_splits,
-            "cv_gap_days": LABEL_HORIZON_DAYS,
+            "label": label,
+            "label_horizon_days": gap,
+            "cv_gap_days": gap,
             "enrolment_margin_days": ENROLMENT_MARGIN_DAYS,
             "features": list(FEATURE_NAMES),
         },
         "datasets": {
-            "sch01_train": _dataset_stats(train01),
-            "sch01_test": _dataset_stats(test01),
-            "sch02_holdout": _dataset_stats(table02),
+            "sch01_train": _dataset_stats(train01, label),
+            "sch01_test": _dataset_stats(test01, label),
+            "sch02_holdout": _dataset_stats(table02, label),
         },
         "models": {},
     }
@@ -193,7 +210,7 @@ def main(argv=None) -> int:
         make_rf_pipeline(),
         rf_search_space(),
         n_iter=args.n_iter,
-        scoring="f1",
+        scoring="average_precision",
         cv=cv,
         n_jobs=args.n_jobs,
         random_state=SEED,
@@ -201,7 +218,7 @@ def main(argv=None) -> int:
         verbose=1,
     )
     rf_search.fit(X_train, y_train, groups=groups)
-    print(f"  best CV f1={rf_search.best_score_:.4f} in {time.time() - t0:.0f}s")
+    print(f"  best CV PR-AUC={rf_search.best_score_:.4f} in {time.time() - t0:.0f}s")
     print(f"  best params: {rf_search.best_params_}")
 
     best_rf = rf_search.best_estimator_
@@ -214,7 +231,7 @@ def main(argv=None) -> int:
 
     report["models"]["random_forest_tuned"] = {
         "best_params": {k.replace("rf__", ""): v for k, v in rf_search.best_params_.items()},
-        "cv_f1": float(rf_search.best_score_),
+        "cv_pr_auc": float(rf_search.best_score_),
         "oof_threshold": rf_threshold,
         "oof_f1_at_threshold": rf_oof_f1,
         "feature_importances": {
@@ -233,7 +250,7 @@ def main(argv=None) -> int:
         make_hgb(),
         hgb_search_space(),
         n_iter=args.n_iter,
-        scoring="f1",
+        scoring="average_precision",
         cv=cv,
         n_jobs=args.n_jobs,
         random_state=SEED,
@@ -241,7 +258,7 @@ def main(argv=None) -> int:
         verbose=1,
     )
     hgb_search.fit(X_train, y_train, groups=groups)
-    print(f"  best CV f1={hgb_search.best_score_:.4f} in {time.time() - t0:.0f}s")
+    print(f"  best CV PR-AUC={hgb_search.best_score_:.4f} in {time.time() - t0:.0f}s")
     print(f"  best params: {hgb_search.best_params_}")
 
     best_hgb = hgb_search.best_estimator_
@@ -254,7 +271,7 @@ def main(argv=None) -> int:
 
     report["models"]["hist_gradient_boosting_tuned"] = {
         "best_params": dict(hgb_search.best_params_),
-        "cv_f1": float(hgb_search.best_score_),
+        "cv_pr_auc": float(hgb_search.best_score_),
         "oof_threshold": hgb_threshold,
         "oof_f1_at_threshold": hgb_oof_f1,
         "sch01_test_default_0.5": evaluate(y_test, hgb_proba_test, (hgb_proba_test >= 0.5).astype(int)),
@@ -264,20 +281,17 @@ def main(argv=None) -> int:
     }
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    report_path = RESULTS_DIR / "tuning_report.json"
+    report_path = RESULTS_DIR / f"tuning_report{suffix}.json"
     report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    best_key, best_f1 = None, -1.0
-    for key in ("random_forest_tuned", "hist_gradient_boosting_tuned"):
-        f1 = report["models"][key]["sch01_test_tuned_threshold"]["f1"]
-        if f1 > best_f1:
-            best_key, best_f1 = key, f1
-    best_model = best_rf if best_key == "random_forest_tuned" else best_hgb
-    best_threshold = rf_threshold if best_key == "random_forest_tuned" else hgb_threshold
+    # The app runs HistGradientBoosting (export_model.py converts only that), so
+    # it is the model saved, even when the Random Forest scores a little higher.
+    best_key = "hist_gradient_boosting_tuned"
+    best_f1 = report["models"][best_key]["sch01_test_tuned_threshold"]["f1"]
     joblib.dump(
-        {"model": best_model, "threshold": best_threshold, "features": list(FEATURE_NAMES)},
-        MODELS_DIR / "best_model.pkl",
+        {"model": best_hgb, "threshold": hgb_threshold, "features": list(FEATURE_NAMES)},
+        MODELS_DIR / f"best_model{suffix}.pkl",
     )
 
     # Comparison table
@@ -292,9 +306,9 @@ def main(argv=None) -> int:
             m = report["models"][key][eval_key]
             print(f"{label:<32} {eval_label:<18} {m['precision']:6.3f} {m['recall']:7.3f} {m['f1']:6.3f} {m['auc_roc']:6.3f}")
     print("-" * len(header))
-    print(f"\nBest by SCH-01 test F1 (tuned threshold): {best_key} (f1={best_f1:.3f})")
+    print(f"\nSaved for the app: {best_key} (SCH-01 test f1={best_f1:.3f})")
     print(f"saved -> {report_path.relative_to(REPO_ROOT)}")
-    print(f"saved -> {(MODELS_DIR / 'best_model.pkl').relative_to(REPO_ROOT)}")
+    print(f"saved -> {(MODELS_DIR / f'best_model{suffix}.pkl').relative_to(REPO_ROOT)}")
     return 0
 
 

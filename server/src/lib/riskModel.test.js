@@ -126,3 +126,17 @@ describe('assessStudent with patterns', () => {
     assert.ok(result.dropoutProbability > 0 && result.dropoutProbability < 1);
   });
 });
+
+describe('career attendance rate', () => {
+  test('counts from the first record and skips term holidays (Idd-ul-Fitr 2026-03-20)', () => {
+    const rows = termRows(ASOF, (date) => (date === '2026-03-20' ? null : 'present')).filter((r) => r.status);
+    assert.equal(assessStudent(rows, ASOF).features.attendance_rate_career, 1);
+  });
+
+  test('carries the whole history, not just the recent windows', () => {
+    const rows = termRows(ASOF, (date) => (date < '2026-02-02' ? 'absent' : 'present'));
+    const { features } = assessStudent(rows, ASOF);
+    assert.equal(features.attendance_rate_w3, 1);
+    assert.ok(features.attendance_rate_career < 0.8);
+  });
+});

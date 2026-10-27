@@ -147,6 +147,27 @@ const KENYA_TERMS = [
   { name: 'Term 3 2026', start: '2026-09-01', end: '2026-12-04' },
 ];
 
+// Public holidays inside the terms above, from the same JSON. Only the career
+// rate skips them, since it spans months.
+const KENYA_TERM_HOLIDAYS = new Set(['2026-03-20', '2026-04-03', '2026-05-27', '2026-06-01', '2026-10-20']);
+
+const isTermSchoolDay = (iso) =>
+  isSchoolDay(iso) && !KENYA_TERM_HOLIDAYS.has(iso) && termContaining(iso) !== null;
+
+/**
+ * Attendance rate from the student's first record up to `asOf`, counting only
+ * term-time school days, like the training calendar. Null with no history.
+ */
+function careerRate(history, byDate, asOf) {
+  let first = null;
+  for (const r of history) {
+    if (r.date < asOf && isTermSchoolDay(r.date) && (first === null || r.date < first)) first = r.date;
+  }
+  if (first === null) return null;
+  const days = schoolDaysBetween(first, asOf).filter(isTermSchoolDay);
+  return days.filter((d) => ATTENDED.has(byDate.get(d))).length / days.length;
+}
+
 function termContaining(asOf) {
   return KENYA_TERMS.find((t) => t.start <= asOf && asOf <= t.end) ?? null;
 }
@@ -215,8 +236,9 @@ export function breakdownRows(components) {
 // Trained model
 
 /**
- * The 4 extra features the trained model uses. The app does not record absence
- * reasons, so the fee and health rates are always 0, as in training.
+ * The 5 extra features the trained model uses. The app does not record absence
+ * reasons, so the fee and health rates are always 0, as in training. The
+ * career rate needs the student's full history, not just the recent weeks.
  */
 export function computeMlExtraFeatures(history, asOf = toISO(new Date())) {
   const byDate = new Map(history.map((r) => [r.date, r.status]));
@@ -237,6 +259,7 @@ export function computeMlExtraFeatures(history, asOf = toISO(new Date())) {
     health_absence_rate: 0,
     attendance_rate_term: rate_term,
     days_into_term,
+    attendance_rate_career: careerRate(history, byDate, asOf),
   };
 }
 

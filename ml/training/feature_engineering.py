@@ -36,16 +36,23 @@ strictly before ``as_of``**:
 11. ``days_into_term``: scheduled school days from the start of that term up
     to ``as_of``. Low values flag a student still in the settling-in period at
     a new term. ``nan`` under the same conditions as above.
+12. ``attendance_rate_career``: attendance rate from the student's first
+    record up to ``as_of``. The long-run baseline: a student who has missed a
+    quarter of school for years is at more risk than one with one bad
+    fortnight, though both can look the same in the short windows. Starts at
+    the first record rather than the first calendar day so days before the
+    student enrolled don't count as absences. ``nan`` with no records yet.
 
 "Attendance" means a ``present`` or ``late`` record. A scheduled school day with
 no record counts as an absence. A rate is ``nan`` only when its window has no
 scheduled school days.
 
-Without ``reasons`` and ``term_bounds``, features 8-11 are ``nan``.
+Without ``reasons``, features 8-9 are 0.0; without ``term_bounds``, 10-11 are ``nan``.
 """
 
 from __future__ import annotations
 
+import bisect
 import datetime as dt
 import json
 from collections import Counter
@@ -77,6 +84,7 @@ FEATURE_NAMES: tuple[str, ...] = (
     "health_absence_rate",
     "attendance_rate_term",
     "days_into_term",
+    "attendance_rate_career",
 )
 
 # Absence reasons come from a small fixed vocabulary, so keywords are enough.
@@ -197,11 +205,16 @@ class SchoolCalendar:
 
     def school_days(self, start, end) -> list[dt.date]:
         """Scheduled school days in the half-open interval ``[start, end)``."""
-        start, end = _as_date(start), _as_date(end)
-        return [d for d in self._days if start <= d < end]
+        lo, hi = self._bounds(start, end)
+        return list(self._days[lo:hi])
 
     def count_school_days(self, start, end) -> int:
-        return len(self.school_days(start, end))
+        lo, hi = self._bounds(start, end)
+        return max(0, hi - lo)
+
+    def _bounds(self, start, end) -> tuple[int, int]:
+        start, end = _as_date(start), _as_date(end)
+        return bisect.bisect_left(self._days, start), bisect.bisect_left(self._days, end)
 
     def all_days(self) -> tuple[dt.date, ...]:
         return self._days
@@ -354,7 +367,7 @@ def compute_features(
     reasons: Mapping[dt.date, str] | None = None,
     term_bounds: Sequence[tuple[str, dt.date, dt.date]] | None = None,
 ) -> dict[str, float]:
-    """Eleven-feature vector for one student at reference date ``as_of``.
+    """Twelve-feature vector for one student at reference date ``as_of``.
 
     Only records with ``date < as_of`` are used.
 
@@ -414,6 +427,10 @@ def compute_features(
         rate_term = attendance_rate(by_day, calendar, term_start, as_of)
         days_into_term = float(calendar.count_school_days(term_start, as_of))
 
+    rate_career = (
+        attendance_rate(by_day, calendar, min(by_day), as_of) if by_day else float("nan")
+    )
+
     return {
         "attendance_rate_w1": rate_w1,
         "attendance_rate_w2": rate_w2,
@@ -426,6 +443,7 @@ def compute_features(
         "health_absence_rate": reason_absence_rate(current4, reasons, "health"),
         "attendance_rate_term": rate_term,
         "days_into_term": days_into_term,
+        "attendance_rate_career": rate_career,
     }
 
 

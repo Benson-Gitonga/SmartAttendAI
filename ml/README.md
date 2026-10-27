@@ -27,11 +27,12 @@ ml/
     └── tuning_report.json       best_params + CV/holdout metrics per tuned model
 ```
 
-## Features (11)
+## Features (12)
 
 `attendance_rate_w1/w2/w3` (three trailing 14-day windows), `longest_absence_streak`,
 `absence_episode_count`, `dow_concentration`, `attendance_trend` (w1 − w2),
-`fee_absence_rate`, `health_absence_rate`, `attendance_rate_term`, `days_into_term`.
+`fee_absence_rate`, `health_absence_rate`, `attendance_rate_term`, `days_into_term`,
+`attendance_rate_career` (attendance from the student's first record up to `as_of`).
 
 Windows are half-open `[start, as_of)` (no leakage); a missing record on a
 scheduled school day counts as absent.

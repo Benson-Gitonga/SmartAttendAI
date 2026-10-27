@@ -2,16 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { getStudentsByClass, getClassHistory, getFollowUpSummary } from '../db/database';
 import { computeFeatures, scoreRiskML, isAssessable, toISO } from '../lib/riskModel';
 
-const HISTORY_DAYS = 63; // covers the 6-week trend and the feature windows
+// The model's career attendance rate needs every record, not just recent weeks.
+const HISTORY_SINCE = '0000-01-01';
 
 // A pattern can flag red with a modest model score, so rank by flag first.
 const FLAG_ORDER = { green: 0, amber: 1, red: 2 };
-
-function daysAgoISO(n) {
-  const dt = new Date();
-  dt.setDate(dt.getDate() - n);
-  return toISO(dt);
-}
 
 /**
  * Roster, recent history and ML risk for one class.
@@ -28,7 +23,7 @@ export function useClassRisk(classGroupId) {
     (async () => {
       const [roll, rows] = await Promise.all([
         getStudentsByClass(classGroupId),
-        getClassHistory(classGroupId, daysAgoISO(HISTORY_DAYS)),
+        getClassHistory(classGroupId, HISTORY_SINCE),
       ]);
       if (cancelled) return;
       setStudents(roll);

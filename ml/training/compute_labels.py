@@ -102,21 +102,27 @@ def build_training_table(
     drop_unlabelled: bool = True,
     reasons_by_student: Mapping[object, Mapping[dt.date, str]] | None = None,
     term_bounds: list[tuple[str, dt.date, dt.date]] | None = None,
+    extra_horizons: Mapping[str, dt.timedelta] | None = None,
 ) -> pd.DataFrame:
     """Assemble the full supervised table: one row per (student, ``as_of``).
 
-    Columns: ``student_id``, ``as_of``, the eleven :data:`FEATURE_NAMES`, and
+    Columns: ``student_id``, ``as_of``, the :data:`FEATURE_NAMES`, and
     :data:`LABEL_NAME`. Rows whose forward window has no school days are dropped
     when ``drop_unlabelled`` is true. ``reasons_by_student`` and ``term_bounds``
     are passed to :func:`feature_engineering.compute_features`.
+
+    ``extra_horizons`` maps a column name to another label window length, e.g.
+    ``{"persistent_absenteeism_8w": timedelta(days=56)}``, to compare horizons
+    on the same samples.
     """
     from feature_engineering import FEATURE_NAMES, _columns
 
     reasons_by_student = reasons_by_student or {}
+    extra_horizons = dict(extra_horizons or {})
 
     df = events if isinstance(events, pd.DataFrame) else pd.DataFrame(list(events))
     if df.empty:
-        cols = ["student_id", "as_of", *FEATURE_NAMES, LABEL_NAME]
+        cols = ["student_id", "as_of", *FEATURE_NAMES, LABEL_NAME, *extra_horizons]
         return pd.DataFrame(columns=cols)
 
     sid_col, date_col, status_col = _columns(df)
@@ -147,7 +153,13 @@ def build_training_table(
             feats = compute_features(
                 recs, as_of, calendar, reasons=student_reasons, term_bounds=term_bounds
             )
-            rows.append({"student_id": student_id, "as_of": as_of, **feats, LABEL_NAME: label})
+            extra = {
+                name: compute_label(recs, as_of, calendar, threshold=threshold, horizon=horizon)
+                for name, horizon in extra_horizons.items()
+            }
+            rows.append(
+                {"student_id": student_id, "as_of": as_of, **feats, LABEL_NAME: label, **extra}
+            )
 
     table = pd.DataFrame(rows)
     if not table.empty:

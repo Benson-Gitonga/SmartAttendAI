@@ -795,7 +795,8 @@ export function getFlaggedStudents(db, schoolId) {
     .all(schoolId);
 
   const ids = students.map((s) => s.studentId);
-  const history = historyByStudent(db, ids, daysAgoISO(63));
+  // Full history: the model's career attendance rate looks back to the first record.
+  const history = historyByStudent(db, ids, '0000-01-01');
   const lastFollowUp = latestFollowUpByStudent(db, ids);
   const freshCutoff = daysAgoISO(FOLLOW_UP_FRESH_DAYS);
 

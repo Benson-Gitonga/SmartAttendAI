@@ -8,6 +8,7 @@ import { ArrowRightIcon, CheckCircleIcon, AlertTriangleIcon } from './icons';
 
 const ATTENDED = new Set(['present', 'late']);
 const CHART_DAYS = 10;
+const AVERAGE_DAYS = 63; // the "9-week average"
 
 function lastSchoolDays(n, endISO) {
   const out = [];
@@ -94,11 +95,15 @@ export default function Dashboard({ classGroupId, className, onTakeAttendance, o
       const marked = s.present + s.late + s.absent;
       return { date, ...s, marked, rate: marked ? (s.present + s.late) / marked : null };
     };
-    const attended = history.filter((r) => ATTENDED.has(r.status)).length;
+    // history now holds every record (for the model), so cut it to nine weeks here.
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - AVERAGE_DAYS);
+    const recent = history.filter((r) => r.date >= toISO(cutoff));
+    const attended = recent.filter((r) => ATTENDED.has(r.status)).length;
     return {
       todayStats: stat(today),
       chartDays: lastSchoolDays(CHART_DAYS, today).map(stat),
-      termRate: history.length ? attended / history.length : null,
+      termRate: recent.length ? attended / recent.length : null,
     };
   }, [history, today]);
 

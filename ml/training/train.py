@@ -56,11 +56,15 @@ from temporal_split import temporal_train_test_split  # noqa: E402
 
 SEED = 42
 LABEL_HORIZON_DAYS = 28           # matches compute_labels.FOUR_WEEKS
+# A second, eight-week label built on the same samples so tune.py --label 8w
+# can compare horizons. The app's model uses the four-week one.
+LABEL_8W = "persistent_absenteeism_8w"
+LABEL_HORIZONS = {LABEL_NAME: LABEL_HORIZON_DAYS, LABEL_8W: 56}
 PERSISTENT_ABSENCE_THRESHOLD = 0.30
 FEATURE_BUILD_STEP_DAYS = 14      # cadence of as_of reference dates
 TEST_SIZE = 0.20                  # fraction of distinct SCH-01 dates held for test
 ENROLMENT_MARGIN_DAYS = 14        # drop samples this close to a student's first/last record
-CACHE_VERSION = 2                 # bump to invalidate ml/data/supervised_*.pkl
+CACHE_VERSION = 3                 # bump to invalidate ml/data/supervised_*.pkl
 
 ML_DIR = _HERE.parent
 REPO_ROOT = ML_DIR.parent
@@ -179,6 +183,28 @@ def _drop_out_of_enrolment(table: pd.DataFrame, events: pd.DataFrame) -> pd.Data
     return table.loc[keep].reset_index(drop=True)
 
 
+def _blank_long_labels_past_data(
+    table: pd.DataFrame, events: pd.DataFrame, calendar: SchoolCalendar
+) -> pd.DataFrame:
+    """Set the 8-week label to nan where its window runs past the data.
+
+    _drop_out_of_enrolment lets a 4-week window run up to 14 days past a
+    student's last record. Give the 8-week window the same slack, and require it
+    to end inside the calendar, so leavers don't turn into false positives.
+    """
+    if table.empty:
+        return table
+    extra = pd.Timedelta(days=LABEL_HORIZONS[LABEL_8W] - LABEL_HORIZON_DAYS)
+    last = pd.to_datetime(events.groupby("student_id")["date"].max())
+    hi = table["student_id"].map(last) - pd.Timedelta(days=ENROLMENT_MARGIN_DAYS) - extra
+    as_of = pd.to_datetime(table["as_of"])
+    window_end = as_of + pd.Timedelta(days=LABEL_HORIZONS[LABEL_8W])
+    past = as_of.gt(hi) | window_end.gt(pd.Timestamp(calendar.last_day) + pd.Timedelta(days=1))
+    table = table.copy()
+    table.loc[past, LABEL_8W] = np.nan
+    return table
+
+
 def _cache_key(xlsx_path: Path, max_students: int) -> dict:
     st = xlsx_path.stat()
     return {
@@ -196,7 +222,7 @@ def _cache_key(xlsx_path: Path, max_students: int) -> dict:
 def supervised_table(
     xlsx_path: Path, *, max_students: int = 0, rebuild: bool = False
 ) -> pd.DataFrame:
-    """(student_id, as_of, 11 features, label) for one school, with an on-disk cache."""
+    """(student_id, as_of, features, both labels) for one school, with an on-disk cache."""
     cache = DATA_DIR / f"supervised_{xlsx_path.stem}.pkl"
     key = _cache_key(xlsx_path, max_students)
     if cache.exists() and not rebuild:
@@ -235,8 +261,10 @@ def supervised_table(
         drop_unlabelled=True,
         reasons_by_student=reasons_by_student,
         term_bounds=term_bounds,
+        extra_horizons={LABEL_8W: dt.timedelta(days=LABEL_HORIZONS[LABEL_8W])},
     )
     table = _drop_out_of_enrolment(table, events)
+    table = _blank_long_labels_past_data(table, events, calendar)
     table = table.dropna(subset=[LABEL_NAME]).reset_index(drop=True)
     print(
         f"  built {len(table):,} labelled samples in {time.time() - t0:.0f}s "
@@ -409,20 +437,20 @@ def evaluate(y_true, y_score, y_pred) -> dict:
     }
 
 
-def _dataset_stats(table: pd.DataFrame) -> dict:
+def _dataset_stats(table: pd.DataFrame, label: str = LABEL_NAME) -> dict:
     as_of = pd.to_datetime(table["as_of"])
     return {
         "n_samples": int(len(table)),
         "n_students": int(table["student_id"].nunique()),
         "date_range": [as_of.min().date().isoformat(), as_of.max().date().isoformat()],
-        "positives": int(table[LABEL_NAME].sum()),
-        "positive_rate": float(table[LABEL_NAME].mean()),
+        "positives": int(table[label].sum()),
+        "positive_rate": float(table[label].mean()),
     }
 
 
-def _xy(table: pd.DataFrame):
+def _xy(table: pd.DataFrame, label: str = LABEL_NAME):
     X = table[list(FEATURE_NAMES)].astype(float).reset_index(drop=True)
-    y = table[LABEL_NAME].astype(int).reset_index(drop=True)
+    y = table[label].astype(int).reset_index(drop=True)
     return X, y
 
 
