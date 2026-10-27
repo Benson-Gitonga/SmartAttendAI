@@ -231,6 +231,17 @@ describe('emailed links', () => {
     expect(auth.setPasswordFromLink).not.toHaveBeenCalled();
   });
 
+  it('#/set-password warns when someone else is signed in in this browser', async () => {
+    auth.user = { username: 'admin@kisumuday.ac.ke' };
+    session.lookupEmailLink.mockResolvedValue({
+      purpose: 'setup', email: 'otieno@kisumuday.ac.ke', fullName: 'Mary Otieno', role: 'teacher', schoolName: 'Kisumu Day',
+    });
+    window.history.replaceState(null, '', '/#/set-password/tok456');
+    render(<LoginScreen />);
+    expect(await screen.findByText(/signed in as/)).toHaveTextContent('admin@kisumuday.ac.ke');
+    delete auth.user;
+  });
+
   it('#/set-password checks the two passwords match first', async () => {
     const user = userEvent.setup();
     session.lookupEmailLink.mockResolvedValue({ purpose: 'reset', email: 'a@b.ke', fullName: 'A B', role: 'teacher', schoolName: 'S' });

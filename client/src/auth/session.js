@@ -33,8 +33,24 @@ export function isSessionValid(session, now = Date.now()) {
   return typeof expiresAt === 'number' && expiresAt > now;
 }
 
+// Every tab shares the one stored session. When it changes (another account
+// signs in, e.g. from a teacher's invite link opened in a new tab, or someone
+// signs out), the other tabs are told, so none keeps showing one account while
+// its requests go out as another.
+const sessionChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('smartattend-session') : null;
+const announceSessionChange = () => sessionChannel?.postMessage('changed');
+
+/** Call `onChange` when another tab signs in, renews or signs out. Returns an unsubscribe. */
+export function onSessionChangedElsewhere(onChange) {
+  if (!sessionChannel) return () => {};
+  const listener = () => onChange();
+  sessionChannel.addEventListener('message', listener);
+  return () => sessionChannel.removeEventListener('message', listener);
+}
+
 async function persist(session) {
   await db.authState.put(session);
+  announceSessionChange();
   return session;
 }
 
@@ -331,6 +347,7 @@ export async function refreshSession({ fetchImpl = globalThis.fetch, now = Date.
 
 export async function signOut() {
   await db.authState.delete(SESSION_KEY);
+  announceSessionChange();
 }
 
 /** Headers that sign a request to the SmartAttend API as the stored session. */

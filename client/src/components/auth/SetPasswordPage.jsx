@@ -15,7 +15,7 @@ const firstName = (fullName = '') => fullName.replace(/^(Mr|Mrs|Ms|Miss|Dr)\.?\s
  * Saving signs straight in.
  */
 export default function SetPasswordPage({ token }) {
-  const { setPasswordFromLink, setUpWithGoogle } = useAuth();
+  const { setPasswordFromLink, setUpWithGoogle, user } = useAuth();
   const online = useOnlineStatus();
   const [link, setLink] = useState({ status: 'checking' });
   const [password, setPassword] = useState('');
@@ -82,6 +82,13 @@ export default function SetPasswordPage({ token }) {
             : <>Set a password for <b>{link.email}</b> to finish setting up your {link.role === 'admin' ? 'school admin' : 'teacher'} account at <b>{link.schoolName}</b>.</>}
         </p>
         {!online && <Alert tone="warn">You’re offline. Connect to the internet to set your password.</Alert>}
+        {/* e.g. a school admin opening a teacher's invite to check it: finishing would sign them out. */}
+        {user && user.username !== link.email && (
+          <Alert tone="warn">
+            You’re signed in as <b>{user.username}</b> in this browser. Finishing signs you in as <b>{link.email}</b> instead,
+            in every tab. If this link is for someone else, send it to them rather than using it here.
+          </Alert>
+        )}
         {error && <Alert>{error}</Alert>}
 
         <input type="email" autoComplete="username" value={link.email} readOnly hidden />

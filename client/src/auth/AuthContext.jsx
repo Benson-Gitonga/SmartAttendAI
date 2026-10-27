@@ -1,4 +1,4 @@
-import { createContext, useContext, useCallback, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   signIn as serverSignIn,
   signInWithGoogle as serverGoogleSignIn,
@@ -12,10 +12,12 @@ import {
   refreshSession,
   saveSystemAdminSession,
   updateStoredSchool,
+  onSessionChangedElsewhere,
 } from './session';
 import { loginSystemAdmin } from '../services/systemAdminService';
 import { verifyPin, setPin, getPinStatus, clearLockout } from './pin';
 import { watchInactivity, idleTooLong, markActive } from './inactivity';
+import { showToast } from '../lib/toast';
 
 const AuthContext = createContext(null);
 
@@ -71,6 +73,22 @@ export function AuthProvider({ children }) {
     })();
     return () => { cancelled = true; };
   }, [applySession]);
+
+  // Another tab signed in (say, from a teacher's invite link), renewed or
+  // signed out. All tabs share the stored session, so follow it: otherwise
+  // this tab would show one account while its requests go out as another.
+  const sessionRef = useRef(session);
+  useEffect(() => { sessionRef.current = session; }, [session]);
+  useEffect(() => onSessionChangedElsewhere(async () => {
+    const stored = await loadStoredSession();
+    const current = sessionRef.current;
+    if (stored && current && stored.username === current.username && stored.role === current.role) {
+      setSession(stored); // the same account, renewed
+      return;
+    }
+    await applySession(stored, { fresh: true });
+    if (stored) showToast(`Signed in as ${stored.displayName ?? stored.username} in another tab.`);
+  }), [applySession]);
 
   // Lock after 30 minutes without a tap or key press, also counting time the
   // app spent closed or in the background.
