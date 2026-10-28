@@ -133,6 +133,37 @@ logs until a sender is set. Until Amazon SES is ready, use Brevo (free for
 300 emails a day): set `MAIL_TRANSPORT=brevo`, `BREVO_API_KEY`, and
 `MAIL_FROM=SmartAttend <you@example.com>` with a sender verified in Brevo.
 
+## Deploying to Cloudflare Pages + Render
+
+The teacher app is served from Cloudflare Pages and the server runs on Render.
+A Pages Function ([`client/functions/api/[[path]].js`](client/functions/api/[[path]].js))
+forwards every `/api/*` request to Render, so the browser only ever sees the
+Pages address: no CORS, and the service worker and offline sync work as they
+do locally.
+
+1. **Render.** On [render.com](https://render.com), choose **New → Blueprint**
+   and pick this repo; [`render.yaml`](render.yaml) sets up the service. Fill
+   in the variables it asks for (see the Railway table above). Note the
+   service's address, e.g. `https://smartattend.onrender.com`.
+2. **Cloudflare Pages.** In the Cloudflare dashboard, choose **Workers & Pages
+   → Create → Pages → Connect to Git** and pick this repo, with:
+
+   | Setting | Value |
+   |---|---|
+   | Production branch | `main` |
+   | Root directory | `client` |
+   | Build command | `npm run build` |
+   | Build output directory | `dist` |
+   | Environment variables | `API_ORIGIN` = the Render address from step 1, `NODE_VERSION` = `22` |
+
+3. **Back on Render**, set `APP_URL` to the Pages address (e.g.
+   `https://smartattend.pages.dev`) so links in emails open the app there.
+
+Every push to `main` then redeploys both. On Render's free plan the server
+sleeps after 15 minutes idle (the first request then takes about a minute)
+and its database is wiped on every deploy or sleep; demo data is re-seeded on
+start.
+
 ## Tests
 
 | Part | Command | |

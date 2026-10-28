@@ -29,6 +29,10 @@ services:
         sync: false
       - key: SYSTEM_ADMIN_PASSWORD_HASH
         sync: false
+      # Where the PWA lives, for links in emails. Set it to the Cloudflare
+      # Pages address when the app is served from there (see README).
+      - key: APP_URL
+        sync: false
       - key: MAIL_TRANSPORT
         value: brevo
       - key: MAIL_FROM
