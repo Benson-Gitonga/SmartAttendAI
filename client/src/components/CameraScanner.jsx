@@ -1,20 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 
 const SAME_CODE_PAUSE_MS = 3000;
+const RESULT_SHOW_MS = 2500;
+const RESULT_ICON = { ok: '✓', error: '✕', info: 'i' };
 
 /**
  * Reads student ID cards (QR code or Code 128 barcode) with the device
  * camera, using ZXing. The library is loaded only when the camera opens, so
  * it does not slow down the rest of the app. Calls onCode once per card;
  * holding the same card in view is not counted twice.
+ *
+ * onCode may return (or resolve to) { tone: 'ok' | 'info' | 'error', title,
+ * text }: it is shown large over the camera for a moment, so the person
+ * scanning sees the student was marked without closing the camera.
  */
 export default function CameraScanner({ onCode, onClose, hint = 'Hold the student’s card in the frame.' }) {
   const videoRef = useRef(null);
   const onCodeRef = useRef(onCode);
   const [error, setError] = useState(null);
   const [starting, setStarting] = useState(true);
+  const [result, setResult] = useState(null);
+  const resultTimer = useRef(null);
 
   useEffect(() => { onCodeRef.current = onCode; }, [onCode]);
+  useEffect(() => () => clearTimeout(resultTimer.current), []);
 
   useEffect(() => {
     let controls = null;
@@ -37,7 +46,13 @@ export default function CameraScanner({ onCode, onClose, hint = 'Hold the studen
             last.text = text;
             last.at = now;
             navigator.vibrate?.(60);
-            onCodeRef.current(text);
+            Promise.resolve(onCodeRef.current(text)).then((shown) => {
+              if (cancelled || !shown) return;
+              if (shown.tone === 'error') navigator.vibrate?.([80, 60, 80]);
+              clearTimeout(resultTimer.current);
+              setResult({ ...shown, key: now });
+              resultTimer.current = setTimeout(() => setResult(null), RESULT_SHOW_MS);
+            });
           }
         );
         if (cancelled) controls.stop();
@@ -66,6 +81,15 @@ export default function CameraScanner({ onCode, onClose, hint = 'Hold the studen
         {!error && <div className="camscan__target" aria-hidden="true" />}
         {starting && !error && <p className="camscan__msg">Starting the camera…</p>}
         {error && <p className="camscan__msg camscan__msg--error" role="alert">{error}</p>}
+        <div className="camscan__live" role="status" aria-live="assertive">
+          {result && (
+            <div key={result.key} className={`camscan__result camscan__result--${result.tone ?? 'ok'}`}>
+              <span className="camscan__result-icon" aria-hidden="true">{RESULT_ICON[result.tone] ?? RESULT_ICON.ok}</span>
+              <span className="camscan__result-title">{result.title}</span>
+              {result.text && <span className="camscan__result-text">{result.text}</span>}
+            </div>
+          )}
+        </div>
       </div>
       <div className="camscan__bar">
         <span>{hint}</span>

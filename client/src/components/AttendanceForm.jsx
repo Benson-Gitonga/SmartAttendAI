@@ -234,17 +234,18 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
 
   // A card read by the camera: save that student present straight away (on
   // this phone, synced later), so the scan survives the app closing offline.
+  // Returns what the camera shows over the picture.
   async function onCardScanned(code) {
     const uid = code.replace(/[^A-Z0-9]/gi, '').toUpperCase();
     const student = students.find((s) => (s.cardUid ?? '').toUpperCase() === uid);
     if (!student) {
       showToast(`Card ${uid} is not in this class`, { tone: 'error' });
-      return;
+      return { tone: 'error', title: 'Not in this class', text: `Card ${uid}` };
     }
     const id = student.studentId;
     if (isPresent(recorded[id])) {
       showToast(`${student.fullName}: already present`);
-      return;
+      return { tone: 'info', title: student.fullName, text: 'Already marked present' };
     }
     try {
       await setAttendance({
@@ -252,13 +253,14 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
       });
     } catch (err) {
       showToast(`Could not save ${student.fullName}: ${err.message}`, { tone: 'error' });
-      return;
+      return { tone: 'error', title: student.fullName, text: `Not saved: ${err.message}` };
     }
     setDraft((prev) => without(prev, id));
     setReasonDraft((prev) => without(prev, id));
     await readLocal();
     onRecordsChanged?.();
     showToast(`${student.fullName}: present`);
+    return { tone: 'ok', title: student.fullName, text: 'Marked present' };
   }
 
   async function handleSubmit() {

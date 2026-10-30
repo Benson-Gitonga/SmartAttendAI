@@ -113,8 +113,11 @@ export default function ScanStation() {
         result = { outcome: 'error', cardUid, message: err.message ?? 'Could not save the scan' };
       }
     }
-    setLatest(addToLog(result, key));
+    const entry = addToLog(result, key);
+    setLatest(entry);
     setBusy(false);
+    const shown = RESULT[entry.outcome] ?? RESULT.error;
+    return { tone: shown.tone, title: shown.title(entry), text: shown.text(entry) };
   }
 
   const counts = log.reduce((c, e) => ({ ...c, [e.outcome]: (c[e.outcome] ?? 0) + 1 }), {});

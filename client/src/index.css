@@ -3189,6 +3189,15 @@ select.pub-input { padding-right: 8px; }
 .camscan__target { position: absolute; top: 50%; left: 50%; width: min(70vw, 320px); height: min(45vw, 200px); transform: translate(-50%, -50%); border: 2px solid rgba(255, 255, 255, 0.9); border-radius: 8px; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35); }
 .camscan__msg { position: absolute; left: 16px; right: 16px; top: 40%; margin: 0; text-align: center; color: #fff; }
 .camscan__msg--error { color: #ffd2d2; }
+.camscan__live { position: absolute; left: 16px; right: 16px; bottom: 24px; display: flex; justify-content: center; pointer-events: none; }
+.camscan__result { display: flex; flex-direction: column; align-items: center; gap: 4px; width: min(100%, 360px); padding: 18px 16px; border-radius: 12px; color: #fff; text-align: center; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); animation: camscan-pop 0.18s ease-out; }
+.camscan__result--ok { background: #15803d; }
+.camscan__result--info { background: #1d4ed8; }
+.camscan__result--error { background: #b91c1c; }
+.camscan__result-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: rgba(255, 255, 255, 0.2); font-size: 26px; font-weight: 700; line-height: 1; }
+.camscan__result-title { font-size: 19px; font-weight: 700; }
+.camscan__result-text { font-size: 14px; opacity: 0.92; }
+@keyframes camscan-pop { from { opacity: 0; transform: scale(0.92); } to { opacity: 1; transform: none; } }
 .camscan__bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: #1f2328; color: #e6e8eb; font-size: 14px; }
 
 /* printable ID cards: 85.6 x 54 mm (CR80), 2 x 5 on A4 */
