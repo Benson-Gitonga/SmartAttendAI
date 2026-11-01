@@ -3,8 +3,8 @@
 Canonical definition: `server/src/db/schema.sql`. This document explains it.
 
 The schema reuses the client's identifiers (`school-kibera-001`,
-`class-form3b-001`, `stu-form3b-001…010`), so a record from the RFID simulation
-and one from the PWA refer to the same student.
+`class-form3b-001`, `stu-form3b-001…010`), so a scan and a mark from the
+PWA refer to the same student.
 
 Conventions: `snake_case`, real `FOREIGN KEY`s (`PRAGMA foreign_keys = ON`),
 `CHECK` constraints on enums, timestamps as SQLite `TEXT` (`datetime('now')`),
@@ -33,7 +33,7 @@ school admin assigned), `created_at`. Only the school admin creates classes.
 `attendance_events` is append-only so the full history is kept.
 
 ### 4. `rfid_cards`
-`card_uid` (PK, text, the physical card's UID), `student_id` (FK → students),
+`card_uid` (PK, text, the number printed on the student's ID card as a barcode and QR code; the table name dates from the earlier RFID design), `student_id` (FK → students),
 `issued_at`, `active` (0/1).
 Partial unique index `idx_rfid_one_active_card` enforces **one active card per
 student**; a re-issued card keeps the old row with `active = 0`.
@@ -48,26 +48,16 @@ The append-only attendance log.
 | `student_id` | FK → students |
 | `date` | `YYYY-MM-DD`, school-local |
 | `status` | `present` \| `absent` \| `late` |
-| `capture_method` | `manual` \| `rfid` \| `fingerprint` \| `import` |
-| `verified` | 1 when a fingerprint challenge passed, else 0 |
-| `recorded_by` | teacher username, or `NULL` for hardware |
-| `source` | `simulation` \| `client` \| `manual` |
+| `capture_method` | `manual` \| `rfid` (any scanned card) \| `fingerprint` (old records only) \| `import` |
+| `verified` | unused since the fingerprint gate was removed; always 0 for new records |
+| `recorded_by` | staff email or username |
+| `source` | `client` \| `manual` \| `simulation` (seeded demo data) |
 | `reason` | absence reason: `fee` \| `health` \| `other` \| `unknown`, or `NULL` (not given / not absent). `fee` + `health` feed the risk model |
 | `created_at` | timestamp |
 | `synced_at` | timestamp, set by `syncWorker.js` once AWS confirms the row; `NULL` until then |
 
 **`UNIQUE (student_id, date)`** allows one record per student per day. Together
 with the unique `event_id`, the database itself blocks duplicate scans.
-
-### 6. `fingerprint_challenges`
-Every biometric challenge the handler raises, pass or fail.
-
-`id`, `student_id` (FK), `card_uid`, `event_id` (FK → attendance_events.event_id,
-**nullable**), `result` (`match` \| `no_match`), `success_rate` (the configured
-rate at challenge time), `challenged_at`.
-
-A `no_match` row with `event_id IS NULL` is a **rejected scan**: no attendance
-was written.
 
 ### 7. `sync_queue`
 One row per `attendance_event` that still has to reach AWS. Drained by
@@ -112,5 +102,5 @@ A school admin taking or correcting a register: `event_id`, `student_id`,
 | `syncQueue` | `sync_queue` |
 | `auditLog` | `audit_log` |
 | `riskScores` | *deferred* |
-| (none) | `rfid_cards`, `fingerprint_challenges` (hardware simulation) |
+| (none) | `rfid_cards` |
 | `pinCredentials`, `authState` | *client-only (offline auth)* |

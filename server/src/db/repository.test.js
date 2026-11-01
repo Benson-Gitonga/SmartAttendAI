@@ -7,7 +7,6 @@ import {
   countPendingSync,
   getAttendanceForDate,
   findStudentByCardUid,
-  logFingerprintChallenge,
   getStats,
   todayISO,
   DuplicateAttendanceError,
@@ -35,7 +34,6 @@ describe('schema', () => {
       'audit_log',
       'class_groups',
       'email_tokens',
-      'fingerprint_challenges',
       'follow_ups',
       'rfid_cards',
       'schools',
@@ -143,19 +141,14 @@ describe('duplicate prevention', () => {
 });
 
 describe('getStats', () => {
-  test('counts today\'s records by method and today\'s challenges', () => {
+  test('counts today\'s records by method', () => {
     const today = todayISO();
     recordAttendance(db, { studentId: 'stu-form3b-001', date: today, captureMethod: 'rfid' });
     recordAttendance(db, { studentId: 'stu-form3b-002', date: today, captureMethod: 'fingerprint', verified: 1 });
-    logFingerprintChallenge(db, {
-      studentId: 'stu-form3b-002', cardUid: '04D4E5F6', eventId: null, result: 'match', successRate: 0.9,
-    });
 
     const stats = getStats(db, today);
     assert.equal(stats.totalAttendance, 2);
     assert.deepEqual(stats.attendanceByMethod, { rfid: 1, fingerprint: 1 });
-    assert.equal(stats.challenges.match, 1);
-    assert.equal(stats.challenges.total, 1);
     assert.equal(stats.pendingSync, 2);
   });
 });

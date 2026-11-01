@@ -1,8 +1,7 @@
-# Server (Tier 2 Simulated Backend)
+# Server (Tier 2)
 
-Express + SQLite backend that stands in for the school gate hardware. A mock RFID
-reader fires a card scan every 5 seconds; each scan is turned into an attendance
-record in SQLite, and ~1 in 4 scans is challenged for a fingerprint match.
+Express + SQLite backend for SmartAttend: school and staff accounts, rosters,
+attendance sync from the PWA, and card scans from the scan station.
 
 ## Requirements
 
@@ -16,16 +15,9 @@ record in SQLite, and ~1 in 4 scans is challenged for a fingerprint match.
 cd server
 npm install
 npm run db:reset     # create the SQLite file + seed the demo class
-npm start            # server on http://localhost:3000, simulation running
+npm start            # server on http://localhost:3000
 ```
 
-You'll see scans in the console:
-
-```
-[rfid] Faith Achieng (stu-form3b-004) -> present via rfid
-[rfid] Moses Kipchoge (stu-form3b-009) -> present via fingerprint (fingerprint verified)
-[rfid] Faith Achieng (stu-form3b-004) -> already recorded today, ignored
-```
 
 ## Where the database lives
 
@@ -47,10 +39,6 @@ All optional. Copy `.env.example` to `.env` to override.
 |---|---|---|
 | `PORT` | `3000` | HTTP port |
 | `DB_PATH` | `%LOCALAPPDATA%\smartattend\smartattend.db` | SQLite file, or `:memory:` |
-| `RFID_INTERVAL_MS` | `5000` | Gap between simulated scans |
-| `FINGERPRINT_CHALLENGE_RATE` | `0.25` | Fraction of scans challenged for a fingerprint |
-| `FINGERPRINT_SUCCESS_RATE` | `0.9` | Fraction of challenges the mock scanner passes |
-| `SIMULATION_ENABLED` | `true` | Set `false` to boot without the RFID loop |
 | `SYNC_API_GATEWAY_URL` | *(unset)* | AWS sync Lambda endpoint. Unset → worker idles |
 | `SYNC_API_GATEWAY_KEY` | *(unset)* | `x-api-key` sent with each batch |
 | `SYNC_POLL_INTERVAL_MS` | `30000` | How often the worker drains `sync_queue` |
@@ -66,9 +54,7 @@ All optional. Copy `.env.example` to `.env` to override.
 | GET | `/health` | status, table count, pending-sync count |
 | GET | `/api/students` | the seeded roster |
 | GET | `/api/attendance?date=YYYY-MM-DD` | attendance records for a date (default today) |
-| GET | `/api/challenges?limit=50` | recent fingerprint challenges |
-| GET | `/api/stats?date=YYYY-MM-DD` | counts by capture method, challenge outcomes, pending sync |
-| POST | `/api/rfid/scan` | fire one scan now, body `{ "cardUid": "04A1B2C3" }` |
+| GET | `/api/stats?date=YYYY-MM-DD` | counts by capture method, pending sync |
 | POST | `/api/sync` | inbound attendance batch from the offline PWA (see below) |
 | GET | `/api/gate/classes/:id/attendance?date=YYYY-MM-DD` | one class's records for a day (default today) plus `gate.lastScanAt` - the PWA pulls this before roll call (see below) |
 | POST | `/api/gate/scan` | scan station: body `{ "cardUid", "scannedAt"? }` marks the student present; `scannedAt` is for scans an offline station sends later |
@@ -90,27 +76,6 @@ All optional. Copy `.env.example` to `.env` to override.
 | GET | `/api/system-admin/schools?status=` | every school, waiting ones first, plus a count per status |
 | POST | `/api/system-admin/schools/:id/{approve,reject,disable,enable}` | review a school; body `{ "note", "actor" }`, `note` required to reject |
 
-Valid `cardUid` values are the 10 seeded cards: `04A1B2C3`, `04D4E5F6`,
-`0417A8B9`, `04C2D3E4`, `0455667788`, `01020304`, `11223344`, `55667788`,
-`AABBCCDD`, `04112233`.
-
-A gate device with a fingerprint step sends `"interactive": true`. If the scan
-is picked for a fingerprint check the reply is `"outcome": "fingerprint-required"`
-and nothing is written; the device then resends the scan with
-`"fingerprint": "match"` or `"no_match"`.
-
-A scan the device saved while it could not reach the server is replayed later
-with `"offline": true`, the device's own `"scannedAt"` time and a `"scanId"`
-(a UUID). It is filed under the day it happened, recorded as an unverified card
-scan (there was nobody to ask for a fingerprint), and `scanId` becomes the
-event id, so sending the same queued scan twice only records it once. Scan
-times more than `OFFLINE_SCAN_MAX_AGE_DAYS` old, or from a clock running
-ahead, get a `422`. Every replay leaves an `rfid.offline_scan` audit row with
-how late it arrived.
-
-Set `DEVICE_API_KEY` and gate devices must send it as the `X-Device-Key`
-header, otherwise they get a `401`. The rest of the API is unaffected.
-
 ### Staff sign-in
 
 School admins and teachers have accounts on this server (the `users` table),
@@ -126,7 +91,7 @@ returns a token signed with `AUTH_TOKEN_SECRET` that lasts
 | `/api/sync` | admin or teacher | a batch with another school's student is a `403` |
 | `/api/gate/classes/:id/attendance` | admin or teacher | another school's class is a `404` |
 | `/api/gate/scan` | admin or teacher | another school's card is `unknown-card` (`404`) |
-| `/api/students`, `/attendance`, `/challenges`, `/stats` | system admin | platform-wide debug lists |
+| `/api/students`, `/attendance`, `/stats` | system admin | platform-wide debug lists |
 
 All of them also answer `403` while the school is pending, rejected or
 disabled. The user is re-read on every request, so disabling an account or a
@@ -222,17 +187,16 @@ two pending demo schools so the approval queue is not empty.
 
 ## How a scan becomes a record
 
-`src/attendance/handler.js`:
+`POST /api/gate/scan` (`recordStationScan` in `src/db/repository.js`):
 
-1. Resolve the card UID to a student (`rfid_cards` -> `students`). Unknown card -> audit row, stop.
-2. With probability `FINGERPRINT_CHALLENGE_RATE`, run the mock fingerprint scan:
-   - **match** -> write attendance with `capture_method = 'fingerprint'`, `verified = 1`, and link the challenge row to the event.
-   - **no match** -> reject. Nothing is written to `attendance_events`; a `fingerprint_challenges` row with `result = 'no_match'` and an `attendance.rejected` audit row are the buddy-punching trail.
-3. No challenge -> write attendance with `capture_method = 'rfid'`, `verified = 0`.
-4. A second scan of the same student the same day hits `UNIQUE(student_id, date)` and is reported as a duplicate. No second row is written.
+1. Resolve the printed card number to a student (`rfid_cards` -> `students`). Unknown card -> audit row, stop.
+2. Already marked today -> reported as a duplicate. No second row is written.
+3. Otherwise write attendance with `capture_method = 'rfid'`. That value marks any scanned card, barcode or QR; the name dates from the earlier RFID design.
+
+A station that was offline sends its saved scans with `scannedAt`, so each lands on the day it happened. A time ahead of the server's clock gets a `422`.
 
 The attendance write, its `sync_queue` entry and the audit row share one
-transaction, so a rejected write leaves nothing behind.
+transaction.
 
 ## Sync: PWA → here → AWS
 
@@ -266,18 +230,17 @@ With no real AWS yet, point `SYNC_API_GATEWAY_URL` at a local shim around
 record the server holds for one class on one day - gate scans and teacher
 marks - in the field names the PWA's local database uses, keeping the server's
 `eventId`. The PWA stores them as already synced, so they are never pushed
-back. `gate.lastScanAt` is when the RFID/fingerprint hardware last recorded
+back. `gate.lastScanAt` is when a scan station last recorded
 anyone; the PWA uses it to tell "gate working" from "gate down - take a full
 roll call". Unknown class → 404; malformed `date` → 400.
 
 ## Schema
 
-9 tables, defined in `src/db/schema.sql` (`CREATE TABLE IF NOT EXISTS`, so it's
+12 tables, defined in `src/db/schema.sql` (`CREATE TABLE IF NOT EXISTS`, so it's
 safe to run on every boot). Full description in `../docs/schema.md`.
 
 - `schools` -> `class_groups` -> `students` -> `rfid_cards`
 - `students` -> `attendance_events` -> `sync_queue` -> (`syncWorker.js`) -> AWS
-- `attendance_events` / `students` -> `fingerprint_challenges`
 - `students` -> `follow_ups` (contact attempts for flagged students)
 - `audit_log`: standalone (action / actor / record / detail / timestamp)
 
@@ -287,10 +250,9 @@ safe to run on every boot). Full description in `../docs/schema.md`.
 npm test             # node --test
 ```
 
-Covers: all 8 tables created, seed correctness, attendance write + atomicity,
+Covers: all tables created, seed correctness, attendance write + atomicity,
 duplicate prevention (same student/date, reused `event_id`), capture-method
-values, the RFID emitter timing (mocked timers), the fingerprint distribution,
-the full scan-to-SQLite handler including the ~25% challenge rate, the
+values, the scan station, the
 `POST /api/sync` ingest (validation, both dedup paths, mixed batches, unknown
 student, absence reasons), the gate endpoint, the roster/admin routes, the
 risk model, and the sync worker's backoff / batching / cloud-response handling.

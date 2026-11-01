@@ -1,4 +1,4 @@
-// Demo roster. Uses the same IDs as client/src/db/seedData.js so records sync.
+// Demo roster.
 import { openDatabase } from './index.js';
 import { config } from '../config.js';
 import { upsertCard } from './repository.js';

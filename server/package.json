@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Tier 2 simulated backend - Express + SQLite, mock RFID and fingerprint capture",
+  "description": "Tier 2 backend - Express + SQLite API for attendance, scan stations and sync",
   "main": "src/server.js",
   "scripts": {
     "start": "node --env-file-if-exists=.env src/server.js",

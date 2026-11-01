@@ -1,4 +1,4 @@
-# One image for Railway (or any Docker host): builds the PWA, then runs the
+# One image for Render (or any Docker host): builds the PWA, then runs the
 # Tier 2 server, which serves both the app and /api from one address.
 # server/Dockerfile (used by docker-compose.yml) is the API on its own.
 

@@ -57,11 +57,11 @@ starts nor breaks a run. The risk score shown is still the model's probability.
 Two extra features were trained and tuned on Colab with the full pipeline:
 `current_absence_streak` (absences in a row up to `as_of`) and
 `weekday_absence_excess` (worst single-weekday absence rate minus the overall
-rate, last six weeks). They made no difference, so the model stays at 11 features:
+rate, last six weeks). They made no difference on the 11-feature model of the time:
 
 | tuned HistGB | SCH-01 F1 | SCH-01 AUC | SCH-02 F1 | SCH-02 AUC |
 |---|---|---|---|---|
-| 11 features (shipped) | .480 | .706 | .484 | .771 |
+| 11 features | .480 | .706 | .484 | .771 |
 | 13 features | .479 | .707 | .484 | .771 |
 
 Permutation importance on SCH-02 (AUC drop when shuffled) was 0.0000 for
@@ -73,14 +73,15 @@ in the app rather than model features.
 
 ## Current model
 
-Tuned `HistGradientBoostingClassifier` (`max_leaf_nodes=7`, 210 trees). It was
+Tuned `HistGradientBoostingClassifier` (`max_leaf_nodes=7`, 210 trees, 12 features,
+no class weighting, red at 0.27). It was
 chosen over the tuned Random Forest because its small trees keep the exported
 model small enough to ship in the PWA.
 
 | eval set | precision | recall | F1 | AUC |
 |---|---|---|---|---|
-| SCH-01 test | .383 | .648 | .482 | .706 |
-| SCH-02 holdout | .408 | .599 | .485 | .771 |
+| SCH-01 test | .448 | .715 | .551 | .789 |
+| SCH-02 holdout | .486 | .677 | .566 | .842 |
 
 Full params and both untuned baselines (RF, LogReg, rule-based) are in
 `results/tuning_report.json` / `results/evaluation_report.json`.

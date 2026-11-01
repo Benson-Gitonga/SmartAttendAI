@@ -119,16 +119,6 @@ export function recordAttendance(db, event) {
   }
 }
 
-export function logFingerprintChallenge(db, { studentId, cardUid, eventId = null, result, successRate }) {
-  const info = db
-    .prepare(
-      `INSERT INTO fingerprint_challenges (student_id, card_uid, event_id, result, success_rate)
-       VALUES (@studentId, @cardUid, @eventId, @result, @successRate)`
-    )
-    .run({ studentId, cardUid, eventId, result, successRate });
-  return { id: info.lastInsertRowid, studentId, cardUid, eventId, result, successRate };
-}
-
 export function logAudit(db, { action, actorId = null, recordId = null, detail = null }) {
   db.prepare(
     `INSERT INTO audit_log (action, actor_id, record_id, detail) VALUES (?, ?, ?, ?)`
@@ -200,41 +190,20 @@ export function getLastGateScanAt(db, schoolId) {
   return toIsoTimestamp(row.at);
 }
 
-export function getRecentChallenges(db, limit = 50) {
-  return db
-    .prepare(
-      `SELECT fc.*, s.full_name
-         FROM fingerprint_challenges fc
-         JOIN students s ON s.student_id = fc.student_id
-        ORDER BY fc.challenged_at DESC, fc.id DESC
-        LIMIT ?`
-    )
-    .all(limit);
-}
-
 export function getStats(db, date = todayISO()) {
   const byMethod = db
     .prepare(
       `SELECT capture_method, COUNT(*) AS n FROM attendance_events WHERE date = ? GROUP BY capture_method`
     )
     .all(date);
-  const challenges = db
-    .prepare(
-      `SELECT result, COUNT(*) AS n FROM fingerprint_challenges
-        WHERE date(challenged_at, 'localtime') = ? GROUP BY result`
-    )
-    .all(date);
 
   const method = Object.fromEntries(byMethod.map((r) => [r.capture_method, r.n]));
-  const challenge = Object.fromEntries(challenges.map((r) => [r.result, r.n]));
   const totalAttendance = Object.values(method).reduce((a, b) => a + b, 0);
-  const totalChallenges = Object.values(challenge).reduce((a, b) => a + b, 0);
 
   return {
     date,
     attendanceByMethod: method,
     totalAttendance,
-    challenges: { ...challenge, total: totalChallenges },
     pendingSync: countPendingSync(db),
   };
 }

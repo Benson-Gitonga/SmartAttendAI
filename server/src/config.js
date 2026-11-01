@@ -32,27 +32,6 @@ export const config = {
   // start (src/db/seedDemoData.js). Never queued for the cloud.
   demoData: process.env.DEMO_DATA !== 'false',
 
-  // Mock RFID reader: emit a card-detected event this often.
-  rfidIntervalMs: num(process.env.RFID_INTERVAL_MS, 5000),
-
-  // Fraction of RFID scans that trigger a fingerprint challenge (0..1).
-  fingerprintChallengeRate: num(process.env.FINGERPRINT_CHALLENGE_RATE, 0.25),
-
-  // Fraction of fingerprint challenges the mock scanner reports as a match (0..1).
-  fingerprintSuccessRate: num(process.env.FINGERPRINT_SUCCESS_RATE, 0.9),
-
-  // Start the RFID simulation loop when the server boots.
-  simulationEnabled: process.env.SIMULATION_ENABLED !== 'false',
-
-  // Gate devices send this in the X-Device-Key header.
-  // Empty means POST /api/rfid/scan is open, as before.
-  deviceApiKey: process.env.DEVICE_API_KEY || '',
-
-  // How old an offline-queued gate scan may be when it finally arrives, and
-  // how far ahead of the server clock a device clock may run.
-  offlineScanMaxAgeDays: num(process.env.OFFLINE_SCAN_MAX_AGE_DAYS, 7),
-  deviceClockSkewMs: num(process.env.DEVICE_CLOCK_SKEW_MS, 5 * 60_000),
-
   // School staff sign-in (src/auth/userAuth.js). Tokens are long-lived so a
   // teacher who works offline for days can still send their queued records.
   // Without a secret, a random one is made per boot and sign-ins end on restart.

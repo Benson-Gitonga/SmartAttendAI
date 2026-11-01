@@ -140,19 +140,6 @@ CREATE TABLE IF NOT EXISTS attendance_events (
 CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance_events(date);
 CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance_events(student_id);
 
--- A 'no_match' row with event_id NULL is a rejected scan.
-CREATE TABLE IF NOT EXISTS fingerprint_challenges (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  student_id    TEXT NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
-  card_uid      TEXT NOT NULL,
-  event_id      TEXT REFERENCES attendance_events(event_id) ON DELETE SET NULL,
-  result        TEXT NOT NULL CHECK (result IN ('match', 'no_match')),
-  success_rate  REAL NOT NULL,                        -- configured rate at challenge time
-  challenged_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE INDEX IF NOT EXISTS idx_challenge_student ON fingerprint_challenges(student_id);
-
 -- Outbound queue to AWS. next_attempt_at NULL means due now. 'dead' means
 -- SYNC_MAX_ATTEMPTS ran out; 'failed' means AWS rejected the payload.
 CREATE TABLE IF NOT EXISTS sync_queue (

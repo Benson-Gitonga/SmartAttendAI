@@ -61,7 +61,7 @@ device, so no `.env` is needed here. `auth/session.js`:
 - `db/database.js`: the Dexie (IndexedDB) schema: classes, students, roster,
   attendance, `syncQueue`, `rosterSyncQueue`, `riskScores`, `followUps`
 - `components/`: screens: `AttendanceForm`, `Heatmap`, `Alerts`,
-  `StudentProfile`, `RosterManager`, `SetupWizard` (first-run onboarding),
+  `StudentProfile`,
   `AdminOverview` / `AdminClassDetail`, `SystemAdminOverview`
 - `services/`: `syncService.js` (outbound attendance sync),
   `rosterSyncService.js` (outbound roster sync), `adminService.js` /

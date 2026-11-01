@@ -182,7 +182,7 @@ describe('every school only sees itself', () => {
 
   test('the platform-wide debug lists are for the system admin only', async () => {
     const staff = bearer(await tokenFor('admin1@school.ke'));
-    for (const path of ['/api/students', '/api/attendance', '/api/challenges', '/api/stats']) {
+    for (const path of ['/api/students', '/api/attendance', '/api/stats']) {
       assert.equal((await fetch(`${base}${path}`)).status, 401, path);
       assert.equal((await fetch(`${base}${path}`, { headers: staff })).status, 401, `${path} as staff`);
     }

@@ -48,6 +48,9 @@ export function migrate(db) {
   }
   rebuildSchoolsForApproval(db);
 
+  // Left over from the simulated fingerprint gate, which has been removed.
+  db.exec(`DROP TABLE IF EXISTS fingerprint_challenges`);
+
   // School application details. Added after the rebuild above, which only
   // copies the columns it knows about.
   const applicationColumns = {
