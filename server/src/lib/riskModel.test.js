@@ -1,6 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { assessStudent, detectPatterns, isAssessable, MIN_ASSESSABLE_DAYS } from './riskModel.js';
+import riskModel from '../data/riskModel.json' with { type: 'json' };
 
 function isoAddDays(iso, n) {
   const [y, m, d] = iso.split('-').map(Number);
@@ -62,13 +63,11 @@ describe('assessStudent', () => {
     assert.equal(assessStudent([]), null);
   });
 
-  test('perfect attendance stays well clear of red, even though the trained model floors around amber', () => {
-    // The model scores even perfect attendance around 0.31-0.34, just above
-    // the amber cutoff, because its threshold was tuned for recall.
+  test('perfect attendance is green with a low probability', () => {
     const rows = termRows(ASOF, () => 'present');
     const result = assessStudent(rows, ASOF);
-    assert.notEqual(result.flag, 'red');
-    assert.ok(result.dropoutProbability < 0.4, `expected a low-ish probability, got ${result.dropoutProbability}`);
+    assert.equal(result.flag, 'green');
+    assert.ok(result.dropoutProbability < 0.2, `expected a low probability, got ${result.dropoutProbability}`);
   });
 
   test('red for a student on a long consecutive absence streak', () => {
@@ -77,14 +76,22 @@ describe('assessStudent', () => {
     const presentRows = schoolDayRows(earliestAbsentDate, { count: 20, status: 'present', endGapDays: 0 });
     const result = assessStudent([...absentRows, ...presentRows], ASOF);
     assert.equal(result.flag, 'red');
-    assert.ok(result.dropoutProbability >= 0.6);
+    assert.equal(result.mlFlag, 'red');
+    assert.ok(result.dropoutProbability >= riskModel.redThreshold);
   });
 
   test('amber (not red) for a mostly-present student with a few scattered absences', () => {
+    // One absence every 8th school day.
+    const rows = termRows(ASOF, (date, i) => (i % 8 === 0 ? 'absent' : 'present'));
+    const result = assessStudent(rows, ASOF);
+    assert.equal(result.flag, 'amber');
+  });
+
+  test('green for a student who misses only the odd day', () => {
     // One absence every 10th school day.
     const rows = termRows(ASOF, (date, i) => (i % 10 === 0 ? 'absent' : 'present'));
     const result = assessStudent(rows, ASOF);
-    assert.equal(result.flag, 'amber');
+    assert.equal(result.flag, 'green');
   });
 });
 

@@ -20,6 +20,8 @@ Usage: cd ml && ./venv/Scripts/python.exe training/export_model.py
 from __future__ import annotations
 
 import json
+import math
+import sys
 from pathlib import Path
 
 import joblib
@@ -38,11 +40,22 @@ OUTPUT_PATHS = (
 )
 
 
+def json_threshold(value: float) -> float:
+    """JSON has no Infinity. A split at +inf only separates missing values,
+    and the largest finite float sends every real value the same way."""
+    value = float(value)
+    if value == math.inf:
+        return sys.float_info.max
+    if value == -math.inf:
+        return -sys.float_info.max
+    return value
+
+
 def export_tree(tree_predictor) -> dict:
     nodes = tree_predictor.nodes
     return {
         "feature": [int(n["feature_idx"]) for n in nodes],
-        "threshold": [float(n["num_threshold"]) for n in nodes],
+        "threshold": [json_threshold(n["num_threshold"]) for n in nodes],
         "missingLeft": [bool(n["missing_go_to_left"]) for n in nodes],
         "left": [int(n["left"]) for n in nodes],
         "right": [int(n["right"]) for n in nodes],
@@ -97,7 +110,7 @@ def main() -> int:
     print(f"sanity check over 200 random rows (incl. NaNs): max |diff| = {max_diff:.2e}")
     assert max_diff < 1e-6, "export does not match the live model - not writing the file"
 
-    payload = json.dumps(export)
+    payload = json.dumps(export, allow_nan=False)
     n_nodes = sum(len(t["isLeaf"]) for t in trees)
     for out_path in OUTPUT_PATHS:
         if not out_path.parent.is_dir():  # e.g. on Colab, where only ml/ is uploaded

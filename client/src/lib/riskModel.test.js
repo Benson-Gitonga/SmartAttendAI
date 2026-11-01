@@ -116,18 +116,19 @@ describe('weeklyTrend', () => {
 });
 
 describe('scoreRiskFromFeatures matches the Python model exactly', () => {
-  // Expected values from the Python model's predict_proba(). A mismatch means
-  // the JS port and the Python model have diverged.
+  // Expected values from the Python tree walk that export_model.py checks
+  // against predict_proba() before writing riskModel.json. A mismatch means
+  // the JS port and the Python model have diverged. Recompute after a re-export.
   const CASES = [
     {
-      name: 'steady attender - still not near-zero, reflects the base rate',
+      name: 'steady attender',
       features: {
         attendance_rate_w1: 1.0, attendance_rate_w2: 1.0, attendance_rate_w3: 1.0,
         longest_absence_streak: 0, absence_episode_count: 0, dow_concentration: 0.0,
         attendance_trend: 0.0, fee_absence_rate: 0.0, health_absence_rate: 0.0,
-        attendance_rate_term: 0.95, days_into_term: 40,
+        attendance_rate_term: 0.95, days_into_term: 40, attendance_rate_career: 0.96,
       },
-      probability: 0.20149954,
+      probability: 0.04877081,
       flag: 'green',
     },
     {
@@ -136,9 +137,9 @@ describe('scoreRiskFromFeatures matches the Python model exactly', () => {
         attendance_rate_w1: 0.1, attendance_rate_w2: 0.2, attendance_rate_w3: 0.3,
         longest_absence_streak: 8, absence_episode_count: 3, dow_concentration: 0.4,
         attendance_trend: -0.1, fee_absence_rate: 0.3, health_absence_rate: 0.1,
-        attendance_rate_term: 0.15, days_into_term: 50,
+        attendance_rate_term: 0.15, days_into_term: 50, attendance_rate_career: 0.3,
       },
-      probability: 0.95421516,
+      probability: 0.92750339,
       flag: 'red',
     },
     {
@@ -147,21 +148,32 @@ describe('scoreRiskFromFeatures matches the Python model exactly', () => {
         attendance_rate_w1: 0.6, attendance_rate_w2: null, attendance_rate_w3: null,
         longest_absence_streak: 2, absence_episode_count: 1, dow_concentration: 0.5,
         attendance_trend: null, fee_absence_rate: 0.0, health_absence_rate: 0.0,
-        attendance_rate_term: null, days_into_term: null,
+        attendance_rate_term: null, days_into_term: null, attendance_rate_career: null,
       },
-      probability: 0.4506121,
-      flag: 'amber',
+      probability: 0.13970198,
+      flag: 'green',
     },
     {
-      name: 'borderline case',
+      name: 'borderline case, just over the red threshold',
       features: {
         attendance_rate_w1: 0.75, attendance_rate_w2: 0.8, attendance_rate_w3: 0.7,
         longest_absence_streak: 3, absence_episode_count: 2, dow_concentration: 0.33,
         attendance_trend: -0.05, fee_absence_rate: 0.0, health_absence_rate: 0.2,
-        attendance_rate_term: 0.78, days_into_term: 20,
+        attendance_rate_term: 0.78, days_into_term: 20, attendance_rate_career: 0.75,
       },
-      probability: 0.49405432,
+      probability: 0.28240505,
       flag: 'red',
+    },
+    {
+      name: 'same student with a better long-run record drops to amber',
+      features: {
+        attendance_rate_w1: 0.75, attendance_rate_w2: 0.8, attendance_rate_w3: 0.7,
+        longest_absence_streak: 3, absence_episode_count: 2, dow_concentration: 0.33,
+        attendance_trend: -0.05, fee_absence_rate: 0.0, health_absence_rate: 0.2,
+        attendance_rate_term: 0.78, days_into_term: 20, attendance_rate_career: 0.78,
+      },
+      probability: 0.19973089,
+      flag: 'amber',
     },
   ];
 

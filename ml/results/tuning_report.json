@@ -1,10 +1,12 @@
 {
-  "generated_at": "2026-09-16T18:03:40+00:00",
+  "generated_at": "2026-10-27T08:27:47+00:00",
   "baseline_report": "ml/results/evaluation_report.json (2026-09-04, untuned)",
   "config": {
     "seed": 42,
     "n_iter": 25,
     "cv_splits": 4,
+    "label": "persistent_absenteeism",
+    "label_horizon_days": 28,
     "cv_gap_days": 28,
     "enrolment_margin_days": 14,
     "features": [
@@ -18,7 +20,8 @@
       "fee_absence_rate",
       "health_absence_rate",
       "attendance_rate_term",
-      "days_into_term"
+      "days_into_term",
+      "attendance_rate_career"
     ]
   },
   "datasets": {
@@ -56,39 +59,40 @@
   "models": {
     "random_forest_tuned": {
       "best_params": {
-        "class_weight": "balanced_subsample",
-        "max_depth": 6,
+        "class_weight": null,
+        "max_depth": 4,
         "max_features": 0.7,
-        "min_samples_leaf": 30,
-        "min_samples_split": 19,
-        "n_estimators": 367
+        "min_samples_leaf": 9,
+        "min_samples_split": 12,
+        "n_estimators": 230
       },
-      "cv_f1": 0.4786308506482366,
-      "oof_threshold": 0.44000000000000006,
-      "oof_f1_at_threshold": 0.48464163822525597,
+      "cv_pr_auc": 0.5713531482859813,
+      "oof_threshold": 0.24000000000000005,
+      "oof_f1_at_threshold": 0.54980448651986,
       "feature_importances": {
-        "attendance_rate_w1": 0.08481966520060027,
-        "attendance_rate_w2": 0.04120984518806636,
-        "attendance_rate_w3": 0.12834317494300493,
-        "longest_absence_streak": 0.038798029984734334,
-        "absence_episode_count": 0.006099034013264034,
-        "dow_concentration": 0.006802695906376952,
-        "attendance_trend": 0.009452324419254294,
-        "fee_absence_rate": 0.014917318400433225,
-        "health_absence_rate": 0.010587273643783653,
-        "attendance_rate_term": 0.5872088218876328,
-        "days_into_term": 0.07176181641284904
+        "attendance_rate_w1": 0.00849956712958431,
+        "attendance_rate_w2": 0.0009886115964741757,
+        "attendance_rate_w3": 0.009116963137100115,
+        "longest_absence_streak": 0.0040003885829171595,
+        "absence_episode_count": 0.0009922108993923485,
+        "dow_concentration": 0.0003902527144601536,
+        "attendance_trend": 0.0005845380832767322,
+        "fee_absence_rate": 0.0011036957950032854,
+        "health_absence_rate": 0.00032458037782504744,
+        "attendance_rate_term": 0.11221058935143875,
+        "days_into_term": 0.022193164191058597,
+        "attendance_rate_career": 0.8395954381414693
       },
       "sch01_test_default_0.5": {
-        "precision": 0.40011318619128466,
-        "recall": 0.5983918747355057,
-        "f1": 0.4795658809564185,
-        "auc_roc": 0.7047402921517775,
+        "precision": 0.6458583433373349,
+        "recall": 0.45535336436732965,
+        "f1": 0.5341275750806652,
+        "auc_roc": 0.786082385212418,
         "confusion_matrix": {
-          "tn": 4901,
-          "fp": 2120,
-          "fn": 949,
-          "tp": 1414
+          "tn": 6431,
+          "fp": 590,
+          "fn": 1287,
+          "tp": 1076
         },
         "support": {
           "n": 9384,
@@ -97,15 +101,15 @@
         }
       },
       "sch01_test_tuned_threshold": {
-        "precision": 0.3504986769794423,
-        "recall": 0.7287346593313584,
-        "f1": 0.47333699835074217,
-        "auc_roc": 0.7047402921517775,
+        "precision": 0.4572905331882481,
+        "recall": 0.7113838341091833,
+        "f1": 0.5567146878622289,
+        "auc_roc": 0.786082385212418,
         "confusion_matrix": {
-          "tn": 3830,
-          "fp": 3191,
-          "fn": 641,
-          "tp": 1722
+          "tn": 5026,
+          "fp": 1995,
+          "fn": 682,
+          "tp": 1681
         },
         "support": {
           "n": 9384,
@@ -114,15 +118,15 @@
         }
       },
       "sch02_holdout_default_0.5": {
-        "precision": 0.41899584266069717,
-        "recall": 0.5712915322229005,
-        "f1": 0.48343295697734484,
-        "auc_roc": 0.7709671435383847,
+        "precision": 0.6534765404183154,
+        "recall": 0.40324409174151915,
+        "f1": 0.49873267540311705,
+        "auc_roc": 0.8389365508580449,
         "confusion_matrix": {
-          "tn": 39436,
-          "fp": 9084,
-          "fn": 4916,
-          "tp": 6551
+          "tn": 46068,
+          "fp": 2452,
+          "fn": 6843,
+          "tp": 4624
         },
         "support": {
           "n": 59987,
@@ -131,15 +135,15 @@
         }
       },
       "sch02_holdout_tuned_threshold": {
-        "precision": 0.3649749953695129,
-        "recall": 0.6873637394261795,
-        "f1": 0.47678674046517255,
-        "auc_roc": 0.7709671435383847,
+        "precision": 0.48053919485093205,
+        "recall": 0.6901543559780239,
+        "f1": 0.5665807560137457,
+        "auc_roc": 0.8389365508580449,
         "confusion_matrix": {
-          "tn": 34806,
-          "fp": 13714,
-          "fn": 3585,
-          "tp": 7882
+          "tn": 39965,
+          "fp": 8555,
+          "fn": 3553,
+          "tp": 7914
         },
         "support": {
           "n": 59987,
@@ -157,19 +161,19 @@
         "max_leaf_nodes": 7,
         "min_samples_leaf": 14
       },
-      "cv_f1": 0.48224061692464715,
-      "oof_threshold": 0.4800000000000001,
-      "oof_f1_at_threshold": 0.4851217312894499,
+      "cv_pr_auc": 0.5655116648946217,
+      "oof_threshold": 0.27,
+      "oof_f1_at_threshold": 0.5452770068866276,
       "sch01_test_default_0.5": {
-        "precision": 0.3830957739434859,
-        "recall": 0.6483283961066441,
-        "f1": 0.4816095567431625,
-        "auc_roc": 0.7062477099262638,
+        "precision": 0.655534941249227,
+        "recall": 0.4485823106220906,
+        "f1": 0.5326633165829145,
+        "auc_roc": 0.7889515963324585,
         "confusion_matrix": {
-          "tn": 4554,
-          "fp": 2467,
-          "fn": 831,
-          "tp": 1532
+          "tn": 6464,
+          "fp": 557,
+          "fn": 1303,
+          "tp": 1060
         },
         "support": {
           "n": 9384,
@@ -178,15 +182,15 @@
         }
       },
       "sch01_test_tuned_threshold": {
-        "precision": 0.3724668064290706,
-        "recall": 0.6766821836648328,
-        "f1": 0.48046875,
-        "auc_roc": 0.7062477099262638,
+        "precision": 0.4482758620689655,
+        "recall": 0.7151925518408803,
+        "f1": 0.5511169085276374,
+        "auc_roc": 0.7889515963324585,
         "confusion_matrix": {
-          "tn": 4327,
-          "fp": 2694,
-          "fn": 764,
-          "tp": 1599
+          "tn": 4941,
+          "fp": 2080,
+          "fn": 673,
+          "tp": 1690
         },
         "support": {
           "n": 9384,
@@ -195,15 +199,15 @@
         }
       },
       "sch02_holdout_default_0.5": {
-        "precision": 0.4081693323027528,
-        "recall": 0.5986744571378739,
-        "f1": 0.48539913738245066,
-        "auc_roc": 0.7706570095296937,
+        "precision": 0.6669151632622633,
+        "recall": 0.39007586988750326,
+        "f1": 0.4922416639154837,
+        "auc_roc": 0.8418437902850511,
         "confusion_matrix": {
-          "tn": 38566,
-          "fp": 9954,
-          "fn": 4602,
-          "tp": 6865
+          "tn": 46286,
+          "fp": 2234,
+          "fn": 6994,
+          "tp": 4473
         },
         "support": {
           "n": 59987,
@@ -212,15 +216,15 @@
         }
       },
       "sch02_holdout_tuned_threshold": {
-        "precision": 0.39065851565851567,
-        "recall": 0.6353012993808319,
-        "f1": 0.4838120537937905,
-        "auc_roc": 0.7706570095296937,
+        "precision": 0.4864322867706962,
+        "recall": 0.6768989273567629,
+        "f1": 0.566073512252042,
+        "auc_roc": 0.8418437902850511,
         "confusion_matrix": {
-          "tn": 37157,
-          "fp": 11363,
-          "fn": 4182,
-          "tp": 7285
+          "tn": 40325,
+          "fp": 8195,
+          "fn": 3705,
+          "tp": 7762
         },
         "support": {
           "n": 59987,
