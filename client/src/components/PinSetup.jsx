@@ -7,8 +7,8 @@ const LOCK_MINUTES = Math.round(INACTIVITY_LOCK_MS / 60000);
 import { CapIcon } from './icons';
 
 /**
- * Shown after the first online sign-in, and from the account sheet (with
- * `changing` and a `skipLabel`).
+ * Opened from the account sheet. A PIN is optional: only staff who set one
+ * get the inactivity lock.
  */
 export default function PinSetup({ onDone, onSkip, changing = false, skipLabel = 'Not now' }) {
   const { enrolPin } = useAuth();

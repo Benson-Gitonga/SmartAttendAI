@@ -336,20 +336,9 @@ function NoClassesYet({ syncing, offline, onRetry, onSignOut }) {
   );
 }
 
-// "Not now" on the PIN prompt is remembered per user so it does not reappear on every reload.
-const pinSkipKey = (user) => `smartattend:pin-skipped:${user?.username ?? ''}`;
-const readPinSkipped = (user) => {
-  try { return localStorage.getItem(pinSkipKey(user)) === '1'; } catch { return false; }
-};
-
 function AuthGate() {
-  const { status, pinState, user } = useAuth();
-  const [pinSetupSkipped, setPinSetupSkipped] = useState(false);
+  const { status, user } = useAuth();
   const publicRoute = usePublicRoute();
-  const skipPinSetup = () => {
-    try { localStorage.setItem(pinSkipKey(user), '1'); } catch { /* private mode */ }
-    setPinSetupSkipped(true);
-  };
 
   if (status === AUTH_STATUS.LOADING) return <div className="centered">Loading SmartAttend…</div>;
   if (status === AUTH_STATUS.SIGNED_OUT) return <LoginScreen />;
@@ -363,9 +352,7 @@ function AuthGate() {
   // The school admin supervises the school; teachers run their classes.
   return (
     <SchoolStatusGate>
-      {!pinState.enrolled && !pinSetupSkipped && !readPinSkipped(user)
-        ? <PinSetup onDone={() => setPinSetupSkipped(true)} onSkip={skipPinSetup} />
-        : user?.role === 'admin' ? <AdminApp /> : <TeacherApp />}
+      {user?.role === 'admin' ? <AdminApp /> : <TeacherApp />}
       {/* Drawn over the app rather than instead of it, so an unsaved register survives the lock. */}
       {status === AUTH_STATUS.LOCKED && <div className="lock-overlay"><PinUnlock /></div>}
     </SchoolStatusGate>
