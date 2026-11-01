@@ -7,6 +7,8 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { showToast } from '../lib/toast';
 import ConfirmDialog from './ConfirmDialog';
 import Toaster from './Toaster';
+import SideNav from './SideNav';
+import TopBar from './TopBar';
 import {
   SearchIcon, LogOutIcon, CheckCircleIcon, XCircleIcon, PowerIcon, SyncIcon,
 } from './icons';
@@ -164,114 +166,120 @@ export default function SystemAdminOverview() {
   const ask = (school, action) => setPendingAction({ school, action });
 
   return (
-    <div className="sys">
-      <header className="sys-top">
-        <div className="sys-top__brand">
-          SmartAttend <span className="sys-top__product">Admin console</span>
-        </div>
-        <div className="sys-top__right">
-          {!online && <span className="sys-top__offline">Offline</span>}
-          <span className="sys-top__user" title={user?.username}>{user?.username}</span>
-          <button type="button" className="sys-top__signout" aria-label="Sign out" onClick={() => setConfirmSignOut(true)}>
-            <LogOutIcon size={15} /> <span className="sys-hide-sm">Sign out</span>
-          </button>
-        </div>
-      </header>
+    // The same frame as the school admin and teacher apps: side menu and breadcrumb bar.
+    <div className="shell ad">
+      <SideNav
+        active="schools"
+        onChange={() => {}}
+        role="system_admin"
+        user={user}
+        online={online}
+        onAccount={() => setConfirmSignOut(true)}
+      />
+      <div className="app">
+        <TopBar crumbs={[{ label: 'SmartAttend' }, { label: 'Schools' }]} online={online} />
+        <div className="app__scroll">
+          <main className="ad-page ad-console">
+            <div className="sys-pagehead">
+              <div>
+                <h1 className="sys-pagehead__title">Schools</h1>
+                {schools && (
+                  <p className="sys-pagehead__sub">
+                    {plural(total, 'school')} registered
+                    {waiting > 0 && <> · <b>{waiting} pending review</b></>}
+                  </p>
+                )}
+              </div>
+              <div className="sys-pagehead__actions">
+                <button type="button" className="sys-btn sys-btn--secondary" onClick={load} disabled={refreshing}>
+                  <SyncIcon size={14} className={refreshing ? 'sa-spin' : undefined} /> Refresh
+                </button>
+                <button type="button" className="sys-btn sys-btn--secondary" onClick={() => setConfirmSignOut(true)}>
+                  <LogOutIcon size={14} /> Sign out
+                </button>
+              </div>
+            </div>
 
-      <main className="sys-main">
-        <div className="sys-pagehead">
-          <div>
-            <h1 className="sys-pagehead__title">Schools</h1>
-            {schools && (
-              <p className="sys-pagehead__sub">
-                {plural(total, 'school')} registered
-                {waiting > 0 && <> · <b>{waiting} pending review</b></>}
-              </p>
+            {error && (
+              <div className="sys-banner sys-banner--error" role="alert">
+                Could not reach the server ({error}).{' '}
+                <button type="button" className="sys-linkbtn" onClick={load}>Try again</button>
+              </div>
             )}
-          </div>
-          <button type="button" className="sys-btn sys-btn--secondary" onClick={load} disabled={refreshing}>
-            <SyncIcon size={14} className={refreshing ? 'sa-spin' : undefined} /> Refresh
-          </button>
-        </div>
 
-        {error && (
-          <div className="sys-banner sys-banner--error" role="alert">
-            Could not reach the server ({error}).{' '}
-            <button type="button" className="sys-linkbtn" onClick={load}>Try again</button>
-          </div>
-        )}
-
-        <nav className="sys-tabs" role="tablist" aria-label="Filter schools by status">
-          {FILTERS.map((f) => (
-            <button
-              key={f.id}
-              type="button"
-              role="tab"
-              aria-selected={filter === f.id}
-              className="sys-tab"
-              onClick={() => setFilter(f.id)}
-              disabled={!schools}
-            >
-              {f.label}
-              <span className="sys-tab__count">{f.id === 'all' ? total : counts[f.id] ?? 0}</span>
-            </button>
-          ))}
-        </nav>
-
-        <section className="sys-panel">
-          <div className="sys-toolbar">
-            <label className="sys-search">
-              <SearchIcon size={14} />
-              <input
-                type="search"
-                placeholder="Search by school, county, code or admin"
-                aria-label="Search schools"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </label>
-            {schools && <span className="sys-toolbar__count">{plural(visible.length, 'result')}</span>}
-          </div>
-
-          <table className="sys-table">
-            <thead>
-              <tr>
-                <th>School</th>
-                <th>Location</th>
-                <th>Administrator</th>
-                <th>Registered</th>
-                <th>Status</th>
-                <th className="sys-table__actions"><span className="sa-visually-hidden">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {!schools && !error && (
-                <tr><td colSpan={6} className="sys-table__empty" role="status">Loading schools…</td></tr>
-              )}
-              {schools && visible.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="sys-table__empty">
-                    {query.trim()
-                      ? `No schools match “${query.trim()}”.`
-                      : filter === 'pending'
-                        ? 'No schools are waiting for review.'
-                        : total === 0 ? 'No schools have registered yet.' : 'No schools with this status.'}
-                  </td>
-                </tr>
-              )}
-              {visible.map((s) => (
-                <SchoolRow
-                  key={s.schoolId}
-                  school={s}
-                  selected={s.schoolId === openId}
-                  onOpen={() => setOpenId(s.schoolId)}
-                  onAction={(action) => ask(s, action)}
-                />
+            <nav className="sys-tabs" role="tablist" aria-label="Filter schools by status">
+              {FILTERS.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={filter === f.id}
+                  className="sys-tab"
+                  onClick={() => setFilter(f.id)}
+                  disabled={!schools}
+                >
+                  {f.label}
+                  <span className="sys-tab__count">{f.id === 'all' ? total : counts[f.id] ?? 0}</span>
+                </button>
               ))}
-            </tbody>
-          </table>
-        </section>
-      </main>
+            </nav>
+
+            <section className="sys-panel">
+              <div className="sys-toolbar">
+                <label className="sys-search">
+                  <SearchIcon size={14} />
+                  <input
+                    type="search"
+                    placeholder="Search by school, county, code or admin"
+                    aria-label="Search schools"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                  />
+                </label>
+                {schools && <span className="sys-toolbar__count">{plural(visible.length, 'result')}</span>}
+              </div>
+
+              <table className="sys-table">
+                <thead>
+                  <tr>
+                    <th>School</th>
+                    <th>Location</th>
+                    <th>Administrator</th>
+                    <th>Registered</th>
+                    <th>Status</th>
+                    <th className="sys-table__actions"><span className="sa-visually-hidden">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {!schools && !error && (
+                    <tr><td colSpan={6} className="sys-table__empty" role="status">Loading schools…</td></tr>
+                  )}
+                  {schools && visible.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="sys-table__empty">
+                        {query.trim()
+                          ? `No schools match “${query.trim()}”.`
+                          : filter === 'pending'
+                            ? 'No schools are waiting for review.'
+                            : total === 0 ? 'No schools have registered yet.' : 'No schools with this status.'}
+                      </td>
+                    </tr>
+                  )}
+                  {visible.map((s) => (
+                    <SchoolRow
+                      key={s.schoolId}
+                      school={s}
+                      selected={s.schoolId === openId}
+                      onOpen={() => setOpenId(s.schoolId)}
+                      onAction={(action) => ask(s, action)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </section>
+          </main>
+        </div>
+      </div>
 
       {openSchool && (
         <SchoolPanel school={openSchool} onClose={() => setOpenId(null)} onAction={(action) => ask(openSchool, action)} />

@@ -2,6 +2,9 @@ import { RosterIcon, GridIcon, BellIcon, HomeIcon, UsersIcon, CalendarIcon, Buil
 
 /** Nav items for the signed-in role. Shared by BottomNav (phone) and SideNav (desktop). */
 export function navItems(role) {
+  if (role === 'system_admin') {
+    return [{ id: 'schools', label: 'Schools', short: 'Schools', Icon: BuildingIcon }];
+  }
   // The school admin supervises the whole school rather than teaching a class.
   if (role === 'admin') {
     return [
