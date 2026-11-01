@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { stationScan } from '../services/adminService';
 import { queueStationScan, getQueuedStationScans, removeQueuedStationScan } from '../db/database';
 import CameraScanner from './CameraScanner';
+import { useWakeLock } from '../hooks/useWakeLock';
+import { signalScan } from '../lib/scanSignal';
 
 const timeOf = (iso) => (iso ? new Date(iso).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' }) : '');
 
@@ -40,6 +42,8 @@ export default function ScanStation() {
   const [log, setLog] = useState([]);
   const [camera, setCamera] = useState(false);
   const [waiting, setWaiting] = useState(0);
+
+  useWakeLock();
 
   // Keep the box focused so the scanner's keystrokes always land in it.
   useEffect(() => {
@@ -114,11 +118,13 @@ export default function ScanStation() {
       }
     }
     setLatest(addToLog(result, key));
+    signalScan(RESULT[result.outcome].tone);
     setBusy(false);
   }
 
   const counts = log.reduce((c, e) => ({ ...c, [e.outcome]: (c[e.outcome] ?? 0) + 1 }), {});
   const shown = latest && RESULT[latest.outcome];
+  const marked = counts.recorded ?? 0;
 
   return (
     <div className="ad-page ad-console">
@@ -128,7 +134,7 @@ export default function ScanStation() {
           <p className="sys-pagehead__sub">Scan student ID cards as they arrive. Each card marks the student present for today.</p>
         </div>
         <div className="sys-pagehead__actions">
-          <button type="button" className="sys-btn sys-btn--secondary" onClick={() => setCamera(true)}>Use camera</button>
+          <button type="button" className="sys-btn sys-btn--primary" onClick={() => setCamera(true)}>Scan with camera</button>
         </div>
       </div>
 
@@ -163,8 +169,11 @@ export default function ScanStation() {
         <div className={`scanst__result${shown ? ` scanst__result--${shown.tone}` : ''}`} role="status" aria-live="polite">
           {shown ? (
             <>
-              <div className="scanst__name">{shown.title(latest)}</div>
-              <div className="scanst__text">{shown.text(latest)}</div>
+              <span className="scanst__mark" aria-hidden="true">{shown.tone === 'ok' ? '✓' : shown.tone === 'info' ? 'i' : '!'}</span>
+              <div>
+                <div className="scanst__name">{shown.title(latest)}</div>
+                <div className="scanst__text">{shown.text(latest)}</div>
+              </div>
             </>
           ) : (
             <div className="scanst__text">Waiting for the first card…</div>
@@ -197,7 +206,16 @@ export default function ScanStation() {
         </section>
       )}
 
-      {camera && <CameraScanner onCode={scan} onClose={() => setCamera(false)} />}
+      {camera && (
+        <CameraScanner
+          title="Scan station"
+          hint="Hold each card in the frame. Students are marked present automatically."
+          progress={`${marked} marked present`}
+          feedback={shown ? { id: latest.key, tone: shown.tone, title: shown.title(latest), text: shown.text(latest) } : null}
+          onCode={scan}
+          onClose={() => setCamera(false)}
+        />
+      )}
     </div>
   );
 }

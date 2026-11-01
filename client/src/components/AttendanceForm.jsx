@@ -15,6 +15,7 @@ import { showToast } from '../lib/toast';
 import Avatar from './Avatar';
 import { SyncIcon, SearchIcon, ChevronLeftIcon, ChevronRightIcon } from './icons';
 import CameraScanner from './CameraScanner';
+import { signalScan } from '../lib/scanSignal';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -85,6 +86,7 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
   const [checkingGate, setCheckingGate] = useState(false);
   const [conflicts, setConflicts] = useState([]);
   const [scanning, setScanning] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState(null);
   const headerRef = useRef(null);
 
   const readLocal = useCallback(async () => {
@@ -234,16 +236,21 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
 
   // A card read by the camera: save that student present straight away (on
   // this phone, synced later), so the scan survives the app closing offline.
+  function answerScan(tone, title, text) {
+    signalScan(tone);
+    setScanFeedback({ id: Date.now(), tone, title, text });
+  }
+
   async function onCardScanned(code) {
     const uid = code.replace(/[^A-Z0-9]/gi, '').toUpperCase();
     const student = students.find((s) => (s.cardUid ?? '').toUpperCase() === uid);
     if (!student) {
-      showToast(`Card ${uid} is not in this class`, { tone: 'error' });
+      answerScan('error', 'Card not in this class', `Card ${uid}. Check the card, or mark the student by hand.`);
       return;
     }
     const id = student.studentId;
     if (isPresent(recorded[id])) {
-      showToast(`${student.fullName}: already present`);
+      answerScan('info', student.fullName, 'Already marked present');
       return;
     }
     try {
@@ -251,14 +258,14 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
         studentId: id, date, status: 'present', captureMethod: 'rfid', recordedBy: user?.username ?? null,
       });
     } catch (err) {
-      showToast(`Could not save ${student.fullName}: ${err.message}`, { tone: 'error' });
+      answerScan('error', `Could not save ${student.fullName}`, err.message);
       return;
     }
     setDraft((prev) => without(prev, id));
     setReasonDraft((prev) => without(prev, id));
     await readLocal();
     onRecordsChanged?.();
-    showToast(`${student.fullName}: present`);
+    answerScan('ok', student.fullName, 'Marked present');
   }
 
   async function handleSubmit() {
@@ -535,9 +542,12 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
 
       {scanning && (
         <CameraScanner
-          hint={`Scan cards for ${formatLongDate(date)}. Each card marks that student present and saves at once.`}
+          title="Register"
+          hint={`${formatLongDate(date)}. Hold each card in the frame. It saves at once.`}
+          progress={`${atGateCount} of ${students.length} scanned`}
+          feedback={scanFeedback}
           onCode={onCardScanned}
-          onClose={() => setScanning(false)}
+          onClose={() => { setScanning(false); setScanFeedback(null); }}
         />
       )}
     </div>
