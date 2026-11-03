@@ -2,15 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { addFollowUp, getFollowUpsForStudent, updateStudent } from '../db/database';
 import { showToast } from '../lib/toast';
 import { useAuth } from '../auth/AuthContext';
+import { METHOD_LABEL } from '../lib/followUpLabels';
 import { CheckCircleIcon, PhoneIcon, MailIcon } from './icons';
 
-const METHOD_LABEL = {
-  parent_call: 'Called parent/guardian',
-  sms: 'Sent SMS',
-  home_visit: 'Home visit',
-  meeting: 'Met at school',
-  other: 'Other',
-};
 
 function fmtWhen(iso) {
   const dt = new Date(iso);
@@ -78,7 +72,8 @@ function GuardianContact({ studentId, phone, email, onUpdated }) {
 }
 
 /** Guardian contact and follow-up form for one flagged student. */
-export default function FollowUpPanel({ studentId, flag, student, onStudentUpdated }) {
+/** `bare`: no card frame or title (inside a pop-up). `onLogged` runs after a follow-up is saved. */
+export default function FollowUpPanel({ studentId, flag, student, onStudentUpdated, onLogged, bare = false }) {
   const { user } = useAuth();
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -103,6 +98,7 @@ export default function FollowUpPanel({ studentId, flag, student, onStudentUpdat
       showToast('Follow-up logged');
       setNote('');
       await load();
+      onLogged?.();
     } catch (err) {
       setError(err.message ?? 'Could not log the follow-up');
     } finally {
@@ -111,8 +107,8 @@ export default function FollowUpPanel({ studentId, flag, student, onStudentUpdat
   }
 
   return (
-    <div className="card">
-      <h2 className="card__title">Follow up</h2>
+    <div className={bare ? 'followup-bare' : 'card'}>
+      {!bare && <h2 className="card__title">Follow up</h2>}
 
       {student && (
         <GuardianContact
@@ -147,13 +143,14 @@ export default function FollowUpPanel({ studentId, flag, student, onStudentUpdat
             onChange={(e) => setNote(e.target.value)} disabled={busy}
           />
         </div>
-        <button className="btn btn--secondary" type="submit" disabled={busy}>
+        <button className={`btn${bare ? '' : ' btn--secondary'}`} type="submit" disabled={busy}>
           {busy ? 'Logging…' : 'Log follow-up'}
         </button>
       </form>
 
       {!loading && history.length > 0 && (
         <div className="followup-history">
+          {bare && <h4 className="risk-note__heading">Earlier follow-ups</h4>}
           {history.map((h) => (
             <div key={h.followUpId} className="followup-history__row">
               <span className="followup-history__icon"><CheckCircleIcon size={16} /></span>

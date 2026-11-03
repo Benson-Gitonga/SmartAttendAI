@@ -63,6 +63,7 @@ function TeacherApp() {
   const [registerStatus, setRegisterStatus] = useState(null); // 'done' | 'due' | null
   // A past day picked on Reports; the register opens on it. null = today.
   const [registerDay, setRegisterDay] = useState(null);
+  const [registerFilter, setRegisterFilter] = useState('all');
   const registerDirty = useRef(false);
   const setRegisterDirty = useCallback((dirty) => { registerDirty.current = dirty; }, []);
   const role = 'teacher';
@@ -145,12 +146,18 @@ function TeacherApp() {
     navigate(next, opts);
     return true;
   }, [navigate]);
-  const goTab = useCallback((next) => {
-    if (go({ tab: next })) setRegisterDay(null);
+  const goTab = useCallback((next, opts) => {
+    if (go({ tab: next }, opts)) { setRegisterDay(null); setRegisterFilter('all'); }
   }, [go]);
-  const openRegisterDay = useCallback((date) => {
-    if (go({ tab: 'attendance' })) setRegisterDay(date);
+  const openRegisterDay = useCallback((date, opts) => {
+    if (go({ tab: 'attendance' }, opts)) { setRegisterDay(date); setRegisterFilter('all'); }
   }, [go]);
+  /** Today's register showing only 'present' or 'absent' students. */
+  const openRegisterFiltered = useCallback((filter, opts) => {
+    if (go({ tab: 'attendance' }, opts)) { setRegisterDay(null); setRegisterFilter(filter); }
+  }, [go]);
+  // Pages opened from a dashboard card get a way back to it.
+  const FROM_DASH = { via: 'dashboard' };
   const openProfile = useCallback((id) => go({ tab, studentId: id }), [go, tab]);
 
   const pickClass = useCallback((id) => {
@@ -196,6 +203,7 @@ function TeacherApp() {
         key={route.studentId}
         studentId={route.studentId}
         className={activeLabel}
+        onOpenDay={openRegisterDay}
       />
     );
     detail = studentNames[route.studentId] ?? 'Student';
@@ -205,10 +213,12 @@ function TeacherApp() {
         key={`${activeClassId}-${refreshKey}`}
         classGroupId={activeClassId}
         className={activeLabel}
-        onTakeAttendance={() => goTab('attendance')}
-        onOpenAlerts={() => goTab('alerts')}
+        onTakeAttendance={() => goTab('attendance', FROM_DASH)}
+        onOpenAlerts={() => goTab('alerts', FROM_DASH)}
+        onOpenRegisterDay={(date) => openRegisterDay(date, FROM_DASH)}
+        onOpenRegisterFiltered={(filter) => openRegisterFiltered(filter, FROM_DASH)}
         onOpenProfile={openProfile}
-        onOpenScanStation={() => goTab('scan')}
+        onOpenScanStation={() => goTab('scan', FROM_DASH)}
       />
     );
   } else if (tab === 'scan') {
@@ -231,9 +241,10 @@ function TeacherApp() {
   } else {
     body = (
       <AttendanceForm
-        key={`${activeClassId}-${registerDay}`}
+        key={`${activeClassId}-${registerDay}-${registerFilter}`}
         classGroupId={activeClassId}
         initialDate={registerDay}
+        initialFilter={registerFilter}
         pending={pending}
         onRecordsChanged={handleRecordsChanged}
         onOpenProfile={openProfile}
@@ -244,9 +255,14 @@ function TeacherApp() {
 
   // The current page is the last crumb and is not a link.
   const classCrumb = { label: activeLabel, onClick: () => setSwitcherOpen(true), picker: true };
+  const dashCrumb = { label: TITLES.dashboard, onClick: () => go({ tab: 'dashboard' }, { up: true }) };
+  // Opened from a dashboard card: "Dashboard" sits in the trail, so the top bar shows a Back button to it.
+  const viaDashboard = tab !== 'dashboard' && window.history.state?.via === 'dashboard';
   const crumbs = detail
     ? [classCrumb, { label: TITLES[tab], onClick: () => go({ tab }, { up: true }) }, { label: detail }]
-    : [classCrumb, { label: TITLES[tab] }];
+    : viaDashboard
+      ? [classCrumb, dashCrumb, { label: TITLES[tab] }]
+      : [classCrumb, { label: TITLES[tab] }];
 
   return (
     <div className="shell">

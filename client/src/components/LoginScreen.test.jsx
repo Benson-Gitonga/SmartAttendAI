@@ -9,6 +9,7 @@ jest.setTimeout(20_000);
 const auth = {};
 let mockOnline = true;
 
+jest.mock('../lib/features', () => ({ features: { googleSignIn: true } }));
 jest.mock('../auth/AuthContext', () => ({ useAuth: () => auth }));
 jest.mock('../hooks/useOnlineStatus', () => ({ useOnlineStatus: () => mockOnline }));
 jest.mock('../auth/session', () => ({
@@ -42,7 +43,7 @@ beforeEach(() => {
 });
 
 async function signInAs(user, email, password) {
-  await user.type(screen.getByLabelText('Email'), email);
+  await user.type(screen.getByLabelText('Email or username'), email);
   await user.type(screen.getByLabelText('Password'), password);
   await user.click(screen.getByRole('button', { name: 'Sign in' }));
 }

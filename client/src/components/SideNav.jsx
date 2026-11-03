@@ -1,6 +1,6 @@
 import { navItems } from './BottomNav';
 import Avatar from './Avatar';
-import { CapIcon, ChevronDownIcon } from './icons';
+import { ChevronDownIcon, BrandCheckIcon } from './icons';
 
 const ROLE_LABEL = { admin: 'School admin', teacher: 'Teacher' };
 
@@ -13,7 +13,7 @@ export default function SideNav({
   return (
     <nav className="side-nav" aria-label="Primary">
       <div className="side-nav__brand">
-        <span className="side-nav__logo"><CapIcon size={18} /></span>
+        <span className="side-nav__logo"><BrandCheckIcon size={26} /></span>
         <span>SmartAttend</span>
       </div>
 

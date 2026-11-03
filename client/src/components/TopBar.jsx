@@ -1,4 +1,5 @@
-import { ChevronDownIcon, ChevronRightIcon, ChevronLeftIcon, UserIcon, CapIcon } from './icons';
+import ThemeToggle from './ThemeToggle';
+import { ChevronDownIcon, ChevronRightIcon, ChevronLeftIcon, UserIcon, BrandCheckIcon } from './icons';
 
 /**
  * Screen header with a breadcrumb, e.g. "Form 3 B > At-risk Students > Kevin".
@@ -13,7 +14,7 @@ export default function TopBar({ crumbs = [], online, onAccount }) {
   return (
     <header className="topbar">
       <nav className={`topbar__crumbs${parent ? ' topbar__crumbs--deep' : ''}`} aria-label="Breadcrumb">
-        <span className="topbar__logo" aria-hidden="true"><CapIcon size={16} /></span>
+        <span className="topbar__logo" aria-hidden="true"><BrandCheckIcon size={22} /></span>
 
         {parent && (
           <button type="button" className="topbar__up" onClick={parent.onClick} aria-label={`Back to ${parent.label}`}>
@@ -51,6 +52,7 @@ export default function TopBar({ crumbs = [], online, onAccount }) {
       </nav>
 
       <div className="topbar__right">
+        <ThemeToggle compact />
         {online !== undefined && (
           <span className={`status-chip status-chip--${online ? 'online' : 'offline'}`}>
             <span className={`dot dot--${online ? 'present' : 'late'}`} />

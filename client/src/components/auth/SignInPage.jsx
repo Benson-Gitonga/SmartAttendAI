@@ -4,6 +4,7 @@ import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import AuthLayout, { Field, PasswordInput, Alert } from './AuthLayout';
 import { PUBLIC_PAGES } from './publicRoute';
 import GoogleSignInButton from './GoogleSignInButton';
+import { features } from '../../lib/features';
 
 /**
  * Sign-in for everyone: school staff with their email, the system admin with
@@ -33,8 +34,9 @@ export default function SignInPage({ notice = null, initialEmail = '' }) {
   return (
     <AuthLayout>
       <form onSubmit={submit} noValidate>
+        <p className="pub-eyebrow">Staff portal</p>
         <h1 className="pub-title">Sign in</h1>
-        <p className="pub-sub">Use the email your school registered you with.</p>
+        <p className="pub-sub">Welcome back. Use the email your school registered you with.</p>
 
         {!online && (
           <Alert tone="warn">
@@ -44,7 +46,7 @@ export default function SignInPage({ notice = null, initialEmail = '' }) {
         {notice && <Alert tone="info">{notice}</Alert>}
         {error && <Alert>{error}</Alert>}
 
-        <Field id="email" label="Email">
+        <Field id="email" label="Email or username">
           <input
             id="email"
             className="pub-input"
@@ -54,6 +56,7 @@ export default function SignInPage({ notice = null, initialEmail = '' }) {
             autoCorrect="off"
             spellCheck={false}
             inputMode="email"
+            placeholder="name@school.ac.ke"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={busy}
@@ -74,11 +77,11 @@ export default function SignInPage({ notice = null, initialEmail = '' }) {
         </button>
 
         {/* Only for a Google account linked from an invite link or the account sheet. */}
-        <GoogleSignInButton disabled={busy || !online} />
+        {features.googleSignIn && <GoogleSignInButton disabled={busy || !online} />}
       </form>
 
       <div className="pub-card__foot">
-        New to SmartAttend? <a className="pub-link" href={PUBLIC_PAGES.apply}>Apply for your school</a>
+        <p>New to SmartAttend? <a className="pub-link" href={PUBLIC_PAGES.apply}>Apply for your school</a></p>
       </div>
     </AuthLayout>
   );

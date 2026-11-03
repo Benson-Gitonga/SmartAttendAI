@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import Avatar from './Avatar';
 import GoogleLinkRow from './GoogleLinkRow';
+import ThemeToggle from './ThemeToggle';
+import { features } from '../lib/features';
 import { useBackToClose } from '../hooks/useBackToClose';
 import { SyncIcon, RosterIcon, KeypadIcon, LogOutIcon } from './icons';
 
@@ -66,7 +68,12 @@ export default function AccountSheet({
             </button>
           )}
 
-          <GoogleLinkRow online={online} />
+          {features.googleSignIn && <GoogleLinkRow online={online} />}
+
+          <div className="account-row">
+            <span className="account-row__label">Appearance</span>
+            <ThemeToggle />
+          </div>
         </div>
 
         <button type="button" className="btn btn--ghost account-signout" onClick={onSignOut}>

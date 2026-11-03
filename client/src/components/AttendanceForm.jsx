@@ -64,7 +64,7 @@ const without = (obj, key) => {
  * is here without a card. A scan on this phone is saved straight away, so it
  * works offline and is not lost if the app closes before the teacher saves.
  */
-export default function AttendanceForm({ classGroupId, initialDate = null, pending = 0, onRecordsChanged, onOpenProfile, onDirtyChange }) {
+export default function AttendanceForm({ classGroupId, initialDate = null, initialFilter = 'all', pending = 0, onRecordsChanged, onOpenProfile, onDirtyChange }) {
   const { user } = useAuth();
   const today = todayISO();
   const [date, setDate] = useState(initialDate && initialDate < today ? initialDate : today);
@@ -79,7 +79,7 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState(initialFilter);
   const [touched, setTouched] = useState(false); // the teacher changed something since the last save
   // null while the gate check is in flight; only checked for today's register
   const [gate, setGate] = useState(null);
@@ -437,7 +437,15 @@ export default function AttendanceForm({ classGroupId, initialDate = null, pendi
               {visible.length === 0 && (
                 <tr>
                   <td colSpan={5} className="table__empty">
-                    {students.length === 0 ? 'No students in this class yet. Your school admin adds them.' : 'No students match.'}
+                    {students.length === 0
+                      ? 'No students in this class yet. Your school admin adds them.'
+                      : query.trim()
+                        ? 'No students match.'
+                        : filter === 'absent'
+                          ? 'Nobody is marked absent.'
+                          : filter === 'present'
+                            ? 'Nobody is marked present.'
+                            : 'No students match.'}
                   </td>
                 </tr>
               )}

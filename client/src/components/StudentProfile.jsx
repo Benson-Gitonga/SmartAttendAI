@@ -9,8 +9,11 @@ import {
   toISO,
 } from '../lib/riskModel';
 import Avatar from './Avatar';
-import FollowUpPanel from './FollowUpPanel';
-import { ChevronLeftIcon, ChevronRightIcon } from './icons';
+import FollowUpCard from './FollowUpCard';
+import Modal from './Modal';
+import RiskDialog from './RiskDialog';
+import MonthCalendar from './MonthCalendar';
+import { InfoIcon } from './icons';
 
 const RISK_LABEL = { red: 'High risk', amber: 'Medium risk', green: 'On track' };
 const RISK_TAKEAWAY = {
@@ -71,100 +74,99 @@ function TrendChart({ points }) {
   );
 }
 
-const CAL_CODE = { present: 'P', late: 'L', absent: 'A' };
 const CAL_TEXT = { present: 'Present', late: 'Late', absent: 'Absent' };
+const REASON_TEXT = { fee: 'School fees', health: 'Illness or health', other: 'Other reason', unknown: 'Reason not known' };
+const METHOD_TEXT = {
+  manual: 'Marked by the teacher in the register',
+  rfid: 'ID card scanned at the gate',
+  fingerprint: 'Fingerprint at the gate',
+  import: 'Imported from earlier records',
+};
 
-function addMonths(iso, n) {
-  const [y, m] = iso.split('-').map(Number);
-  return toISO(new Date(y, m - 1 + n, 1));
+function fmtTime(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime())
+    ? null
+    : d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-/** Month calendar of school days (Mon-Fri) with the student's status on each. */
-function AttendanceCalendar({ history }) {
+/** Pop-up with the details of one calendar day. */
+function DayDialog({ iso, record, onOpenDay, onClose }) {
+  const { long, weekday } = fmtDate(iso);
+  const saved = fmtTime(record?.updatedAt ?? record?.createdAt);
+  const tone = record ? (record.status === 'absent' ? 'red' : record.status === 'late' ? 'amber' : 'green') : null;
+  return (
+    <Modal
+      eyebrow="Attendance"
+      title={`${weekday}, ${long}`}
+      labelId="day-dialog-title"
+      badge={
+        <span className={`modal__level${tone ? ` modal__level--${tone}` : ''}`}>
+          {record ? CAL_TEXT[record.status] : 'Not taken'}
+        </span>
+      }
+      onClose={onClose}
+      actions={onOpenDay && (
+        <button type="button" className="btn btn--sm" onClick={() => { onClose(); onOpenDay(iso); }}>
+          {record ? 'Open this day in the register' : 'Take the register for this day'}
+        </button>
+      )}
+    >
+      {record ? (
+        <dl className="risk-note__facts day-facts">
+          {record.status === 'absent' && (
+            <div><dt>Reason</dt><dd>{REASON_TEXT[record.reason] ?? 'Not given'}</dd></div>
+          )}
+          <div><dt>How it was taken</dt><dd>{METHOD_TEXT[record.captureMethod] ?? 'Recorded'}</dd></div>
+          {saved && <div><dt>{record.updatedAt ? 'Last changed' : 'Saved'}</dt><dd>{saved}</dd></div>}
+          <div><dt>Sent to the school</dt><dd>{record.syncedAt ? 'Yes' : 'Waiting for internet'}</dd></div>
+        </dl>
+      ) : (
+        <p className="risk-note__summary">No attendance was recorded for this day.</p>
+      )}
+    </Modal>
+  );
+}
+
+/** Month calendar of school days with the student's status on each, plus holidays and breaks. */
+function AttendanceCalendar({ history, onOpenDay }) {
   const today = toISO(new Date());
-  const [month, setMonth] = useState(() => `${today.slice(0, 7)}-01`);
-  const byDate = useMemo(() => new Map(history.map((r) => [r.date, r.status])), [history]);
-  const first = history.length ? history[0].date.slice(0, 7) : today.slice(0, 7);
+  const [picked, setPicked] = useState(null);
+  const records = useMemo(() => new Map(history.map((r) => [r.date, r])), [history]);
+  const first = history.length ? history[0].date : today;
 
-  const [y, m] = month.split('-').map(Number);
-  const daysInMonth = new Date(y, m, 0).getDate();
-  const weeks = [];
-  let week = null;
-  for (let d = 1; d <= daysInMonth; d += 1) {
-    const dt = new Date(y, m - 1, d);
-    const dow = dt.getDay();
-    if (dow === 0 || dow === 6) continue;
-    if (!week || dow === 1) {
-      week = Array(5).fill(null);
-      weeks.push(week);
-    }
-    week[dow - 1] = toISO(dt);
-  }
-
-  const monthCounts = { present: 0, late: 0, absent: 0 };
-  for (const w of weeks) for (const iso of w) if (iso && byDate.has(iso)) monthCounts[byDate.get(iso)] += 1;
-  const label = new Date(y, m - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  const subtitle = (month) => {
+    const prefix = month.slice(0, 7);
+    const n = { present: 0, late: 0, absent: 0 };
+    for (const r of history) if (r.date.startsWith(prefix) && r.status in n) n[r.status] += 1;
+    return `This month: ${n.present + n.late} days at school, ${n.absent} absent`;
+  };
 
   return (
-    <div className="att-cal">
-      <div className="panel__head">
-        <div>
-          <h3 className="panel__title">Attendance calendar</h3>
-          <p className="panel__sub">
-            {monthCounts.present} present · {monthCounts.late} late · {monthCounts.absent} absent this month
-          </p>
-        </div>
-        <div className="period-nav">
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={() => setMonth((v) => addMonths(v, -1))}
-            disabled={month.slice(0, 7) <= first}
-            aria-label="Previous month"
-          >
-            <ChevronLeftIcon size={16} />
-          </button>
-          <span className="period-nav__label">{label}</span>
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={() => setMonth((v) => addMonths(v, 1))}
-            disabled={month.slice(0, 7) >= today.slice(0, 7)}
-            aria-label="Next month"
-          >
-            <ChevronRightIcon size={16} />
-          </button>
-        </div>
-      </div>
-
-      <table className="att-cal__grid">
-        <thead>
-          <tr>{['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((d) => <th key={d}>{d}</th>)}</tr>
-        </thead>
-        <tbody>
-          {weeks.map((w, i) => (
-            <tr key={i}>
-              {w.map((iso, j) => {
-                if (!iso) return <td key={j} />;
-                const status = byDate.get(iso);
-                const future = iso > today;
-                return (
-                  <td key={j} className={`${iso === today ? 'is-today' : ''}${future ? ' is-future' : ''}`}>
-                    <span className="att-cal__day">{Number(iso.slice(8, 10))}</span>
-                    <span
-                      className={`reg-code reg-code--${status ?? 'upcoming'}`}
-                      title={status ? CAL_TEXT[status] : future ? 'Upcoming' : 'No record'}
-                    >
-                      {status ? CAL_CODE[status] : '-'}
-                    </span>
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <MonthCalendar
+      title="Attendance calendar"
+      subtitle={subtitle}
+      firstMonth={first}
+      selected={picked}
+      onPick={setPicked}
+      legend={[
+        { tone: 'present', label: 'At school' },
+        { tone: 'absent', label: 'Absent' },
+        { tone: 'none', label: 'Not taken' },
+      ]}
+      getDay={(iso) => {
+        const r = records.get(iso);
+        if (!r) return { tone: 'none', text: 'Not taken' };
+        if (r.status === 'absent') return { tone: 'absent', text: 'Absent', sub: r.reason ? REASON_TEXT[r.reason] : null };
+        return { tone: r.status === 'late' ? 'late' : 'present', text: CAL_TEXT[r.status] };
+      }}
+    >
+      <p className="att-cal__hint">Click a day to see its details.</p>
+      {picked && (
+        <DayDialog iso={picked} record={records.get(picked)} onOpenDay={onOpenDay} onClose={() => setPicked(null)} />
+      )}
+    </MonthCalendar>
   );
 }
 
@@ -172,11 +174,12 @@ function ProfilePage({ children }) {
   return <div className="profile-page">{children}</div>;
 }
 
-export default function StudentProfile({ studentId, className }) {
+export default function StudentProfile({ studentId, className, onOpenDay }) {
   const [student, setStudent] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [followUp, setFollowUp] = useState({ lastAt: new Map() });
+  const [showBreakdown, setShowBreakdown] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -191,11 +194,12 @@ export default function StudentProfile({ studentId, className }) {
     return () => { cancelled = true; };
   }, [studentId]);
 
+  const [followUpTick, setFollowUpTick] = useState(0);
   useEffect(() => {
     let cancelled = false;
     getFollowUpSummary([studentId]).then((summary) => { if (!cancelled) setFollowUp(summary); });
     return () => { cancelled = true; };
-  }, [studentId]);
+  }, [studentId, followUpTick]);
 
   const model = useMemo(() => {
     const asOf = toISO(new Date());
@@ -205,13 +209,13 @@ export default function StudentProfile({ studentId, className }) {
     const trend = weeklyTrend(rows, asOf, 6);
     const insights = riskInsights(rows, features, risk, asOf);
 
-    return { features, risk, trend, insights, assessable: isAssessable(rows) };
+    return { rows, features, risk, trend, insights, assessable: isAssessable(rows) };
   }, [history]);
 
   if (loading) return <ProfilePage><p className="empty">Loading profile…</p></ProfilePage>;
   if (!student) return <ProfilePage><p className="empty">Student not found.</p></ProfilePage>;
 
-  const { risk, trend, insights, features, assessable } = model;
+  const { rows, risk, trend, insights, features, assessable } = model;
   const enrolled = student.enrolledAt ? fmtDate(student.enrolledAt).long : '-';
   const counts = { present: 0, late: 0, absent: 0 };
   for (const r of history) if (r.status in counts) counts[r.status] += 1;
@@ -284,7 +288,7 @@ export default function StudentProfile({ studentId, className }) {
       <div className="profile-grid">
         <div className="profile-grid__main">
           <section className="panel panel--pad">
-            <AttendanceCalendar history={history} />
+            <AttendanceCalendar history={history} onOpenDay={onOpenDay} />
           </section>
 
           <section className="panel panel--pad">
@@ -299,7 +303,22 @@ export default function StudentProfile({ studentId, className }) {
         </div>
 
         <aside className="profile-grid__side">
-          <section className="panel panel--pad">
+          <section
+            className={`panel panel--pad${assessable ? ' risk-card' : ''}`}
+            {...(assessable && {
+              role: 'button',
+              tabIndex: 0,
+              'aria-haspopup': 'dialog',
+              'aria-label': 'Absenteeism risk. Open the explanation',
+              onClick: () => setShowBreakdown(true),
+              onKeyDown: (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setShowBreakdown(true);
+                }
+              },
+            })}
+          >
             <h3 className="panel__title">Absenteeism risk</h3>
             {assessable ? (
               <>
@@ -324,6 +343,10 @@ export default function StudentProfile({ studentId, className }) {
                     </ul>
                   </>
                 )}
+                <span className="risk-card__more">
+                  <InfoIcon size={14} />
+                  See a simple explanation
+                </span>
               </>
             ) : (
               <p className="panel__sub" style={{ marginTop: 8 }}>
@@ -331,13 +354,25 @@ export default function StudentProfile({ studentId, className }) {
               </p>
             )}
           </section>
+          {/* Outside the card: clicks inside the pop-up would otherwise bubble up and reopen it. */}
+          {showBreakdown && (
+            <RiskDialog
+              student={student}
+              rows={rows}
+              features={features}
+              risk={risk}
+              reasons={flagged ? insights : undefined}
+              onClose={() => setShowBreakdown(false)}
+            />
+          )}
 
           {flagged && (
-            <FollowUpPanel
+            <FollowUpCard
               studentId={studentId}
               flag={risk.flag}
               student={student}
               onStudentUpdated={(updated) => setStudent((s) => ({ ...s, ...updated }))}
+              onChanged={() => setFollowUpTick((n) => n + 1)}
             />
           )}
         </aside>

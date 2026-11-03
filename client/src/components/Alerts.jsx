@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { riskInsights, riskHeadline } from '../lib/riskModel';
 import { useClassRisk } from '../hooks/useClassRisk';
 import Avatar from './Avatar';
-import { ChevronRightIcon, PhoneIcon } from './icons';
+import RiskDialog from './RiskDialog';
+import { ChevronRightIcon, InfoIcon, PhoneIcon } from './icons';
 
 const RISK_TEXT = { red: 'High', amber: 'Medium' };
 
@@ -16,13 +17,23 @@ function fmtDaysAgo(iso) {
 export default function Alerts({ classGroupId, className, onOpenProfile }) {
   const { loading, students, flagged, followUp } = useClassRisk(classGroupId);
   const [level, setLevel] = useState('all');
+  const [openId, setOpenId] = useState(null);
 
   if (loading) return <p className="empty">Assessing attendance risk…</p>;
 
   const red = flagged.filter((f) => f.risk.flag === 'red').length;
   const amber = flagged.length - red;
   const pending = flagged.filter((f) => !followUp.lastAt.has(f.student.studentId)).length;
-  const shown = level === 'all' ? flagged : flagged.filter((f) => f.risk.flag === level);
+  const shown =
+    level === 'all' ? flagged
+      : level === 'pending' ? flagged.filter((f) => !followUp.lastAt.has(f.student.studentId))
+        : flagged.filter((f) => f.risk.flag === level);
+  const tiles = [
+    { id: 'all', label: 'Students flagged', value: flagged.length, sub: `of ${students.length} assessed` },
+    { id: 'red', label: 'High risk', value: red, dot: 'absent', tone: 'danger' },
+    { id: 'amber', label: 'Medium risk', value: amber, dot: 'late', tone: 'warn' },
+    { id: 'pending', label: 'Awaiting follow-up', value: pending },
+  ];
 
   return (
     <>
@@ -36,22 +47,20 @@ export default function Alerts({ classGroupId, className, onOpenProfile }) {
       </div>
 
       <div className="kpis kpis--4">
-        <div className="kpi">
-          <span className="kpi__label">Students assessed</span>
-          <span className="kpi__value">{students.length}</span>
-        </div>
-        <div className="kpi">
-          <span className="kpi__label"><span className="dot dot--absent" />High risk</span>
-          <span className="kpi__value">{red}</span>
-        </div>
-        <div className="kpi">
-          <span className="kpi__label"><span className="dot dot--late" />Medium risk</span>
-          <span className="kpi__value">{amber}</span>
-        </div>
-        <div className="kpi">
-          <span className="kpi__label">Awaiting follow-up</span>
-          <span className="kpi__value">{pending}</span>
-        </div>
+        {tiles.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            className={`kpi kpi--button${t.tone ? ` kpi--${t.tone}` : ''}`}
+            aria-pressed={level === t.id}
+            onClick={() => setLevel(t.id)}
+            title={`Show ${t.label.toLowerCase()}`}
+          >
+            <span className="kpi__label">{t.dot && <span className={`dot dot--${t.dot}`} />}{t.label}</span>
+            <span className="kpi__value">{t.value}</span>
+            {t.sub && <span className="kpi__sub">{t.sub}</span>}
+          </button>
+        ))}
       </div>
 
       <div className="panel">
@@ -61,6 +70,7 @@ export default function Alerts({ classGroupId, className, onOpenProfile }) {
               { id: 'all', label: 'All flagged', n: flagged.length },
               { id: 'red', label: 'High risk', n: red },
               { id: 'amber', label: 'Medium risk', n: amber },
+              { id: 'pending', label: 'Awaiting follow-up', n: pending },
             ].map((c) => (
               <button
                 key={c.id}
@@ -94,8 +104,9 @@ export default function Alerts({ classGroupId, className, onOpenProfile }) {
               </thead>
               <tbody>
                 {shown.map(({ student, features, risk, rows }) => {
+                  const reasons = riskInsights(rows, features, risk);
                   const headline = riskHeadline(risk);
-                  const insight = riskInsights(rows, features, risk)[0];
+                  const insight = reasons[0];
                   const last = followUp.lastAt.get(student.studentId);
                   return (
                     <tr
@@ -134,14 +145,35 @@ export default function Alerts({ classGroupId, className, onOpenProfile }) {
                         </span>
                       </td>
                       <td data-label="Risk score">
-                        <div className="meter">
-                          <span className="meter__value">{headline.pct}%</span>
-                          <span className="meter__track">
-                            <span className={`meter__fill meter__fill--${risk.flag}`} style={{ width: `${headline.pct}%` }} />
+                        <button
+                          type="button"
+                          className="risk-toggle"
+                          aria-haspopup="dialog"
+                          title="Explain this score"
+                          onClick={(e) => { e.stopPropagation(); setOpenId(student.studentId); }}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        >
+                          <span className="meter">
+                            <span className="meter__value">{headline.pct}%</span>
+                            <span className="meter__track">
+                              <span className={`meter__fill meter__fill--${risk.flag}`} style={{ width: `${headline.pct}%` }} />
+                            </span>
                           </span>
-                        </div>
+                          <InfoIcon size={15} className="risk-toggle__chev" />
+                        </button>
                       </td>
-                      <td data-label="Why flagged" className="cell-wrap">{insight}</td>
+                      <td data-label="Why flagged" className="cell-wrap">
+                        <button
+                          type="button"
+                          className="why-toggle"
+                          aria-haspopup="dialog"
+                          onClick={(e) => { e.stopPropagation(); setOpenId(student.studentId); }}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        >
+                          {insight}
+                          <span className="why-toggle__more"> {reasons.length > 1 ? `+${reasons.length - 1} more · ` : ''}Explain</span>
+                        </button>
+                      </td>
                       <td data-label="Follow-up">
                         {last ? (
                           <span className="followup followup--done">Done {fmtDaysAgo(last)}</span>
@@ -161,8 +193,24 @@ export default function Alerts({ classGroupId, className, onOpenProfile }) {
         )}
       </div>
 
+      {(() => {
+        const sel = openId && flagged.find((x) => x.student.studentId === openId);
+        if (!sel) return null;
+        return (
+          <RiskDialog
+            student={sel.student}
+            rows={sel.rows}
+            features={sel.features}
+            risk={sel.risk}
+            reasons={riskInsights(sel.rows, sel.features, sel.risk)}
+            onClose={() => setOpenId(null)}
+            onOpenProfile={() => { setOpenId(null); onOpenProfile?.(sel.student.studentId); }}
+          />
+        );
+      })()}
+
       <p className="footnote">
-        Click a student to see their attendance history and log a follow-up. Risk is predicted by the trained ML model from each student&apos;s recent attendance. Students need at least
+        Click a risk score to see it explained, or click a student to open their profile and log a follow-up. Risk is predicted by the trained ML model from each student&apos;s recent attendance. Students need at least
         8 recorded school days before they are assessed.
       </p>
     </>

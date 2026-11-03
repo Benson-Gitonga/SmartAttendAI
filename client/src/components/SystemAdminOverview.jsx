@@ -7,6 +7,7 @@ import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { showToast } from '../lib/toast';
 import ConfirmDialog from './ConfirmDialog';
 import Toaster from './Toaster';
+import ThemeToggle from './ThemeToggle';
 import {
   SearchIcon, LogOutIcon, CheckCircleIcon, XCircleIcon, PowerIcon, SyncIcon,
 } from './icons';
@@ -170,6 +171,7 @@ export default function SystemAdminOverview() {
           SmartAttend <span className="sys-top__product">Admin console</span>
         </div>
         <div className="sys-top__right">
+          <ThemeToggle compact />
           {!online && <span className="sys-top__offline">Offline</span>}
           <span className="sys-top__user" title={user?.username}>{user?.username}</span>
           <button type="button" className="sys-top__signout" aria-label="Sign out" onClick={() => setConfirmSignOut(true)}>

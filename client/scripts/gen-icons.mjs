@@ -1,5 +1,6 @@
 /**
- * Generates the PWA icons (indigo square, white check) using only Node's zlib.
+ * Generates the PWA icons (dark navy rounded square, white check) using only Node's zlib.
+ * public/favicon.svg is the same mark as a vector; keep the two in step.
  * Run: node scripts/gen-icons.mjs
  */
 import { deflateSync } from 'node:zlib';
@@ -10,7 +11,7 @@ import { dirname, join } from 'node:path';
 const OUT = join(dirname(fileURLToPath(import.meta.url)), '..', 'public');
 mkdirSync(OUT, { recursive: true });
 
-const INDIGO = [79, 70, 229]; // #4f46e5
+const NAVY = [11, 21, 48]; // #0b1530
 const WHITE = [255, 255, 255];
 
 function crc32(buf) {
@@ -89,7 +90,7 @@ function draw(size, { padding = 0, bleed = false }) {
   // Maskable icons fill the canvas and keep the mark inside the safe zone.
   const half = bleed ? size : size * (0.5 - padding);
   const radius = bleed ? 0 : size * 0.22;
-  const stroke = size * 0.075;
+  const stroke = size * 0.06;
 
   // check mark geometry (in a -0.5..0.5 box, scaled to the tile)
   const markHalf = size * (0.5 - Math.max(padding, bleed ? 0.16 : 0.06));
@@ -106,7 +107,7 @@ function draw(size, { padding = 0, bleed = false }) {
 
       const bg = sdRoundRect(dx, dy, half, radius);
       const bgA = Math.max(0, Math.min(1, 0.5 - bg));
-      if (bgA > 0) blend(px, i, INDIGO, bgA);
+      if (bgA > 0) blend(px, i, NAVY, bgA);
 
       const d = Math.min(
         sdSegment(x + 0.5, y + 0.5, p1[0], p1[1], p2[0], p2[1]),

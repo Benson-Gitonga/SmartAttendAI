@@ -5,6 +5,7 @@ import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import AuthLayout, { Field, PasswordInput, Alert } from './AuthLayout';
 import { PUBLIC_PAGES } from './publicRoute';
 import GoogleSignInButton from './GoogleSignInButton';
+import { features } from '../../lib/features';
 
 const PASSWORD_MIN = 8;
 const firstName = (fullName = '') => fullName.replace(/^(Mr|Mrs|Ms|Miss|Dr)\.?\s+/i, '').split(' ')[0];
@@ -103,12 +104,14 @@ export default function SetPasswordPage({ token }) {
         </button>
 
         {/* The link proves the email, so any Google account can be linked here instead of a password. */}
-        <GoogleSignInButton
-          email={link.email}
-          disabled={busy || !online}
-          action={(credential) => setUpWithGoogle({ token }, credential)}
-          onSignedIn={leaveLink}
-        />
+        {features.googleSignIn && (
+          <GoogleSignInButton
+            email={link.email}
+            disabled={busy || !online}
+            action={(credential) => setUpWithGoogle({ token }, credential)}
+            onSignedIn={leaveLink}
+          />
+        )}
       </form>
     </AuthLayout>
   );

@@ -16,6 +16,9 @@
 
 import mlModel from '../data/riskModel.json';
 
+/** Model probability at which a student is flagged Medium / High. */
+export const RISK_THRESHOLDS = { amber: mlModel.amberThreshold, red: mlModel.redThreshold };
+
 export const FEATURE_NAMES = [
   'attendance_rate_w1',
   'attendance_rate_w2',
@@ -483,4 +486,40 @@ export function riskInsights(history, features, risk, asOf = toISO(new Date())) 
 export function riskHeadline(risk) {
   const pct = Math.round(risk.dropoutProbability * 100);
   return { label: 'Absenteeism risk', pct };
+}
+
+/**
+ * The same windows the model reads, as day counts a teacher can follow
+ * ("came 3 of the last 10 school days"). A school day with no record counts
+ * as missed, exactly as in computeFeatures.
+ */
+export function attendanceCounts(history, asOf = toISO(new Date())) {
+  const byDate = new Map(history.map((r) => [r.date, r.status]));
+  const count = (days) => ({ attended: days.filter((d) => ATTENDED.has(byDate.get(d))).length, days: days.length });
+  const w = (from, to) => count(schoolDaysBetween(addDays(asOf, -WINDOW_DAYS * from), addDays(asOf, -WINDOW_DAYS * to)));
+
+  const term = termContaining(asOf);
+  let first = null;
+  for (const r of history) {
+    if (r.date < asOf && isTermSchoolDay(r.date) && (first === null || r.date < first)) first = r.date;
+  }
+
+  const missedDays = schoolDaysBetween(addDays(asOf, -MONTH_DAYS), asOf).filter((d) => !ATTENDED.has(byDate.get(d)));
+  const perWeekday = new Map();
+  for (const d of missedDays) {
+    const g = parseISO(d).getDay();
+    perWeekday.set(g, (perWeekday.get(g) || 0) + 1);
+  }
+  let topDay = null;
+  for (const [g, n] of perWeekday) if (!topDay || n > topDay.count) topDay = { weekday: DOW_LABEL[g], count: n };
+
+  return {
+    w1: w(1, 0),
+    w2: w(2, 1),
+    w3: w(3, 2),
+    term: term ? { ...count(schoolDaysBetween(term.start, asOf)), start: term.start } : null,
+    career: first ? { ...count(schoolDaysBetween(first, asOf).filter(isTermSchoolDay)), since: first } : null,
+    missedLast4Weeks: missedDays.length,
+    topDay,
+  };
 }

@@ -4,6 +4,7 @@ import JoinWithCode from './JoinWithCode';
 import { lookupSetupCode, getGoogleSignInConfig } from '../auth/session';
 
 const mockAuth = { joinWithCode: jest.fn() };
+jest.mock('../lib/features', () => ({ features: { googleSignIn: true } }));
 jest.mock('../auth/AuthContext', () => ({ useAuth: () => mockAuth }));
 jest.mock('../auth/session', () => ({ lookupSetupCode: jest.fn(), getGoogleSignInConfig: jest.fn() }));
 

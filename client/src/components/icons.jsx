@@ -247,3 +247,31 @@ export const MapPinIcon = (p) => (
     <circle cx="12" cy="10" r="2.3" />
   </Svg>
 );
+
+export const SunIcon = (p) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+  </Svg>
+);
+
+export const MoonIcon = (p) => (
+  <Svg {...p}>
+    <path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z" />
+  </Svg>
+);
+
+
+export const InfoIcon = (p) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v5M12 8h.01" />
+  </Svg>
+);
+
+/** The SmartAttend mark: a check. Same shape as public/favicon.svg. */
+export const BrandCheckIcon = ({ size = 16, ...rest }) => (
+  <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" focusable="false" {...rest}>
+    <path d="M19 33.5 27 41.5 45.5 23" fill="none" stroke="currentColor" strokeWidth="7.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);

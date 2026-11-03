@@ -4,6 +4,8 @@ import { requestPasswordHelp } from '../../auth/session';
 import { useOnlineStatus } from '../../hooks/useOnlineStatus';
 import { COUNTIES_AZ } from '../../lib/counties';
 import AuthLayout, { Field, Alert } from './AuthLayout';
+import ApplySteps from './ApplySteps';
+import { MailIcon } from '../icons';
 import { PUBLIC_PAGES } from './publicRoute';
 
 // Same rules as the server's application schema (schemas/schoolRegistration.schema.js).
@@ -100,20 +102,22 @@ export default function ApplyPage() {
   );
 
   return (
-    <AuthLayout wide>
+    <AuthLayout wide aside={<ApplySteps current={0} />}>
       <form onSubmit={submit} noValidate>
         <a className="pub-back" href={PUBLIC_PAGES.signin}>← Back to sign in</a>
+        <p className="pub-eyebrow">Join SmartAttend</p>
         <h1 className="pub-title">Apply for your school</h1>
         <p className="pub-sub">
-          Fill this in as the school’s administrator (for example the principal or deputy). We check every
-          school before it goes live and email you the decision, usually within two working days.
+          Fill this in as the school’s administrator, for example the principal or deputy. We check every
+          school before it goes live.
         </p>
 
         {!online && <Alert tone="warn">You’re offline. Connect to the internet to send your application.</Alert>}
         {error && <Alert>{error}</Alert>}
 
         <fieldset className="pub-section">
-          <legend className="pub-section__title">School</legend>
+          <legend className="pub-section__title"><span className="pub-section__num">1</span>School</legend>
+          <p className="pub-section__hint">Only the school name and county are required.</p>
           <Field id="ap-schoolName" label="School name" error={problems.schoolName}>
             {input('schoolName', { autoComplete: 'organization', placeholder: 'e.g. Kisumu Day Secondary School' })}
           </Field>
@@ -152,7 +156,8 @@ export default function ApplyPage() {
         </fieldset>
 
         <fieldset className="pub-section">
-          <legend className="pub-section__title">Your details</legend>
+          <legend className="pub-section__title"><span className="pub-section__num">2</span>Your details</legend>
+          <p className="pub-section__hint">You will be the school’s SmartAttend administrator.</p>
           <div className="pub-grid">
             <Field id="ap-fullName" label="Full name" error={problems.fullName}>
               {input('fullName', { autoComplete: 'name' })}
@@ -172,7 +177,8 @@ export default function ApplyPage() {
           </div>
         </fieldset>
 
-        <div className="pub-actions">
+        <div className="pub-actions apply-submit">
+          <p className="apply-submit__note">Next, we email you a link to confirm your address.</p>
           <a className="pub-btn pub-btn--secondary" href={PUBLIC_PAGES.signin}>Cancel</a>
           <button className="pub-btn pub-btn--primary" type="submit" disabled={busy || !online}>
             {busy ? 'Sending…' : 'Submit application'}
@@ -201,15 +207,14 @@ function CheckYourEmail({ email }) {
   }
 
   return (
-    <AuthLayout>
+    <AuthLayout wide aside={<ApplySteps current={1} />}>
+      <div className="apply-sent">
+        <span className="apply-sent__icon" aria-hidden="true"><MailIcon size={26} /></span>
+        <p className="pub-eyebrow">Application sent</p>
+      </div>
       <h1 className="pub-title">Check your email</h1>
       <p className="pub-sub">We sent a confirmation link to <b>{email}</b>.</p>
       {resent && <Alert tone={resent.tone}>{resent.text}</Alert>}
-      <ol className="pub-steps">
-        <li><b>Confirm your email</b> with the link. It works for 7 days.</li>
-        <li><b>We review the application</b>, usually within two working days.</li>
-        <li><b>You get an email with the decision.</b> If approved, it has a link to set your password and sign in.</li>
-      </ol>
       <p className="pub-alt">
         No email after a few minutes? Check your spam folder, or{' '}
         <button type="button" className="pub-linkbtn" onClick={resend} disabled={busy}>send it again</button>.

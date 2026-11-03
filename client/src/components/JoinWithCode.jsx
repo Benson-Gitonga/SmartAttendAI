@@ -4,6 +4,7 @@ import { lookupSetupCode } from '../auth/session';
 import AuthLayout, { Field, PasswordInput, Alert } from './auth/AuthLayout';
 import { PUBLIC_PAGES } from './auth/publicRoute';
 import GoogleSignInButton from './auth/GoogleSignInButton';
+import { features } from '../lib/features';
 
 const PASSWORD_MIN = 8;
 const formatCode = (raw) => {
@@ -96,11 +97,13 @@ export default function JoinWithCode({ initialCode = '', onBack }) {
         </button>
 
         {/* The invite link proves the email, so any Google account can be linked instead of a password. */}
-        <GoogleSignInButton
-          email={invite.email}
-          disabled={busy}
-          action={(credential) => setUpWithGoogle({ code }, credential)}
-        />
+        {features.googleSignIn && (
+          <GoogleSignInButton
+            email={invite.email}
+            disabled={busy}
+            action={(credential) => setUpWithGoogle({ code }, credential)}
+          />
+        )}
       </form>
     </AuthLayout>
   );

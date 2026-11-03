@@ -48,14 +48,16 @@ export function useHashRoute() {
 
   // `up: true` (breadcrumb parent) steps back when that is where we came
   // from, so the back button does not return to the page just left.
-  const navigate = useCallback((next, { up = false } = {}) => {
+  // `via` is remembered on the new history entry (read it from
+  // window.history.state.via), e.g. 'dashboard' for pages opened from a card there.
+  const navigate = useCallback((next, { up = false, via = null } = {}) => {
     const hash = toHash(next);
     if (window.location.hash === hash) return;
     if (up && window.history.state?.from === hash) {
       window.history.back();
       return;
     }
-    window.history.pushState({ from: window.location.hash }, '', hash);
+    window.history.pushState({ from: window.location.hash, via }, '', hash);
     setRoute(parseHash(hash));
     window.scrollTo(0, 0);
   }, []);
