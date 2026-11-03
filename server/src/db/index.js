@@ -18,7 +18,11 @@ export function openDatabase(path = config.dbPath) {
   }
 
   const db = new Database(path);
-  db.pragma('journal_mode = WAL');   // concurrent reads while the simulation writes
+  // WAL: concurrent reads while the simulation writes. Off on network shares.
+  const journalMode = ['WAL', 'DELETE', 'TRUNCATE', 'PERSIST'].includes(config.sqliteJournalMode)
+    ? config.sqliteJournalMode
+    : 'WAL';
+  db.pragma(`journal_mode = ${journalMode}`);
   db.pragma('foreign_keys = ON');    // not on by default in SQLite
 
   db.exec(readFileSync(SCHEMA_PATH, 'utf8'));

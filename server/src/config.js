@@ -23,6 +23,10 @@ export const config = {
         ? resolve(process.env.DB_PATH)
         : join(defaultDbDir, 'smartattend', 'smartattend.db'),
 
+  // WAL needs shared memory, which network file shares (Azure App Service's
+  // /home) don't support; set SQLITE_JOURNAL_MODE=DELETE there.
+  sqliteJournalMode: (process.env.SQLITE_JOURNAL_MODE || 'WAL').toUpperCase(),
+
   // The built PWA (client/dist) to serve next to /api, so one service hosts
   // everything (the Dockerfile at the project root sets it). Unset in
   // development, where Vite serves the app.
