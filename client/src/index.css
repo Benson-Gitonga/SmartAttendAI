@@ -4226,3 +4226,20 @@ html { background: transparent; }
 @media (max-width: 960px) {
   .pub-main--aside .pub-card--wide { flex: 0 0 auto; }
 }
+
+/* ---------- "N to send": records saved on this phone, not yet on the server.
+   Shown at every screen size (the online chip hides on phones). */
+.pending-chip {
+  display: inline-flex; align-items: center; gap: 5px; flex: none;
+  height: 30px; padding: 0 10px; border-radius: var(--radius-pill);
+  border: 1px solid var(--accent-line); background: var(--accent-bg); color: var(--accent-ink);
+  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.pending-chip:disabled { cursor: default; }
+.pending-chip svg { animation: pending-spin 2.4s linear infinite; }
+.pending-chip--offline { border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn-ink); }
+.pending-chip--offline svg { animation: none; }
+.pending-chip__n { font-variant-numeric: tabular-nums; }
+@keyframes pending-spin { to { transform: rotate(360deg); } }
+@media (max-width: 380px) { .pending-chip__label { display: none; } }
+@media (prefers-reduced-motion: reduce) { .pending-chip svg { animation: none; } }

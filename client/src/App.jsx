@@ -104,6 +104,20 @@ function TeacherApp() {
     setPending(await countPendingSync());
   }, []);
   useEffect(() => { refreshPending(); }, [refreshPending, refreshKey]);
+  // Records are sent in the background (service worker, reconnect), so
+  // recount now and then, and whenever the connection or the tab comes back.
+  useEffect(() => {
+    const recount = () => { refreshPending().catch(() => {}); };
+    const timer = setInterval(recount, 15_000);
+    const onVisible = () => { if (document.visibilityState === 'visible') recount(); };
+    window.addEventListener('online', recount);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('online', recount);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [refreshPending]);
 
   // Has today's register been taken for the active class? Shown in the menu.
   useEffect(() => {
@@ -282,6 +296,7 @@ function TeacherApp() {
         <TopBar
           crumbs={crumbs}
           online={online}
+          pending={pending}
           onAccount={() => setSheetOpen(true)}
         />
         <div className="app__scroll">{body}</div>

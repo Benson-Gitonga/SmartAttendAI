@@ -1,13 +1,17 @@
 import ThemeToggle from './ThemeToggle';
-import { ChevronDownIcon, ChevronRightIcon, ChevronLeftIcon, UserIcon, BrandCheckIcon } from './icons';
+import { ChevronDownIcon, ChevronRightIcon, ChevronLeftIcon, UserIcon, BrandCheckIcon, SyncIcon } from './icons';
 
 /**
  * Screen header with a breadcrumb, e.g. "Form 3 B > At-risk Students > Kevin".
  * Each crumb is `{ label, onClick?, picker? }`; a crumb with `onClick` is a link,
  * `picker` adds a dropdown chevron (the class switcher). On phones a deep page
  * shows only "< Parent" and the current page.
+ *
+ * `pending` (attendance records saved on this phone but not yet on the
+ * server) shows as a badge on every screen size, so a teacher knows not to
+ * clear the browser or switch phones before it reaches zero.
  */
-export default function TopBar({ crumbs = [], online, onAccount }) {
+export default function TopBar({ crumbs = [], online, pending = 0, onAccount }) {
   const current = crumbs[crumbs.length - 1];
   const parent = crumbs.length > 2 ? crumbs[crumbs.length - 2] : null;
 
@@ -53,6 +57,22 @@ export default function TopBar({ crumbs = [], online, onAccount }) {
 
       <div className="topbar__right">
         <ThemeToggle compact />
+        {pending > 0 && (
+          <button
+            type="button"
+            className={`pending-chip${online === false ? ' pending-chip--offline' : ''}`}
+            onClick={onAccount}
+            disabled={!onAccount}
+            title={online === false
+              ? `${pending} record${pending === 1 ? '' : 's'} saved on this phone. They send when you are back online.`
+              : `Sending ${pending} record${pending === 1 ? '' : 's'} to the school…`}
+            aria-label={`${pending} attendance record${pending === 1 ? '' : 's'} waiting to send`}
+          >
+            <SyncIcon size={14} />
+            <span className="pending-chip__n">{pending}</span>
+            <span className="pending-chip__label">to send</span>
+          </button>
+        )}
         {online !== undefined && (
           <span className={`status-chip status-chip--${online ? 'online' : 'offline'}`}>
             <span className={`dot dot--${online ? 'present' : 'warn'}`} />

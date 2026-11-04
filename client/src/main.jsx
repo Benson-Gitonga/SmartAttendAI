@@ -5,6 +5,7 @@ import App from './App.jsx'
 import { registerServiceWorker } from './sw/register'
 import { startSyncOnReconnect } from './services/syncService'
 import { startRosterSyncOnReconnect } from './services/rosterSyncService'
+import { requestPersistentStorage } from './lib/persistentStorage'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
@@ -18,3 +19,6 @@ registerServiceWorker()
 startSyncOnReconnect()
 
 startRosterSyncOnReconnect()
+
+// Keep registers that have not been sent yet if the phone runs low on space.
+requestPersistentStorage()
