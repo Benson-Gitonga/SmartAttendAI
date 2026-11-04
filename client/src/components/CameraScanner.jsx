@@ -7,23 +7,37 @@ const SAME_CODE_PAUSE_MS = 3000;
 const FEEDBACK_MS = 2500;
 const SCAN_EVERY_MS = 150;
 const MARK = { ok: '✓', info: 'i', error: '!' };
+const FACING_KEY = 'smartattend.scanCamera';
+
+/** The camera this phone used last time: 'environment' (back) or 'user' (front). */
+function savedFacing() {
+  try {
+    return localStorage.getItem(FACING_KEY) === 'user' ? 'user' : 'environment';
+  } catch {
+    return 'environment';
+  }
+}
 
 /**
- * Back camera at a size where a card's QR code and barcode stay sharp, with
- * continuous autofocus where the phone allows it. The browser's default
- * (often 640×480, fixed focus) made cards hard to read.
+ * The back or front camera at a size where a card's QR code and barcode stay
+ * sharp, with continuous autofocus where the phone allows it. The browser's
+ * default (often 640×480, fixed focus) made cards hard to read.
  */
-async function openCamera() {
+async function openCamera(facing) {
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: false,
-    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+    video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } },
   });
   const [track] = stream.getVideoTracks();
   const caps = track?.getCapabilities?.() ?? {};
   if (caps.focusMode?.includes('continuous')) {
     track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(() => {});
   }
-  return { stream, track, canTorch: Boolean(caps.torch) };
+  let cameras = 0;
+  try {
+    cameras = (await navigator.mediaDevices.enumerateDevices?.() ?? []).filter((d) => d.kind === 'videoinput').length;
+  } catch { /* cannot tell: keep the switch hidden */ }
+  return { stream, track, canTorch: Boolean(caps.torch), canSwitch: cameras > 1 };
 }
 
 /** The phone's own barcode reader (Android Chrome), or null if there is none. */
@@ -92,6 +106,8 @@ export default function CameraScanner({ onCode, onClose, hint = 'Hold the studen
   const [dismissedId, setDismissedId] = useState(null);
   const [canTorch, setCanTorch] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
+  const [facing, setFacing] = useState(savedFacing);
+  const [canSwitch, setCanSwitch] = useState(false);
 
   useWakeLock();
   useEffect(() => { onCodeRef.current = onCode; }, [onCode]);
@@ -119,12 +135,13 @@ export default function CameraScanner({ onCode, onClose, hint = 'Hold the studen
 
     (async () => {
       try {
-        const camera = await openCamera();
+        const camera = await openCamera(facing);
         stream = camera.stream;
         // Closed while the camera was starting: cleanup has already run.
         if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
         trackRef.current = camera.track;
         setCanTorch(camera.canTorch);
+        setCanSwitch(camera.canSwitch);
 
         const video = videoRef.current;
         const detector = await nativeDetector();
@@ -155,7 +172,17 @@ export default function CameraScanner({ onCode, onClose, hint = 'Hold the studen
       stream?.getTracks().forEach((t) => t.stop());
       trackRef.current = null;
     };
-  }, []);
+  }, [facing]);
+
+  function switchCamera() {
+    const next = facing === 'user' ? 'environment' : 'user';
+    try { localStorage.setItem(FACING_KEY, next); } catch { /* still switches for now */ }
+    setStarting(true);
+    setError(null);
+    setTorchOn(false);
+    setCanTorch(false);
+    setFacing(next);
+  }
 
   async function toggleTorch() {
     const next = !torchOn;
@@ -174,6 +201,11 @@ export default function CameraScanner({ onCode, onClose, hint = 'Hold the studen
       <div className="camscan__top">
         <span className="camscan__title">{title}</span>
         <div className="camscan__tools">
+          {canSwitch && (
+            <button type="button" className="camscan__torch" onClick={switchCamera}>
+              {facing === 'user' ? 'Use back camera' : 'Use front camera'}
+            </button>
+          )}
           {canTorch && (
             <button type="button" className="camscan__torch" aria-pressed={torchOn} onClick={toggleTorch}>
               {torchOn ? 'Light off' : 'Light on'}
@@ -183,7 +215,7 @@ export default function CameraScanner({ onCode, onClose, hint = 'Hold the studen
         </div>
       </div>
       <div className="camscan__frame">
-        <video ref={videoRef} className="camscan__video" muted playsInline autoPlay />
+        <video ref={videoRef} className={`camscan__video${facing === 'user' ? ' camscan__video--mirror' : ''}`} muted playsInline autoPlay />
         {!error && <div className={`camscan__target${shown ? ` camscan__target--${shown.tone}` : ''}`} aria-hidden="true" />}
         {starting && !error && <p className="camscan__msg">Starting the camera…</p>}
         {error && <p className="camscan__msg camscan__msg--error" role="alert">{error}</p>}

@@ -1,4 +1,5 @@
 import { act, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import CameraScanner from './CameraScanner';
 
 let decoded;
@@ -25,9 +26,13 @@ beforeEach(() => {
   track.stop.mockClear();
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
-    value: { getUserMedia: jest.fn(() => Promise.resolve(stream)) },
+    value: {
+      getUserMedia: jest.fn(() => Promise.resolve(stream)),
+      enumerateDevices: jest.fn(() => Promise.resolve([{ kind: 'videoinput' }])),
+    },
   });
   delete window.BarcodeDetector;
+  localStorage.clear();
 });
 
 const started = () => screen.findByText('Ready for the next card');
@@ -88,6 +93,36 @@ describe('CameraScanner', () => {
     unmount();
     expect(track.stop).toHaveBeenCalled();
     delete HTMLMediaElement.prototype.readyState;
+  });
+
+  it('switches to the front camera and remembers it for next time', async () => {
+    navigator.mediaDevices.enumerateDevices.mockResolvedValue([{ kind: 'videoinput' }, { kind: 'videoinput' }]);
+    const user = userEvent.setup();
+    const { unmount } = render(<CameraScanner onCode={() => {}} onClose={() => {}} />);
+    await started();
+
+    await user.click(screen.getByRole('button', { name: 'Use front camera' }));
+    await started();
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenLastCalledWith(
+      expect.objectContaining({ video: expect.objectContaining({ facingMode: { ideal: 'user' } }) }),
+    );
+    expect(track.stop).toHaveBeenCalled(); // the back camera was released
+    expect(document.querySelector('video')).toHaveClass('camscan__video--mirror');
+    expect(screen.getByRole('button', { name: 'Use back camera' })).toBeInTheDocument();
+    unmount();
+
+    // opening the scanner again starts on the front camera
+    render(<CameraScanner onCode={() => {}} onClose={() => {}} />);
+    await started();
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenLastCalledWith(
+      expect.objectContaining({ video: expect.objectContaining({ facingMode: { ideal: 'user' } }) }),
+    );
+  });
+
+  it('hides the camera switch on a device with one camera', async () => {
+    render(<CameraScanner onCode={() => {}} onClose={() => {}} />);
+    await started();
+    expect(screen.queryByRole('button', { name: /camera$/ })).not.toBeInTheDocument();
   });
 
   it('turns the camera off when closed', async () => {
