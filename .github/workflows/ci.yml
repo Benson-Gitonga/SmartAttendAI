@@ -58,3 +58,36 @@ jobs:
           cache-dependency-path: ml/requirements.txt
       - run: pip install -r requirements.txt pytest
       - run: pytest tests/ -q
+
+  # Every push to main that passes the client and server tests ships the root
+  # Dockerfile's image to Azure Container Registry. A webhook on the registry
+  # (smartattendacr -> webappcd) then makes the App Service pull the new
+  # :latest and restart. Azure for Students can't build images itself (ACR
+  # Tasks are blocked), so the build happens here.
+  deploy:
+    name: deploy (Azure)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [client, server]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-azure
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: smartattendacr.azurecr.io
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          # :<commit> is kept so an older build can be put back by hand.
+          tags: |
+            smartattendacr.azurecr.io/smartattend:latest
+            smartattendacr.azurecr.io/smartattend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
