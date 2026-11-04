@@ -30,7 +30,7 @@ export function applyTheme(choice = getTheme()) {
   if (choice === 'system') root.removeAttribute('data-theme');
   else root.setAttribute('data-theme', choice);
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', resolvedTheme(choice) === 'dark' ? '#060a13' : '#eef2f8');
+  if (meta) meta.setAttribute('content', resolvedTheme(choice) === 'dark' ? '#111214' : '#eef2f8');
 }
 
 export function setTheme(choice) {
