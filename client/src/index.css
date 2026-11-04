@@ -1421,7 +1421,7 @@ button.student-cell:hover .student-cell__name { color: var(--indigo-600); text-d
 .panel__subtitle { margin: 18px 0 8px; font-size: 13px; font-weight: 600; color: var(--ink); }
 
 .trend-chart { width: 100%; height: 170px; display: block; }
-.trend-axis { font-size: 9px; fill: var(--ink-muted); }
+.trend-axis { font-size: 11px; fill: var(--ink-muted); }
 
 .reason-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .reason-list__item {
@@ -4183,3 +4183,46 @@ button.mcal__day:hover { border-color: var(--accent); transform: translateY(-1px
 /* Let the body background (colour + faint grid) paint the whole page, not
    just the first screen: the root must stay transparent for that. */
 html { background: transparent; }
+
+/* ============================================================== phones === */
+/* Admin tables (students, today's registers, schools): on a phone each row is
+   a compact card. The first cell is the title, the actions sit on its right,
+   and the other cells follow underneath as small labelled values. */
+@media (max-width: 760px) {
+  .sys-table tbody tr { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 12px 14px; }
+  .sys-table td { padding: 0; }
+  .sys-table td:first-child { order: 1; flex: 1 1 calc(100% - 140px); min-width: 0; font-weight: 600; font-size: 15px; }
+  .sys-table td.sys-table__actions { order: 2; flex: none; width: auto; margin: 0 0 0 auto; }
+  .sys-table td:not(:first-child):not(.sys-table__actions) { order: 3; font-size: 13px; color: var(--ink-soft); }
+  .sys-table td:not(:first-child):not(.sys-table__actions)[data-label]::before,
+  .sys-table td.sys-num[data-label]::before { content: attr(data-label) " "; color: var(--ink-muted); font-family: var(--font); }
+  /* a full-width break after the title + actions, so a short name never pulls
+     the first labelled value up beside the button */
+  .sys-table tbody tr::after { content: ""; order: 2; flex: 1 0 100%; height: 0; margin-top: -4px; }
+
+  /* the scan station's log is only three short columns: it stays a table */
+  .sys-table--log { display: table; width: 100%; }
+  .sys-table--log thead { display: table-header-group; }
+  .sys-table--log tbody { display: table-row-group; }
+  .sys-table--log tr, .sys-table--log tbody tr { display: table-row; padding: 0; }
+  .sys-table--log tbody tr::after { content: none; }
+  .sys-table--log th { padding: 8px 12px; }
+  .sys-table--log td,
+  .sys-table--log td:first-child,
+  .sys-table--log td:not(:first-child):not(.sys-table__actions) { display: table-cell; padding: 10px 12px; font-size: 14px; font-weight: 400; color: inherit; border-bottom: 1px solid var(--sys-line); }
+  .sys-table td[data-label="Status"] { margin-top: 0; }
+  .sys-table .sys-table__empty { flex: 1 1 100%; }
+
+  /* the scan station's card box: smaller type so the hint fits */
+  .scanst__input { font-size: 16px; letter-spacing: 0.02em; }
+  .scanst__input::placeholder { font-family: var(--font); letter-spacing: 0; }
+
+  /* plain tables (dashboard's "needing attention"): tighter cells so three
+     columns fit a phone without a sideways scroll */
+  .table th, .table td { padding-left: 8px; padding-right: 8px; }
+  .table th:first-child, .table td:first-child { padding-left: 14px; }
+}
+/* school application on a phone: the form card is as tall as its content */
+@media (max-width: 960px) {
+  .pub-main--aside .pub-card--wide { flex: 0 0 auto; }
+}

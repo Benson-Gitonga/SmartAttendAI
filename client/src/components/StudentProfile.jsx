@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getStudentById, getStudentHistory, getFollowUpSummary } from '../db/database';
 import {
   computeFeatures,
@@ -38,13 +38,28 @@ function fmtDate(iso) {
 }
 
 function TrendChart({ points }) {
-  const w = 440;
-  const h = 120;
-  const pad = 32;
-  const min = 0;
-  const max = 1;
-  const x = (i) => pad + (i * (w - pad * 2)) / Math.max(1, points.length - 1);
-  const y = (v) => h - pad - ((v - min) / (max - min || 1)) * (h - pad * 2);
+  // Drawn at the box's real pixel width, so the labels stay the same size on
+  // a phone as on a laptop instead of shrinking with the whole picture.
+  const ref = useRef(null);
+  const [w, setW] = useState(440);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(([entry]) => {
+      const width = Math.round(entry.contentRect.width);
+      if (width > 0) setW(width);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const h = 170;
+  const padL = 42; // room for the % labels
+  const padR = 20;
+  const padT = 12;
+  const padB = 26; // room for the week labels
+  const x = (i) => padL + (i * (w - padL - padR)) / Math.max(1, points.length - 1);
+  const y = (v) => padT + (1 - v) * (h - padT - padB);
 
   const line = points
     .map((p, i) => (p.rate == null ? null : `${x(i)},${y(p.rate)}`))
@@ -52,11 +67,11 @@ function TrendChart({ points }) {
     .join(' ');
 
   return (
-    <svg className="trend-chart" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Six week attendance trend">
+    <svg ref={ref} className="trend-chart" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Six week attendance trend">
       {[0, 0.5, 1].map((v) => (
         <g key={v}>
-          <line x1={pad} y1={y(v)} x2={w - pad / 2} y2={y(v)} stroke="var(--line)" strokeWidth="1" strokeDasharray={v ? '3 3' : undefined} />
-          <text className="trend-axis" x={pad - 4} y={y(v) + 3} textAnchor="end">{v * 100}%</text>
+          <line x1={padL} y1={y(v)} x2={w - padR / 2} y2={y(v)} stroke="var(--line)" strokeWidth="1" strokeDasharray={v ? '3 3' : undefined} />
+          <text className="trend-axis" x={padL - 6} y={y(v) + 4} textAnchor="end">{v * 100}%</text>
         </g>
       ))}
       {line && <polyline points={line} fill="none" stroke="var(--slate-700)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}

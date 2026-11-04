@@ -250,7 +250,7 @@ export default function Heatmap({ classGroupId, className, onOpenDay }) {
       <p className="footnote">
         P present, A absent. A past school day with no record counts as absent.
         {onOpenDay ? ' Tap a date to open that day\'s register.' : ''}
-        Attendance below {Math.round(LOW_RATE * 100)}% is marked.
+        {' '}Attendance below {Math.round(LOW_RATE * 100)}% is marked.
       </p>
     </>
   );

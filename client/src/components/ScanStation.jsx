@@ -191,7 +191,7 @@ export default function ScanStation() {
               {' · '}{(counts['unknown-card'] ?? 0) + (counts.error ?? 0)} problems
             </span>
           </div>
-          <table className="sys-table">
+          <table className="sys-table sys-table--log">
             <thead><tr><th>Time</th><th>Student</th><th>Result</th></tr></thead>
             <tbody>
               {log.map((e) => (
