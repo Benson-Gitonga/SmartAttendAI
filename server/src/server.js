@@ -5,6 +5,7 @@ import { seed, removeDemoData } from './db/seed.js';
 import { seedDemoData } from './db/seedDemoData.js';
 import { createApp } from './app.js';
 import { createMailer } from './mail/mailer.js';
+import { startDailyBackups } from './db/backup.js';
 import { dirname, join } from 'node:path';
 
 const db = getDb();
@@ -25,9 +26,16 @@ const mailer = createMailer({
 });
 const app = createApp({ db, mailer });
 
+// A copy of the database once a day, the newest BACKUP_KEEP_DAYS kept.
+const backupDir = config.backup.dir || (config.dbPath === ':memory:' ? '' : join(dirname(config.dbPath), 'backups'));
+const stopBackups = backupDir && !config.backup.disabled
+  ? startDailyBackups(db, { dir: backupDir, keepDays: config.backup.keepDays })
+  : null;
+
 const server = app.listen(config.port, () => {
   console.log(`SmartAttend server listening on http://localhost:${config.port}`);
-  console.log(`  DB: ${config.dbPath}`);
+  console.log(`  DB: ${config.dbPath} (journal ${db.pragma('journal_mode', { simple: true })})`);
+  console.log(`  Backups: ${stopBackups ? `daily to ${backupDir}, newest ${config.backup.keepDays} kept` : 'off'}`);
   const email = {
     ses: `Amazon SES from ${config.mail.from}`,
     brevo: `Brevo from ${config.mail.from}${config.mail.brevoApiKey ? '' : ' (no BREVO_API_KEY, nothing will send)'}`,
@@ -60,6 +68,7 @@ if (!config.sync.workerDisabled && config.sync.apiUrl) {
 
 function shutdown(signal) {
   console.log(`\n${signal} received, shutting down`);
+  stopBackups?.();
   server.close(async () => {
     if (syncWorker) await syncWorker.terminate();
     closeDb();

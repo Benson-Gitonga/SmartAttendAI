@@ -23,6 +23,23 @@ export const config = {
         ? resolve(process.env.DB_PATH)
         : join(defaultDbDir, 'smartattend', 'smartattend.db'),
 
+  // WAL needs shared memory, which network file shares (Azure App Service's
+  // /home) don't support; set SQLITE_JOURNAL_MODE=DELETE there.
+  sqliteJournalMode: (process.env.SQLITE_JOURNAL_MODE || 'WAL').toUpperCase(),
+
+  // How long to keep retrying when the database cannot be opened at start-up.
+  // On Azure the new copy of the app starts while the old one still has the
+  // file open, so it can be locked for a moment.
+  dbOpenRetryMs: num(process.env.DB_OPEN_RETRY_MS, 120_000),
+
+  // A copy of the database is written here once a day (src/db/backup.js), and
+  // the newest BACKUP_KEEP_DAYS copies are kept. Off for ':memory:'.
+  backup: {
+    dir: process.env.BACKUP_DIR ? resolve(process.env.BACKUP_DIR) : '',
+    keepDays: num(process.env.BACKUP_KEEP_DAYS, 14),
+    disabled: process.env.BACKUPS_DISABLED === 'true',
+  },
+
   // The built PWA (client/dist) to serve next to /api, so one service hosts
   // everything (the Dockerfile at the project root sets it). Unset in
   // development, where Vite serves the app.

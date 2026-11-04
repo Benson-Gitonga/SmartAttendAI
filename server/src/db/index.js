@@ -12,22 +12,59 @@ const SCHEMA_PATH = resolve(here, 'schema.sql');
  *
  * @param {string} path  file path, or ':memory:' for an ephemeral DB (tests)
  */
-export function openDatabase(path = config.dbPath) {
+export function openDatabase(path = config.dbPath, { retryMs = config.dbOpenRetryMs } = {}) {
   if (path !== ':memory:') {
     mkdirSync(dirname(path), { recursive: true });
   }
 
-  const db = new Database(path);
-  // WAL: concurrent reads while the simulation writes. Off on network shares.
+  // WAL: concurrent reads while the server writes. Off on network shares.
   const journalMode = ['WAL', 'DELETE', 'TRUNCATE', 'PERSIST'].includes(config.sqliteJournalMode)
     ? config.sqliteJournalMode
     : 'WAL';
-  db.pragma(`journal_mode = ${journalMode}`);
+  const db = withOpenRetry(() => {
+    const handle = new Database(path);
+    try {
+      // Wait up to 5s for another connection's lock instead of failing at once.
+      handle.pragma('busy_timeout = 5000');
+      handle.pragma(`journal_mode = ${journalMode}`);
+      return handle;
+    } catch (err) {
+      handle.close();
+      throw err;
+    }
+  }, { timeoutMs: path === ':memory:' ? 0 : retryMs });
   db.pragma('foreign_keys = ON');    // not on by default in SQLite
 
   db.exec(readFileSync(SCHEMA_PATH, 'utf8'));
   migrate(db);
   return db;
+}
+
+/** Errors that mean "the file is locked or not reachable yet", worth retrying. */
+const RETRYABLE = /^SQLITE_(CANTOPEN|BUSY|LOCKED)/;
+
+const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/**
+ * Run `open` until it succeeds, retrying while SQLite reports the file locked
+ * or unopenable, for up to `timeoutMs`. On Azure App Service a new copy of the
+ * server starts while the old one still has the database open on the shared
+ * /home storage; without this the new copy can exit at once and Azure keeps
+ * the old one. Other errors are thrown straight away.
+ */
+export function withOpenRetry(open, { timeoutMs = 0, sleep = sleepSync, now = Date.now, log = console.warn } = {}) {
+  const deadline = now() + timeoutMs;
+  let delay = 500;
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return open();
+    } catch (err) {
+      if (!RETRYABLE.test(err?.code ?? '') || now() + delay > deadline) throw err;
+      log(`[db] ${err.code} opening the database (attempt ${attempt}); retrying in ${delay}ms`);
+      sleep(delay);
+      delay = Math.min(delay * 2, 5000);
+    }
+  }
 }
 
 /** Columns added after a table was first created. Safe to run on every boot. */
