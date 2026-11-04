@@ -6,11 +6,13 @@ import VerifyEmailPage from './auth/VerifyEmailPage';
 import SetPasswordPage from './auth/SetPasswordPage';
 import DevOutbox from './auth/DevOutbox';
 import JoinWithCode from './JoinWithCode';
+import LandingPage from './landing/LandingPage';
 import { env } from '../lib/env';
 
 /**
  * Everything before sign-in, one page per address:
- *   #/                    sign in (everyone, the system admin with their username)
+ *   (no #)                the landing page, except in the installed app
+ *   #/                  sign in (everyone, the system admin with their username)
  *   #/apply               a school applies to join
  *   #/forgot-password     ask for a reset link
  *   #/join[/CODE]         a teacher with an invite code
@@ -21,6 +23,8 @@ import { env } from '../lib/env';
 export default function LoginScreen() {
   const { page, param } = usePublicRoute();
   switch (page) {
+    // The installed app opens straight on sign-in.
+    case 'landing': return isInstalledApp() ? <SignInPage /> : <LandingPage />;
     case 'apply': return <ApplyPage />;
     case 'forgot': return <ForgotPasswordPage />;
     case 'join': return <JoinWithCode key={param ?? ''} initialCode={param ?? ''} />;
@@ -28,5 +32,13 @@ export default function LoginScreen() {
     case 'setPassword': return <SetPasswordPage key={param} token={param} />;
     case 'outbox': return env.DEV ? <DevOutbox /> : <SignInPage />;
     default: return <SignInPage />;
+  }
+}
+
+function isInstalledApp() {
+  try {
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  } catch {
+    return false;
   }
 }

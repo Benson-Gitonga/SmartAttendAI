@@ -66,6 +66,31 @@ async function fillApplication(user, overrides = {}) {
 
 const submit = (user) => user.click(screen.getByRole('button', { name: 'Submit application' }));
 
+describe('landing page (no #)', () => {
+  it('shows the landing page at the bare address and links to sign-in and applying', async () => {
+    window.history.replaceState(null, '', '/');
+    render(<LoginScreen />);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Every student counted.');
+    expect(screen.getAllByRole('link', { name: 'Sign in' })[0]).toHaveAttribute('href', '#/');
+    expect(screen.getAllByRole('link', { name: /Register your school/ })[0]).toHaveAttribute('href', '#/apply');
+
+    await goTo('#/');
+    expect(await screen.findByLabelText('Email')).toBeInTheDocument();
+  });
+
+  it('opens straight on sign-in in the installed app', () => {
+    window.history.replaceState(null, '', '/');
+    const original = window.matchMedia;
+    window.matchMedia = (q) => ({ matches: q === '(display-mode: standalone)', media: q, addEventListener() {}, removeEventListener() {} });
+    try {
+      render(<LoginScreen />);
+      expect(screen.getByLabelText('Email')).toBeInTheDocument();
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+});
+
 describe('sign in', () => {
   it('signs in with an email', async () => {
     const user = userEvent.setup();
