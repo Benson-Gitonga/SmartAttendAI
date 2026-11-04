@@ -9,7 +9,7 @@ const MAX_FACTORS = 4;
 
 /**
  * "Why this score": the SHAP values for one student's risk, worked out on
- * the phone (lib/riskExplain.js) against their classmates. Works offline:
+ * the phone (lib/riskExplain.js) against a typical classmate. Works offline:
  * everything it reads is already on the device.
  */
 export default function RiskExplanation({ student, rows }) {
@@ -50,9 +50,9 @@ export default function RiskExplanation({ student, rows }) {
   const largest = Math.max(...shown.map((f) => Math.abs(f.impact)), 1e-9);
   const classmates = e.comparedWith === 'classmates';
   const reference = classmates
-    ? `Compared with ${e.peers} classmate${e.peers === 1 ? '' : 's'} (average risk ${Math.round(e.baseProbability * 100)}%)`
+    ? `Compared with a typical classmate (the middle of ${e.peers} classmates, risk ${Math.round(e.baseProbability * 100)}%)`
     : 'Compared with coming to school every day';
-  const otherLabel = classmates ? 'class' : 'every day';
+  const otherLabel = classmates ? 'typical' : 'every day';
 
   return (
     <section className="risk-why">

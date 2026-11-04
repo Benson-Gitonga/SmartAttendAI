@@ -119,7 +119,7 @@ describe('explainStudentRisk', () => {
     expect(e.probability).toBeGreaterThan(e.baseProbability);
 
     // Worse attendance than the class, so attendance is shown raising risk.
-    const attendance = e.shown.find((f) => f.key === 'attendance');
+    const attendance = e.shown.find((f) => ['w1', 'w2', 'w3', 'term', 'career'].includes(f.key));
     expect(attendance).toBeDefined();
     expect(attendance.impact).toBeGreaterThan(0);
     expect(parseInt(attendance.student, 10)).toBeLessThan(parseInt(attendance.comparison, 10));
@@ -137,5 +137,40 @@ describe('explainStudentRisk', () => {
     const e = explainStudentRisk(student, [history(0)], asOf);
     expect(e.comparedWith).toBe('full_attendance');
     expect(mlFeatureVector(student, asOf)).toHaveLength(MODEL_FEATURES.length);
+  });
+});
+
+describe('explanations point the way the numbers do (monotonic model + typical classmate)', () => {
+  const asOf = '2026-10-21';
+  // Deterministic pseudo-random registers, so the test is repeatable.
+  function seeded(seed) {
+    let s = seed;
+    return () => { s = (s * 1103515245 + 12345) % 2147483648; return s / 2147483648; };
+  }
+  function randomHistory(rand, absentRate, days = 150) {
+    const out = [];
+    const end = new Date(2026, 9, 21);
+    for (let d = days; d >= 1; d -= 1) {
+      const day = new Date(end); day.setDate(end.getDate() - d);
+      if (day.getDay() === 0 || day.getDay() === 6) continue;
+      const iso = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+      out.push({ date: iso, status: rand() < absentRate ? 'absent' : 'present' });
+    }
+    return out;
+  }
+
+  it('never shows a factor that contradicts the student vs typical-classmate figures', () => {
+    const rand = seeded(7);
+    let checked = 0;
+    for (let c = 0; c < 6; c += 1) {
+      const klass = Array.from({ length: 12 }, () => randomHistory(rand, rand() * 0.5));
+      klass.forEach((student, i) => {
+        const e = explainStudentRisk(student, klass.filter((_, j) => j !== i), asOf);
+        expect(e.hidden).toBe(0);
+        for (const f of e.factors) if (Math.abs(f.impact) >= MIN_IMPACT) expect(f.consistent).toBe(true);
+        checked += 1;
+      });
+    }
+    expect(checked).toBe(72);
   });
 });

@@ -1,0 +1,227 @@
+{
+  "generated_at": "2026-11-04T13:17:48+00:00",
+  "params": {
+    "l2_regularization": 0.9444298503238986,
+    "learning_rate": 0.053486388862724485,
+    "max_depth": 8,
+    "max_iter": 210,
+    "max_leaf_nodes": 7,
+    "min_samples_leaf": 14
+  },
+  "monotonic_cst": {
+    "attendance_rate_w1": -1,
+    "attendance_rate_w2": -1,
+    "attendance_rate_w3": -1,
+    "longest_absence_streak": 1,
+    "absence_episode_count": 1,
+    "dow_concentration": 1,
+    "attendance_trend": -1,
+    "fee_absence_rate": 1,
+    "health_absence_rate": 1,
+    "attendance_rate_term": -1,
+    "days_into_term": 0,
+    "attendance_rate_career": -1
+  },
+  "datasets": {
+    "sch01_train": {
+      "n_samples": 38291,
+      "n_students": 643,
+      "date_range": [
+        "2017-02-01",
+        "2023-03-22"
+      ],
+      "positives": 10221,
+      "positive_rate": 0.2669295656942885
+    },
+    "sch01_test": {
+      "n_samples": 9384,
+      "n_students": 325,
+      "date_range": [
+        "2023-05-03",
+        "2024-10-16"
+      ],
+      "positives": 2363,
+      "positive_rate": 0.25181159420289856
+    },
+    "sch02_holdout": {
+      "n_samples": 59987,
+      "n_students": 917,
+      "date_range": [
+        "2017-02-01",
+        "2024-10-16"
+      ],
+      "positives": 11467,
+      "positive_rate": 0.19115808425158784
+    }
+  },
+  "models": {
+    "current": {
+      "red_threshold": 0.26000000000000006,
+      "oof_f1": 0.5460932403271943,
+      "sch01_test": {
+        "positive_rate": 0.25181159420289856,
+        "roc_auc": 0.7885529374032549,
+        "pr_auc": 0.5882912588062745,
+        "brier": 0.14630656188314708,
+        "precision_top10pct": 0.711395101171459,
+        "red": {
+          "threshold": 0.26000000000000006,
+          "tp": 1721,
+          "fp": 2190,
+          "fn": 642,
+          "tn": 4831,
+          "precision": 0.4400409102531322,
+          "recall": 0.728311468472281,
+          "f1": 0.5486133248326426,
+          "share_flagged": 0.41677323103154307,
+          "fp_rate": 0.3119213787209799
+        },
+        "amber_or_red": {
+          "threshold": 0.15166666666666673,
+          "tp": 2109,
+          "fp": 4005,
+          "fn": 254,
+          "tn": 3016,
+          "precision": 0.344946025515211,
+          "recall": 0.8925095217943293,
+          "f1": 0.49758169163619204,
+          "share_flagged": 0.65153452685422,
+          "fp_rate": 0.5704315624554906
+        }
+      },
+      "sch02_holdout": {
+        "positive_rate": 0.19115808425158784,
+        "roc_auc": 0.8418872301110517,
+        "pr_auc": 0.591481911616791,
+        "brier": 0.11193260343658201,
+        "precision_top10pct": 0.6806134355725955,
+        "red": {
+          "threshold": 0.26000000000000006,
+          "tp": 7894,
+          "fp": 8587,
+          "fn": 3573,
+          "tn": 39933,
+          "precision": 0.4789757903039864,
+          "recall": 0.6884102206331212,
+          "f1": 0.5649062544725919,
+          "share_flagged": 0.27474286095320655,
+          "fp_rate": 0.1769785655399835
+        },
+        "amber_or_red": {
+          "threshold": 0.15166666666666673,
+          "tp": 9688,
+          "fp": 16150,
+          "fn": 1779,
+          "tn": 32370,
+          "precision": 0.374951621642542,
+          "recall": 0.8448591610708991,
+          "f1": 0.5193941830853772,
+          "share_flagged": 0.43072665744244587,
+          "fp_rate": 0.3328524319868096
+        }
+      },
+      "wrong_way_share": {
+        "attendance_rate_w1": 1.0,
+        "attendance_rate_w2": 0.596,
+        "attendance_rate_w3": 0.428,
+        "longest_absence_streak": 0.0,
+        "absence_episode_count": 0.956,
+        "dow_concentration": 0.284,
+        "attendance_trend": 0.152,
+        "fee_absence_rate": 0.316,
+        "health_absence_rate": 0.958,
+        "attendance_rate_term": 1.0,
+        "attendance_rate_career": 0.1
+      }
+    },
+    "monotonic": {
+      "red_threshold": 0.25000000000000006,
+      "oof_f1": 0.543517568293994,
+      "sch01_test": {
+        "positive_rate": 0.25181159420289856,
+        "roc_auc": 0.7872406298425322,
+        "pr_auc": 0.58615526347742,
+        "brier": 0.1466372966264132,
+        "precision_top10pct": 0.7053191489361702,
+        "red": {
+          "threshold": 0.25000000000000006,
+          "tp": 1762,
+          "fp": 2296,
+          "fn": 601,
+          "tn": 4725,
+          "precision": 0.4342040413997043,
+          "recall": 0.7456622936944562,
+          "f1": 0.5488241706899237,
+          "share_flagged": 0.4324381926683717,
+          "fp_rate": 0.3270189431704885
+        },
+        "amber_or_red": {
+          "threshold": 0.14583333333333337,
+          "tp": 2128,
+          "fp": 4182,
+          "fn": 235,
+          "tn": 2839,
+          "precision": 0.33724247226624404,
+          "recall": 0.9005501481168007,
+          "f1": 0.49071832122679576,
+          "share_flagged": 0.6724211423699915,
+          "fp_rate": 0.5956416464891041
+        }
+      },
+      "sch02_holdout": {
+        "positive_rate": 0.19115808425158784,
+        "roc_auc": 0.84220993558993,
+        "pr_auc": 0.5907928955611995,
+        "brier": 0.11176819097335314,
+        "precision_top10pct": 0.6818333333333333,
+        "red": {
+          "threshold": 0.25000000000000006,
+          "tp": 7959,
+          "fp": 8708,
+          "fn": 3508,
+          "tn": 39812,
+          "precision": 0.4775304493910122,
+          "recall": 0.6940786605040551,
+          "f1": 0.5657922798037961,
+          "share_flagged": 0.2778435327654325,
+          "fp_rate": 0.17947238252267106
+        },
+        "amber_or_red": {
+          "threshold": 0.14583333333333337,
+          "tp": 9772,
+          "fp": 16694,
+          "fn": 1695,
+          "tn": 31826,
+          "precision": 0.36922844404141164,
+          "recall": 0.8521845295194908,
+          "f1": 0.5152242111090607,
+          "share_flagged": 0.44119559237834866,
+          "fp_rate": 0.34406430338004945
+        }
+      },
+      "wrong_way_share": {
+        "attendance_rate_w1": 0.0,
+        "attendance_rate_w2": 0.0,
+        "attendance_rate_w3": 0.0,
+        "longest_absence_streak": 0.0,
+        "absence_episode_count": 0.0,
+        "dow_concentration": 0.0,
+        "attendance_trend": 0.0,
+        "fee_absence_rate": 0.0,
+        "health_absence_rate": 0.0,
+        "attendance_rate_term": 0.0,
+        "attendance_rate_career": 0.0
+      }
+    }
+  },
+  "baseline_career_rate": {
+    "sch01_test": {
+      "roc_auc": 0.788605858863769,
+      "pr_auc": 0.5867108966134321
+    },
+    "sch02_holdout": {
+      "roc_auc": 0.8327467656749851,
+      "pr_auc": 0.5841059600899257
+    }
+  }
+}

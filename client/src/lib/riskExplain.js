@@ -171,15 +171,34 @@ const MIN_PEERS = 3;
 const MAX_PEERS = 40;
 
 /** The same student, had they come to school on every day they have a record for. */
+/**
+ * A typical classmate: the median of each feature across classmates (null
+ * when none of them has a value). Explaining against this one row, rather
+ * than averaging over every classmate, keeps each factor's direction in line
+ * with "this student vs a typical classmate": with the monotonic model, a
+ * worse value than the typical classmate can only raise risk. Averaged over
+ * every classmate, one very low attender could outweigh the rest.
+ */
+export function typicalClassmate(peerVectors) {
+  return MODEL_FEATURES.map((_, i) => {
+    const v = peerVectors.map((p) => p[i]).filter((z) => z != null && !Number.isNaN(z)).sort((a, b) => a - b);
+    if (!v.length) return null;
+    const mid = Math.floor(v.length / 2);
+    return v.length % 2 ? v[mid] : (v[mid - 1] + v[mid]) / 2;
+  });
+}
+
 function fullAttendanceReference(history, asOf) {
   return mlFeatureVector(history.map((r) => ({ date: r.date, status: 'present' })), asOf);
 }
 
 /**
- * What a teacher sees as one factor. Related features are explained together
- * (exact group Shapley values): the attendance rates all measure the same
- * thing, and SHAP splits credit between overlapping features unpredictably,
- * so shown one by one they could point opposite ways for one story.
+ * The factors a teacher sees, one per model input (the fee and illness rates,
+ * always 0 in the app, share one). The model is trained with monotonic
+ * constraints (ml/training/retrain_monotonic.py) and each student is
+ * explained against one typical classmate, so a value worse than the typical
+ * classmate's can only raise risk: every factor points the way its numbers
+ * suggest. `consistent` below double-checks that.
  *
  * `worseWhen` says which way a factor should push risk: 'lower' (a lower
  * value than the comparison should raise risk) or 'higher'. `measure` is the
@@ -189,48 +208,31 @@ const avg = (vals) => {
   const v = vals.filter((z) => z != null && !Number.isNaN(z));
   return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
 };
+const pct = (v) => `${Math.round(v * 100)}%`;
+const one = (key, label, feature, worseWhen, format) => ({
+  key, label, features: [feature], worseWhen, measure: (f) => f[feature], format,
+});
 export const FACTOR_GROUPS = [
-  {
-    key: 'attendance',
-    label: 'Attendance',
-    features: ['attendance_rate_w1', 'attendance_rate_w2', 'attendance_rate_w3', 'attendance_trend', 'attendance_rate_term', 'attendance_rate_career'],
-    worseWhen: 'lower',
-    // Recent weeks, this term and since joining, weighted equally.
-    measure: (f) => avg([avg([f.attendance_rate_w1, f.attendance_rate_w2, f.attendance_rate_w3]), f.attendance_rate_term, f.attendance_rate_career]),
-    format: (v) => `${Math.round(v * 100)}%`,
-  },
-  {
-    key: 'absences',
-    label: 'Runs of absence',
-    features: ['longest_absence_streak', 'absence_episode_count'],
-    worseWhen: 'higher',
-    measure: (f) => f.longest_absence_streak,
-    format: (v) => `${Math.round(v * 10) / 10} day${Math.round(v) === 1 ? '' : 's'} in a row`,
-  },
-  {
-    key: 'weekday',
-    label: 'Absences on the same weekday',
-    features: ['dow_concentration'],
-    worseWhen: 'higher',
-    measure: (f) => f.dow_concentration,
-    format: (v) => `${Math.round(v * 100)}% on one day`,
-  },
+  one('w1', 'Attendance in the last 2 weeks', 'attendance_rate_w1', 'lower', pct),
+  one('w2', 'Attendance 2 to 4 weeks ago', 'attendance_rate_w2', 'lower', pct),
+  one('w3', 'Attendance 4 to 6 weeks ago', 'attendance_rate_w3', 'lower', pct),
+  one('trend', 'Change over the last month', 'attendance_trend', 'lower',
+    (v) => `${v > 0 ? '+' : ''}${Math.round(v * 100)} points`),
+  one('term', 'Attendance this term', 'attendance_rate_term', 'lower', pct),
+  one('career', 'Attendance since joining', 'attendance_rate_career', 'lower', pct),
+  one('streak', 'Longest run of absent days', 'longest_absence_streak', 'higher',
+    (v) => `${Math.round(v * 10) / 10} day${Math.round(v) === 1 ? '' : 's'}`),
+  one('episodes', 'Separate absences', 'absence_episode_count', 'higher', (v) => `${Math.round(v * 10) / 10}`),
+  one('weekday', 'Absences on the same weekday', 'dow_concentration', 'higher', (v) => `${pct(v)} on one day`),
   {
     key: 'reasons',
     label: 'Absences for fees or illness',
     features: ['fee_absence_rate', 'health_absence_rate'],
     worseWhen: 'higher',
     measure: (f) => avg([f.fee_absence_rate, f.health_absence_rate]),
-    format: (v) => `${Math.round(v * 100)}%`,
+    format: pct,
   },
-  {
-    key: 'timing',
-    label: 'Point in the term',
-    features: ['days_into_term'],
-    worseWhen: null, // context, not good or bad
-    measure: (f) => f.days_into_term,
-    format: (v) => `day ${Math.round(v)}`,
-  },
+  one('timing', 'Point in the term', 'days_into_term', null, (v) => `day ${Math.round(v)}`), // context, not good or bad
 ];
 
 /** Factors smaller than this (log-odds) are not worth showing. */
@@ -261,7 +263,7 @@ export function explainStudentRisk(history, peerHistories = [], asOf = toISO(new
     .map((h) => mlFeatureVector(h, asOf));
 
   const useClass = peers.length >= MIN_PEERS;
-  const background = useClass ? peers : [fullAttendanceReference(history, asOf)];
+  const background = [useClass ? typicalClassmate(peers) : fullAttendanceReference(history, asOf)];
   const idx = Object.fromEntries(MODEL_FEATURES.map((f, i) => [f, i]));
   const shap = shapValues(x, background, { groups: FACTOR_GROUPS.map((g) => g.features.map((f) => idx[f])) });
 

@@ -123,7 +123,7 @@ describe('scoreRiskFromFeatures matches the Python model exactly', () => {
         attendance_trend: 0.0, fee_absence_rate: 0.0, health_absence_rate: 0.0,
         attendance_rate_term: 0.95, days_into_term: 40, attendance_rate_career: 0.96,
       },
-      probability: 0.04877081,
+      probability: 0.04128021,
       flag: 'green',
     },
     {
@@ -134,7 +134,7 @@ describe('scoreRiskFromFeatures matches the Python model exactly', () => {
         attendance_trend: -0.1, fee_absence_rate: 0.3, health_absence_rate: 0.1,
         attendance_rate_term: 0.15, days_into_term: 50, attendance_rate_career: 0.3,
       },
-      probability: 0.92750339,
+      probability: 0.95128749,
       flag: 'red',
     },
     {
@@ -145,7 +145,7 @@ describe('scoreRiskFromFeatures matches the Python model exactly', () => {
         attendance_trend: null, fee_absence_rate: 0.0, health_absence_rate: 0.0,
         attendance_rate_term: null, days_into_term: null, attendance_rate_career: null,
       },
-      probability: 0.13970198,
+      probability: 0.14470469,
       flag: 'green',
     },
     {
@@ -156,7 +156,7 @@ describe('scoreRiskFromFeatures matches the Python model exactly', () => {
         attendance_trend: -0.05, fee_absence_rate: 0.0, health_absence_rate: 0.2,
         attendance_rate_term: 0.78, days_into_term: 20, attendance_rate_career: 0.75,
       },
-      probability: 0.28240505,
+      probability: 0.27776779,
       flag: 'red',
     },
     {
@@ -167,7 +167,7 @@ describe('scoreRiskFromFeatures matches the Python model exactly', () => {
         attendance_trend: -0.05, fee_absence_rate: 0.0, health_absence_rate: 0.2,
         attendance_rate_term: 0.78, days_into_term: 20, attendance_rate_career: 0.78,
       },
-      probability: 0.19973089,
+      probability: 0.19950213,
       flag: 'amber',
     },
   ];
