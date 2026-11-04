@@ -1585,6 +1585,87 @@ export function importStudents(db, schoolId, classGroupId, rows, { actor = null 
 }
 
 /**
+ * Demo tool: load past attendance for one class from a CSV the admin
+ * uploaded, so the risk model has history to work with. All or nothing.
+ *
+ * - Students are matched by admission number. One the school has never seen
+ *   is enrolled into this class with the row's name; one in another class is
+ *   an error.
+ * - A day the student already has a mark for is skipped, never overwritten.
+ * - Rows are marked as demo data (source 'simulation', already "synced"), like
+ *   seedDemoData.js, so they never go to the cloud.
+ *
+ * @returns {{ inserted: number, skipped: number, enrolled: number }}
+ */
+export function importAttendance(db, schoolId, classGroupId, rows, { actor = null, today = todayISO() } = {}) {
+  const cls = getClassGroup(db, classGroupId);
+  if (!cls || cls.schoolId !== schoolId) throw new StudentInputError('that class is not in this school');
+
+  const findStudent = db.prepare(
+    `SELECT st.student_id AS studentId, st.class_group_id AS classGroupId, st.active,
+            c.grade, c.stream
+       FROM students st JOIN class_groups c ON c.class_group_id = st.class_group_id
+      WHERE c.school_id = ? AND upper(trim(st.admission_no)) = upper(trim(?))
+      ORDER BY st.active DESC LIMIT 1`
+  );
+  const hasMark = db.prepare(`SELECT 1 FROM attendance_events WHERE student_id = ? AND date = ?`);
+  const insert = db.prepare(
+    `INSERT INTO attendance_events
+       (event_id, student_id, date, status, capture_method, verified, recorded_by, source, reason, created_at, synced_at)
+     VALUES (@eventId, @studentId, @date, @status, 'import', 0, @actor, 'simulation', @reason, @now, @now)`
+  );
+  const backdate = db.prepare(`UPDATE students SET enrolled_at = @date WHERE student_id = @studentId AND enrolled_at > @date`);
+
+  const fail = (i, message) => { throw Object.assign(new StudentInputError(`row ${i + 1}: ${message}`), { row: i + 1 }); };
+  const now = new Date().toISOString();
+  const idByAdm = new Map();
+  const seen = new Set();
+  let inserted = 0;
+  let skipped = 0;
+  let enrolled = 0;
+
+  db.transaction(() => {
+    rows.forEach((r, i) => {
+      const adm = cleanText(r.admissionNo);
+      const key = adm.toUpperCase();
+      const [y, m, d] = r.date.split('-').map(Number);
+      const day = new Date(Date.UTC(y, m - 1, d));
+      if (day.getUTCMonth() !== m - 1 || day.getUTCDate() !== d) fail(i, `${r.date} is not a real date`);
+      if (r.date > today) fail(i, `${r.date} is in the future`);
+      if (day.getUTCDay() === 0 || day.getUTCDay() === 6) fail(i, `${r.date} is a weekend`);
+      if (seen.has(`${key}|${r.date}`)) fail(i, `${adm} appears twice for ${r.date}`);
+      seen.add(`${key}|${r.date}`);
+
+      let studentId = idByAdm.get(key);
+      if (!studentId) {
+        const found = findStudent.get(schoolId, adm);
+        if (found && found.classGroupId !== classGroupId) {
+          fail(i, `${adm} is in ${[found.grade, found.stream].filter(Boolean).join(' ')}, not this class`);
+        }
+        if (found && !found.active) fail(i, `${adm} has been removed from the school`);
+        if (found) studentId = found.studentId;
+        else {
+          const name = cleanText(r.fullName);
+          if (!name || name.length < 2) fail(i, `${adm} is not in this class; add a name to enrol them`);
+          studentId = enrolStudent(db, schoolId, { classGroupId, fullName: name, admissionNo: adm }, { actor }).studentId;
+          enrolled += 1;
+        }
+        idByAdm.set(key, studentId);
+      }
+
+      if (hasMark.get(studentId, r.date)) { skipped += 1; return; }
+      const reason = r.status === 'absent' && ABSENCE_REASON_VALUES.includes(r.absenceReason) ? r.absenceReason : null;
+      insert.run({ eventId: randomUUID(), studentId, date: r.date, status: r.status, actor, reason, now });
+      backdate.run({ studentId, date: r.date });
+      inserted += 1;
+    });
+    logAudit(db, { action: 'attendance.imported', actorId: actor, recordId: classGroupId, detail: { inserted, skipped, enrolled } });
+  })();
+
+  return { inserted, skipped, enrolled };
+}
+
+/**
  * Edit a student: details, move to another class of the school, or remove
  * (`active: false`, kept with their history) and restore.
  */

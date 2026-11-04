@@ -11,7 +11,7 @@ import { Router } from 'express';
 import { validate } from '../lib/validate.js';
 import {
   createClassSchema, updateClassSchema, registerOverrideSchema, inviteTeacherSchema,
-  enrolStudentSchema, importStudentsSchema, updateStudentSchema,
+  enrolStudentSchema, importStudentsSchema, updateStudentSchema, importAttendanceSchema,
 } from '../schemas/admin.schema.js';
 import {
   getSchoolOverview,
@@ -38,6 +38,7 @@ import {
   getSchoolStudents,
   enrolStudent,
   importStudents,
+  importAttendance,
   updateSchoolStudent,
   reissueStudentCard,
   StudentInputError,
@@ -253,6 +254,18 @@ export function createAdminRouter({ db, userAuth, emails }) {
     try {
       const students = importStudents(db, req.user.schoolId, req.params.id, req.body.students, { actor: req.user.email });
       res.status(201).json({ students });
+    } catch (err) {
+      studentProblem(res, err);
+    }
+  });
+
+  // Demo tool: past attendance from a CSV, so the risk model has history.
+  router.post('/classes/:id/attendance/import', (req, res) => {
+    if (!ownsClass(req)) return notMine(res, 'class');
+    const { valid, errors } = validate(importAttendanceSchema, req.body ?? {});
+    if (!valid) return invalid(res, errors);
+    try {
+      res.status(201).json(importAttendance(db, req.user.schoolId, req.params.id, req.body.rows, { actor: req.user.email }));
     } catch (err) {
       studentProblem(res, err);
     }

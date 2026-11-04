@@ -1,4 +1,4 @@
-import { parseCsv, studentsFromCsv } from './csv';
+import { parseCsv, studentsFromCsv, attendanceFromCsv } from './csv';
 
 describe('parseCsv', () => {
   it('reads quoted fields with commas and escaped quotes', () => {
@@ -30,5 +30,33 @@ describe('studentsFromCsv', () => {
 
   it('needs a name column', () => {
     expect(studentsFromCsv('Adm,Phone\n1,0712345678\n').problems[0]).toMatch(/Name/);
+  });
+});
+
+describe('attendanceFromCsv', () => {
+  test('reads rows with friendly headers, Excel dates and P/A marks', () => {
+    const csv = 'Adm No,Name,Date,Status,Reason\r\nKB/1,Amina Hassan,4/5/2026,P,\r\nKB/1,Amina Hassan,2026-05-05,absent,fees\r\nkb/2,,2026-05-05,A,\r\n';
+    expect(attendanceFromCsv(csv)).toEqual({
+      rows: [
+        { admissionNo: 'KB/1', fullName: 'Amina Hassan', date: '2026-05-04', status: 'present' },
+        { admissionNo: 'KB/1', fullName: 'Amina Hassan', date: '2026-05-05', status: 'absent', absenceReason: 'fee' },
+        { admissionNo: 'kb/2', date: '2026-05-05', status: 'absent' },
+      ],
+      problems: [],
+      students: 2,
+    });
+  });
+
+  test('names the rows it cannot read', () => {
+    const { problems } = attendanceFromCsv('Admission No,Date,Status\nKB/1,yesterday,present\nKB/1,2026-05-05,late\n,2026-05-05,present\n');
+    expect(problems).toEqual([
+      'Row 2: "yesterday" is not a date (use YYYY-MM-DD).',
+      'Row 3: status "late" should be present or absent.',
+      'Row 4: no admission number.',
+    ]);
+  });
+
+  test('needs admission no, date and status columns', () => {
+    expect(attendanceFromCsv('Name,Date\nAmina,2026-05-04\n').problems[0]).toMatch(/"Admission No", "Date" and "Status"/);
   });
 });

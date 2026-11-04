@@ -106,6 +106,38 @@ export const importStudentsSchema = {
   },
 };
 
+/**
+ * POST /api/admin/classes/:id/attendance/import: demo tool, past attendance
+ * from a CSV. The page sends a big file in batches to stay under the 100 kB
+ * body limit.
+ */
+export const importAttendanceSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  $id: 'https://smartattend.example/schemas/admin-import-attendance.json',
+  type: 'object',
+  additionalProperties: false,
+  required: ['rows'],
+  properties: {
+    rows: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 1000,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['admissionNo', 'date', 'status'],
+        properties: {
+          admissionNo: { type: 'string', minLength: 1, maxLength: 40, pattern: NOT_BLANK },
+          fullName: { type: 'string', maxLength: 120 },
+          date: DATE,
+          status: { enum: ['present', 'absent'] },
+          absenceReason: { enum: ['fee', 'health', 'other', 'unknown'] },
+        },
+      },
+    },
+  },
+};
+
 /** PATCH /api/admin/students/:id: edit, move to another class, remove or restore. */
 export const updateStudentSchema = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',

@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../auth/AuthContext';
 import {
-  getStudents, getSchoolClasses, enrolStudent, importStudents, updateStudent, reissueCard,
+  getStudents, getSchoolClasses, enrolStudent, importStudents, updateStudent, reissueCard, importAttendance,
 } from '../../services/adminService';
-import { studentsFromCsv, STUDENT_CSV_TEMPLATE } from '../../lib/csv';
+import { studentsFromCsv, STUDENT_CSV_TEMPLATE, attendanceFromCsv } from '../../lib/csv';
+import { generateDemoAttendance, attendanceCsv, demoAnswerKeyCsv } from '../../lib/demoAttendance';
+import { dayInfo } from '../../lib/schoolCalendar';
+import { toISO } from '../../lib/riskModel';
+import { features } from '../../lib/features';
 import { showToast } from '../../lib/toast';
 import ConfirmDialog from '../ConfirmDialog';
 import Drawer from './Drawer';
@@ -37,6 +41,7 @@ export default function AdminStudents({ onPrintCards }) {
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null); // a student, or {} for a new one
   const [importing, setImporting] = useState(false);
+  const [importingAttendance, setImportingAttendance] = useState(false);
 
   const load = useCallback(async () => {
     if (!schoolId) return;
@@ -83,6 +88,9 @@ export default function AdminStudents({ onPrintCards }) {
           )}
         </div>
         <div className="sys-pagehead__actions">
+          {features.attendanceImport && (
+            <button type="button" className="sys-btn sys-btn--secondary" onClick={() => setImportingAttendance(true)} disabled={!classes || noClasses}>Import attendance</button>
+          )}
           <button type="button" className="sys-btn sys-btn--secondary" onClick={() => setImporting(true)} disabled={!classes || noClasses}>Import from CSV</button>
           <button type="button" className="sys-btn sys-btn--primary" onClick={() => setEditing({})} disabled={!classes || noClasses}>Add student</button>
         </div>
@@ -184,6 +192,23 @@ export default function AdminStudents({ onPrintCards }) {
           onImported={async (created, cls) => {
             setImporting(false);
             showToast(`${created.length} student${created.length === 1 ? '' : 's'} added to ${classLabel(cls)}`);
+            setClassId(cls.classGroupId);
+            await load();
+          }}
+        />
+      )}
+
+      {importingAttendance && (
+        <AttendanceImportDialog
+          classes={classes ?? []}
+          defaultClassId={classId || classes?.[0]?.classGroupId}
+          onClose={() => setImportingAttendance(false)}
+          onImported={async (result, cls) => {
+            setImportingAttendance(false);
+            const parts = [`${result.inserted} day${result.inserted === 1 ? '' : 's'} of attendance added to ${classLabel(cls)}`];
+            if (result.enrolled) parts.push(`${result.enrolled} new student${result.enrolled === 1 ? '' : 's'}`);
+            if (result.skipped) parts.push(`${result.skipped} already marked, kept as they were`);
+            showToast(parts.join(' · '));
             setClassId(cls.classGroupId);
             await load();
           }}
@@ -423,6 +448,97 @@ function ImportDialog({ classes, defaultClassId, onClose, onImported }) {
         <p className="sys-note">
           {parsed.students.length} student{parsed.students.length === 1 ? '' : 's'} found in {parsed.fileName}, starting with{' '}
           {parsed.students.slice(0, 3).map((s) => s.fullName).join(', ')}.
+        </p>
+      )}
+    </ConfirmDialog>
+  );
+}
+
+const downloadHref = (csv) => `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`;
+
+/**
+ * Demo tool: load past attendance from a CSV (one row per student per day),
+ * so the risk flags have history to work with. Students not yet in the
+ * school are enrolled into the chosen class. Days already marked are kept.
+ */
+function AttendanceImportDialog({ classes, defaultClassId, onClose, onImported }) {
+  const [classGroupId, setClassGroupId] = useState(defaultClassId ?? '');
+  const [parsed, setParsed] = useState(null); // { fileName, rows, problems, students }
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(null);
+  const [error, setError] = useState(null);
+
+  // Built when the dialog opens, so the sample always runs up to yesterday.
+  const sample = useMemo(() => {
+    const today = toISO(new Date());
+    const rows = generateDemoAttendance({ today, isSchoolDay: (d) => dayInfo(d).kind === 'school' });
+    return { href: downloadHref(attendanceCsv(rows)), keyHref: downloadHref(demoAnswerKeyCsv()), name: `sample-attendance-${today}.csv` };
+  }, []);
+
+  async function readFile(file) {
+    setError(null);
+    if (!file) return setParsed(null);
+    if (/\.xlsx?$/i.test(file.name)) {
+      setParsed(null);
+      return setError('That is an Excel file. In Excel, choose File > Save As > CSV, then pick the .csv file here.');
+    }
+    setParsed({ fileName: file.name, ...attendanceFromCsv(await readText(file)) });
+    return undefined;
+  }
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await importAttendance(classGroupId, parsed.rows, { onProgress: (done, total) => setProgress({ done, total }) });
+      onImported(result, classes.find((c) => c.classGroupId === classGroupId));
+    } catch (err) {
+      setError(`${err.message ?? 'Could not import the attendance'}. Fix the file and import it again: days already saved are skipped.`);
+      setBusy(false);
+      setProgress(null);
+    }
+  }
+
+  const count = parsed?.rows.length ?? 0;
+  const dates = parsed?.rows.map((r) => r.date).sort() ?? [];
+  return (
+    <ConfirmDialog
+      tone="primary"
+      title="Import past attendance"
+      body="For demos and testing: loads earlier registers from a CSV so the risk flags have history to work with. One row per student per day, with Admission No, Name, Date and Status (present or absent), and optionally an Absence Reason. Students not in the school yet are added to this class. Days already marked are kept as they are."
+      confirmLabel={progress ? `Saving ${progress.done} of ${progress.total}…` : count ? `Add ${count} row${count === 1 ? '' : 's'}` : 'Add attendance'}
+      confirmDisabled={!classGroupId || !parsed || count === 0 || parsed.problems.length > 0}
+      busy={busy}
+      error={error}
+      onCancel={onClose}
+      onConfirm={save}
+    >
+      <div className="sa-field">
+        <label className="sa-field__label" htmlFor="att-class">Class</label>
+        <select id="att-class" className="sa-field__input sa-field__input--line" value={classGroupId} onChange={(e) => setClassGroupId(e.target.value)} disabled={busy}>
+          {classes.map((c) => <option key={c.classGroupId} value={c.classGroupId}>{classLabel(c)}</option>)}
+        </select>
+      </div>
+      <div className="sa-field">
+        <label className="sa-field__label" htmlFor="att-file">CSV file</label>
+        <input id="att-file" type="file" accept=".csv,text/csv" onChange={(e) => readFile(e.target.files?.[0])} disabled={busy} />
+        <p className="sys-note">
+          <a href={sample.href} download={sample.name}>Download sample data</a> (21 students, about six months up to yesterday)
+          {' · '}<a href={sample.keyHref} download="sample-attendance-answer-key.csv">what each should be flagged</a>
+        </p>
+      </div>
+      {parsed && parsed.problems.length > 0 && (
+        <div className="sa-alert sa-alert--error sa-alert--compact" role="alert">
+          <div>
+            <b>Fix these rows in the file, then choose it again:</b>
+            <ul className="sys-problems">{parsed.problems.slice(0, 8).map((p) => <li key={p}>{p}</li>)}</ul>
+            {parsed.problems.length > 8 && <div>…and {parsed.problems.length - 8} more.</div>}
+          </div>
+        </div>
+      )}
+      {parsed && parsed.problems.length === 0 && count > 0 && (
+        <p className="sys-note">
+          {count} row{count === 1 ? '' : 's'} for {parsed.students} student{parsed.students === 1 ? '' : 's'} in {parsed.fileName}, {dates[0]} to {dates[dates.length - 1]}.
         </p>
       )}
     </ConfirmDialog>

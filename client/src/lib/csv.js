@@ -82,3 +82,65 @@ export function studentsFromCsv(text) {
 }
 
 export const STUDENT_CSV_TEMPLATE = 'Name,Admission No,Guardian Phone,Guardian Email\r\nAmina Hassan,KB/2026/001,0712345678,\r\n';
+
+// Attendance import (demo tool). Header names, as for students.
+const ATTENDANCE_HEADERS = {
+  admissionNo: HEADERS.admissionNo,
+  fullName: HEADERS.fullName,
+  date: ['date', 'day'],
+  status: ['status', 'attendance', 'present/absent', 'mark'],
+  absenceReason: ['absence reason', 'reason'],
+};
+const STATUS_WORDS = { present: 'present', p: 'present', '1': 'present', yes: 'present', absent: 'absent', a: 'absent', '0': 'absent', no: 'absent' };
+const REASON_WORDS = { fee: 'fee', fees: 'fee', health: 'health', sick: 'health', other: 'other', unknown: 'unknown' };
+
+/** YYYY-MM-DD, or D/M/YYYY as Excel in Kenya saves it. Null if neither. */
+function isoDate(text) {
+  const t = text.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return t;
+  const m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/);
+  return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : null;
+}
+
+/**
+ * Turn an attendance CSV (one row per student per day) into rows for the
+ * import. Admission No, Date and Status are required; Name lets the server
+ * enrol a student it has not seen; Absence Reason is optional.
+ * Returns { rows, problems, students } with row-numbered problems.
+ */
+export function attendanceFromCsv(text) {
+  const all = parseCsv(text);
+  if (all.length === 0) return { rows: [], problems: ['The file is empty.'], students: 0 };
+  const header = all[0].map(norm);
+  const col = Object.fromEntries(Object.entries(ATTENDANCE_HEADERS).map(([field, names]) => [field, header.findIndex((h) => names.includes(h))]));
+  if (col.admissionNo < 0 || col.date < 0 || col.status < 0) {
+    return { rows: [], problems: ['The first row must be headings, with "Admission No", "Date" and "Status" columns (and optionally "Name" and "Absence Reason").'], students: 0 };
+  }
+
+  const problems = [];
+  const rows = [];
+  all.slice(1).forEach((r, i) => {
+    const line = i + 2;
+    const get = (field) => (col[field] >= 0 ? (r[col[field]] ?? '').trim() : '');
+    const admissionNo = get('admissionNo');
+    const date = isoDate(get('date'));
+    const status = STATUS_WORDS[get('status').toLowerCase()];
+    const reasonText = get('absenceReason').toLowerCase();
+    const absenceReason = REASON_WORDS[reasonText];
+    if (!admissionNo) return problems.push(`Row ${line}: no admission number.`);
+    if (!date) return problems.push(`Row ${line}: "${get('date')}" is not a date (use YYYY-MM-DD).`);
+    if (!status) return problems.push(`Row ${line}: status "${get('status')}" should be present or absent.`);
+    if (reasonText && !absenceReason) return problems.push(`Row ${line}: absence reason "${reasonText}" should be fee, health, other or unknown.`);
+    const fullName = get('fullName').replace(/\s+/g, ' ');
+    rows.push({
+      admissionNo,
+      date,
+      status,
+      ...(fullName ? { fullName } : {}),
+      ...(status === 'absent' && absenceReason ? { absenceReason } : {}),
+    });
+    return undefined;
+  });
+  const students = new Set(rows.map((r) => r.admissionNo.toUpperCase())).size;
+  return { rows, problems, students };
+}

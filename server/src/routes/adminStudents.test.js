@@ -225,3 +225,68 @@ describe('teacher invites by email', () => {
     assert.match(mailer.outbox()[0].subject, /Reset your SmartAttend password/);
   });
 });
+
+describe('importing past attendance (demo tool)', () => {
+  const importRows = (rows, classId = 'class-1', headers = admin) =>
+    send('POST', `/api/admin/classes/${classId}/attendance/import`, headers, { rows });
+  const marks = (adm) => db.prepare(
+    `SELECT e.date, e.status, e.reason, e.source, e.synced_at IS NOT NULL AS synced
+       FROM attendance_events e JOIN students s ON s.student_id = e.student_id
+      WHERE s.admission_no = ? ORDER BY e.date`
+  ).all(adm);
+
+  test('enrols new admission numbers and adds their marks as demo data', async () => {
+    const res = await importRows([
+      { admissionNo: 'DM/001', fullName: 'Amina Hassan', date: '2026-05-04', status: 'present' },
+      { admissionNo: 'DM/001', fullName: 'Amina Hassan', date: '2026-05-05', status: 'absent', absenceReason: 'fee' },
+      { admissionNo: 'DM/002', fullName: 'Brian Otieno', date: '2026-05-04', status: 'absent' },
+    ]);
+    assert.equal(res.status, 201);
+    assert.deepEqual(await res.json(), { inserted: 3, skipped: 0, enrolled: 2 });
+    assert.deepEqual(marks('DM/001'), [
+      { date: '2026-05-04', status: 'present', reason: null, source: 'simulation', synced: 1 },
+      { date: '2026-05-05', status: 'absent', reason: 'fee', source: 'simulation', synced: 1 },
+    ]);
+    const amina = db.prepare(`SELECT class_group_id, enrolled_at FROM students WHERE admission_no = 'DM/001'`).get();
+    assert.deepEqual(amina, { class_group_id: 'class-1', enrolled_at: '2026-05-04' });
+    assert.equal(db.prepare('SELECT count(*) AS n FROM sync_queue').get().n, 0);
+  });
+
+  test('re-importing skips days already marked and never overwrites them', async () => {
+    await importRows([{ admissionNo: 'DM/001', fullName: 'Amina Hassan', date: '2026-05-04', status: 'present' }]);
+    const res = await importRows([
+      { admissionNo: 'dm/001', date: '2026-05-04', status: 'absent' },
+      { admissionNo: 'DM/001', date: '2026-05-05', status: 'present' },
+    ]);
+    assert.deepEqual(await res.json(), { inserted: 1, skipped: 1, enrolled: 0 });
+    assert.equal(marks('DM/001')[0].status, 'present');
+  });
+
+  test('a bad row saves nothing and names the row', async () => {
+    const res = await importRows([
+      { admissionNo: 'DM/001', fullName: 'Amina Hassan', date: '2026-05-04', status: 'present' },
+      { admissionNo: 'DM/001', fullName: 'Amina Hassan', date: '2026-05-09', status: 'present' },
+    ]);
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /row 2: 2026-05-09 is a weekend/);
+    assert.equal(marks('DM/001').length, 0);
+    assert.equal(db.prepare(`SELECT count(*) AS n FROM students WHERE admission_no = 'DM/001'`).get().n, 0);
+  });
+
+  test('refuses future dates, unknown students without a name and students of another class', async () => {
+    const future = await importRows([{ admissionNo: 'DM/001', fullName: 'Amina Hassan', date: '2099-01-05', status: 'present' }]);
+    assert.match((await future.json()).error, /in the future/);
+
+    const noName = await importRows([{ admissionNo: 'DM/009', date: '2026-05-04', status: 'present' }]);
+    assert.match((await noName.json()).error, /add a name/);
+
+    await enrol({ fullName: 'Brian Otieno', admissionNo: 'KB/002' }, 'class-2');
+    const elsewhere = await importRows([{ admissionNo: 'KB/002', date: '2026-05-04', status: 'present' }]);
+    assert.match((await elsewhere.json()).error, /in Form 2, not this class/);
+  });
+
+  test("another school's class is a 404", async () => {
+    const res = await importRows([{ admissionNo: 'DM/001', fullName: 'Amina', date: '2026-05-04', status: 'present' }], 'class-x');
+    assert.equal(res.status, 404);
+  });
+});

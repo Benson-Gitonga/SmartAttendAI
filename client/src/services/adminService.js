@@ -151,3 +151,21 @@ export async function stationScan(cardUid, { scannedAt } = {}) {
     throw err;
   }
 }
+
+/**
+ * Demo tool: load past attendance for a class. Sent in batches (the server
+ * takes 100 kB a request); each batch is all or nothing, and days already
+ * marked are skipped, so a failed import can simply be run again.
+ * Returns { inserted, skipped, enrolled } over all batches.
+ */
+export async function importAttendance(classGroupId, rows, { batchSize = 600, onProgress } = {}) {
+  const total = { inserted: 0, skipped: 0, enrolled: 0 };
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const out = await request(`${klass(classGroupId)}/attendance/import`, { method: 'POST', body: { rows: rows.slice(i, i + batchSize) } });
+    total.inserted += out.inserted;
+    total.skipped += out.skipped;
+    total.enrolled += out.enrolled;
+    onProgress?.(Math.min(rows.length, i + batchSize), rows.length);
+  }
+  return total;
+}
