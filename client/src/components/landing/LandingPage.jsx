@@ -73,20 +73,103 @@ const REGISTER = [
   { name: 'Grace Muthoni', adm: '3B/005', status: 'late' },
 ];
 
+// While a menu link scrolls the page, keep the nav on screen.
+let navPinnedUntil = 0;
+
 function scrollToId(id) {
+  navPinnedUntil = Date.now() + 1500;
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-export default function LandingPage() {
-  const [scrolled, setScrolled] = useState(false);
-  const [openFaq, setOpenFaq] = useState(0);
+const SECTIONS = [
+  { id: 'features', label: 'Features' },
+  { id: 'how', label: 'How it works' },
+  { id: 'insights', label: 'Early warning' },
+  { id: 'faq', label: 'FAQ' },
+];
 
+/** Scroll position for the floating nav: past the top, hidden while scrolling down, progress 0..1. */
+function useScrollState() {
+  const [state, setState] = useState({ scrolled: false, hidden: false, progress: 0 });
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 8);
-    onScroll();
+    let lastY = window.scrollY;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const y = window.scrollY;
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      const goingDown = y > lastY + 4;
+      const goingUp = y < lastY - 4;
+      setState((s) => ({
+        scrolled: y > 24,
+        // Tuck the nav away while reading down the page; bring it back on any scroll up.
+        hidden: Date.now() > navPinnedUntil && y > 480 && (goingDown || (s.hidden && !goingUp)),
+        progress: max > 0 ? Math.min(1, y / max) : 0,
+      }));
+      if (goingDown || goingUp) lastY = y;
+    };
+    const onScroll = () => { if (!frame) frame = requestAnimationFrame(update); };
+    update();
     window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      if (frame) cancelAnimationFrame(frame);
+    };
   }, []);
+  return state;
+}
+
+/** The section currently on screen, to highlight its nav link. */
+function useActiveSection(ids) {
+  const [active, setActive] = useState(null);
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+        if (visible[0]) setActive(visible[0].target.id);
+      },
+      { rootMargin: '-35% 0px -55% 0px', threshold: [0, 0.25, 0.5] },
+    );
+    ids.forEach((id) => { const el = document.getElementById(id); if (el) observer.observe(el); });
+    return () => observer.disconnect();
+  }, [ids]);
+  return active;
+}
+
+/** Fade elements marked .lp-reveal in as they scroll into view. */
+function useReveal() {
+  useEffect(() => {
+    const els = [...document.querySelectorAll('.lp-reveal')];
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduce || typeof IntersectionObserver === 'undefined') {
+      els.forEach((el) => el.classList.add('is-in'));
+      return undefined;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => entries.forEach((e) => {
+        if (e.isIntersecting) {
+          e.target.classList.add('is-in');
+          observer.unobserve(e.target);
+        }
+      }),
+      { rootMargin: '0px 0px -8% 0px', threshold: 0.12 },
+    );
+    els.forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, []);
+}
+
+const SECTION_IDS = SECTIONS.map((s) => s.id);
+
+/** Stagger children: style={delay(i)} on the i-th item. */
+const delay = (i, step = 80) => ({ '--lp-delay': `${i * step}ms` });
+
+export default function LandingPage() {
+  const { scrolled, hidden, progress } = useScrollState();
+  const active = useActiveSection(SECTION_IDS);
+  const [openFaq, setOpenFaq] = useState(0);
+  useReveal();
 
   useEffect(() => {
     const prev = document.title;
@@ -96,22 +179,26 @@ export default function LandingPage() {
 
   return (
     <div className="lp">
-      <header className={`lp-nav${scrolled ? ' lp-nav--scrolled' : ''}`}>
-        <div className="lp-wrap lp-nav__inner">
-          <a className="lp-brand" href="/" aria-label="SmartAttend home">
-            <Logo />
-            <span>SmartAttend</span>
+      <header className={`lp-nav${scrolled ? ' is-scrolled' : ''}${hidden ? ' is-hidden' : ''}`}>
+        <div className="lp-nav__inner">
+          <a
+            className="lp-brand lp-brand--word"
+            href="/"
+            aria-label="SmartAttend, back to top"
+            onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+          >
+            Smart<span>Attend</span>
           </a>
           <nav className="lp-nav__links" aria-label="Page sections">
-            <NavLink to="features">Features</NavLink>
-            <NavLink to="how">How it works</NavLink>
-            <NavLink to="insights">Early warning</NavLink>
-            <NavLink to="faq">FAQ</NavLink>
+            {SECTIONS.map((s) => (
+              <NavLink key={s.id} to={s.id} active={active === s.id}>{s.label}</NavLink>
+            ))}
           </nav>
           <div className="lp-nav__actions">
             <a className="lp-btn lp-btn--ghost" href={PUBLIC_PAGES.signin}>Sign in</a>
             <a className="lp-btn lp-btn--primary lp-hide-sm" href={PUBLIC_PAGES.apply}>Register your school</a>
           </div>
+          <span className="lp-nav__progress" style={{ transform: `scaleX(${progress})` }} aria-hidden="true" />
         </div>
       </header>
 
@@ -120,8 +207,7 @@ export default function LandingPage() {
         <section className="lp-hero">
           <div className="lp-hero__glow" aria-hidden="true" />
           <div className="lp-wrap lp-hero__grid">
-            <div className="lp-hero__copy">
-              <span className="lp-pill"><span className="lp-pill__dot" />Built for Kenyan secondary schools</span>
+            <div className="lp-hero__copy lp-enter">
               <h1 className="lp-h1">
                 Every student counted.<br />
                 <span className="lp-h1__accent">Even offline.</span>
@@ -145,7 +231,7 @@ export default function LandingPage() {
               </ul>
             </div>
 
-            <div className="lp-hero__visual" aria-hidden="true">
+            <div className="lp-hero__visual lp-enter lp-enter--late" aria-hidden="true">
               <div className="lp-mock">
                 <div className="lp-mock__head">
                   <div>
@@ -193,11 +279,12 @@ export default function LandingPage() {
 
         {/* Key facts */}
         <section className="lp-facts">
-          <div className="lp-wrap lp-facts__grid">
-            <Fact value="0 bars" label="of signal needed to take the register" />
-            <Fact value="1 scan" label="per student with the phone camera" />
-            <Fact value="4 weeks" label="of warning before chronic absence sets in" />
-            <Fact value="1 school" label="per account, so your data stays yours" />
+          <div className="lp-wrap"><div className="lp-facts__grid">
+            <Fact i={0} value="0 bars" label="of signal needed to take the register" />
+            <Fact i={1} value="1 scan" label="per student with the phone camera" />
+            <Fact i={2} value="4 weeks" label="of warning before chronic absence sets in" />
+            <Fact i={3} value="1 school" label="per account, so your data stays yours" />
+          </div>
           </div>
         </section>
 
@@ -210,8 +297,8 @@ export default function LandingPage() {
               sub="Simple enough for a teacher in a hurry, detailed enough for the head teacher’s report."
             />
             <div className="lp-features">
-              {FEATURES.map((f) => (
-                <article key={f.title} className="lp-card">
+              {FEATURES.map((f, i) => (
+                <article key={f.title} className="lp-card lp-reveal" style={delay(i % 3)}>
                   <div className="lp-card__icon"><Icon name={f.icon} /></div>
                   <h3>{f.title}</h3>
                   <p>{f.body}</p>
@@ -227,7 +314,7 @@ export default function LandingPage() {
             <SectionHead eyebrow="How it works" title="Up and running in three steps" />
             <ol className="lp-steps">
               {STEPS.map((s, i) => (
-                <li key={s.title} className="lp-step">
+                <li key={s.title} className="lp-step lp-reveal" style={delay(i, 120)}>
                   <span className="lp-step__num">{i + 1}</span>
                   <h3>{s.title}</h3>
                   <p>{s.body}</p>
@@ -240,7 +327,7 @@ export default function LandingPage() {
         {/* Early warning */}
         <section className="lp-section" id="insights">
           <div className="lp-wrap lp-split">
-            <div>
+            <div className="lp-reveal">
               <SectionHead
                 align="left"
                 eyebrow="Early warning"
@@ -253,7 +340,7 @@ export default function LandingPage() {
                 <li><Check /> Follow-ups tracked for each flagged student</li>
               </ul>
             </div>
-            <div className="lp-chart" aria-hidden="true">
+            <div className="lp-chart lp-reveal lp-reveal--right" style={delay(1, 120)} aria-hidden="true">
               <div className="lp-chart__head">
                 <strong>Attendance this term</strong>
                 <span className="lp-tag lp-tag--soft">Form 3 B</span>
@@ -277,7 +364,7 @@ export default function LandingPage() {
           <div className="lp-wrap">
             <SectionHead eyebrow="For everyone at school" title="One app, the right view for each role" />
             <div className="lp-roles">
-              <div className="lp-role lp-role--indigo">
+              <div className="lp-role lp-role--indigo lp-reveal">
                 <h3>School admins</h3>
                 <ul>
                   <li>See every class’s register for today</li>
@@ -286,7 +373,7 @@ export default function LandingPage() {
                   <li>Correct records, with the reason logged</li>
                 </ul>
               </div>
-              <div className="lp-role lp-role--mint">
+              <div className="lp-role lp-role--mint lp-reveal" style={delay(1, 120)}>
                 <h3>Teachers</h3>
                 <ul>
                   <li>Take the register in a couple of minutes</li>
@@ -307,7 +394,7 @@ export default function LandingPage() {
               {FAQS.map((f, i) => {
                 const open = openFaq === i;
                 return (
-                  <div key={f.q} className={`lp-faq__item${open ? ' is-open' : ''}`}>
+                  <div key={f.q} className={`lp-faq__item lp-reveal${open ? ' is-open' : ''}`} style={delay(i, 70)}>
                     <button type="button" className="lp-faq__q" aria-expanded={open} onClick={() => setOpenFaq(open ? -1 : i)}>
                       {f.q}
                       <span className="lp-faq__sign" aria-hidden="true" />
@@ -323,7 +410,7 @@ export default function LandingPage() {
         {/* Final call to action */}
         <section className="lp-cta">
           <div className="lp-wrap">
-            <div className="lp-cta__box">
+            <div className="lp-cta__box lp-reveal lp-reveal--zoom">
               <h2>Ready to know who’s in class, every day?</h2>
               <p>Register your school today. We review every application and send you a link to get started.</p>
               <div className="lp-hero__cta lp-hero__cta--center">
@@ -337,8 +424,8 @@ export default function LandingPage() {
 
       <footer className="lp-footer">
         <div className="lp-wrap lp-footer__inner">
-          <a className="lp-brand" href="/"><Logo /><span>SmartAttend</span></a>
-          <p>School attendance for Kenyan secondary schools.</p>
+          <a className="lp-brand lp-brand--word" href="/">Smart<span>Attend</span></a>
+          <p>School attendance that works offline.</p>
           <nav className="lp-footer__links" aria-label="Account">
             <a href={PUBLIC_PAGES.signin}>Sign in</a>
             <a href={PUBLIC_PAGES.apply}>Register your school</a>
@@ -351,13 +438,22 @@ export default function LandingPage() {
   );
 }
 
-function NavLink({ to, children }) {
-  return <button type="button" className="lp-nav__link" onClick={() => scrollToId(to)}>{children}</button>;
+function NavLink({ to, active, children }) {
+  return (
+    <button
+      type="button"
+      className={`lp-nav__link${active ? ' is-active' : ''}`}
+      aria-current={active ? 'true' : undefined}
+      onClick={() => scrollToId(to)}
+    >
+      {children}
+    </button>
+  );
 }
 
 function SectionHead({ eyebrow, title, sub, align = 'center' }) {
   return (
-    <div className={`lp-head lp-head--${align}`}>
+    <div className={`lp-head lp-head--${align}${align === 'center' ? ' lp-reveal' : ''}`}>
       <span className="lp-eyebrow">{eyebrow}</span>
       <h2 className="lp-h2">{title}</h2>
       {sub && <p className="lp-sub">{sub}</p>}
@@ -365,9 +461,9 @@ function SectionHead({ eyebrow, title, sub, align = 'center' }) {
   );
 }
 
-function Fact({ value, label }) {
+function Fact({ i, value, label }) {
   return (
-    <div className="lp-fact">
+    <div className="lp-fact lp-reveal" style={delay(i)}>
       <strong>{value}</strong>
       <span>{label}</span>
     </div>
@@ -381,15 +477,6 @@ function RiskRow({ name, note, level }) {
       <span className="lp-risk__name">{name}<small>{note}</small></span>
       <span className={`lp-risk__tag lp-risk__tag--${level}`}>{level}</span>
     </div>
-  );
-}
-
-function Logo() {
-  return (
-    <svg className="lp-logo" viewBox="0 0 48 48" width="28" height="28" aria-hidden="true">
-      <rect width="48" height="48" rx="12" fill="#4f46e5" />
-      <path d="M13 25l7.5 7.5L35 16" fill="none" stroke="#fff" strokeWidth="5.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }
 
