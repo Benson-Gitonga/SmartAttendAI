@@ -3244,8 +3244,7 @@ select.pub-input { padding-right: 8px; }
 .scanst { padding: 20px; }
 .sys-banner--warn { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn-ink); }
 .scanst-wait { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 0; }
-.scanst__input { height: 48px; font-size: 20px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.06em; }
-.scanst__result { margin-top: 16px; padding: 18px 16px; border: 1px solid var(--sys-line); border-left-width: 4px; border-radius: 4px; background: var(--surface-2); }
+.scanst__result { padding: 18px 16px; border: 1px solid var(--sys-line); border-left-width: 4px; border-radius: 4px; background: var(--surface-2); }
 .scanst__result { display: flex; align-items: center; gap: 14px; min-height: 92px; }
 .scanst__result--ok { border-left-color: var(--ok); background: var(--ok-bg); }
 .scanst__result--info { border-left-color: var(--warn-strong); background: var(--warn-bg); }
@@ -4209,8 +4208,6 @@ html { background: transparent; }
   .sys-table .sys-table__empty { flex: 1 1 100%; }
 
   /* the scan station's card box: smaller type so the hint fits */
-  .scanst__input { font-size: 16px; letter-spacing: 0.02em; }
-  .scanst__input::placeholder { font-family: var(--font); letter-spacing: 0; }
 
   /* plain tables (dashboard's "needing attention"): tighter cells so three
      columns fit a phone without a sideways scroll */

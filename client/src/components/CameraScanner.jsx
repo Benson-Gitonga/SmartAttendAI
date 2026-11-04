@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { useWakeLock } from '../hooks/useWakeLock';
 
-const SAME_CODE_PAUSE_MS = 5000;
+// A card held in view is read once; scanning it again after this pause shows
+// the caller's answer again (e.g. "Already scanned") instead of nothing.
+const SAME_CODE_PAUSE_MS = 3000;
 const FEEDBACK_MS = 2500;
 const SCAN_EVERY_MS = 150;
 const MARK = { ok: '✓', info: 'i', error: '!' };
@@ -143,7 +145,7 @@ export default function CameraScanner({ onCode, onClose, hint = 'Hold the studen
           ? 'Camera access was blocked. Allow the camera for this site in the browser settings, then try again.'
           : err?.name === 'NotFoundError'
             ? 'No camera was found on this device.'
-            : 'The camera could not start. Use a USB barcode scanner, or mark students by hand.');
+            : 'The camera could not start. Close this and mark students by hand.');
       }
     })();
 

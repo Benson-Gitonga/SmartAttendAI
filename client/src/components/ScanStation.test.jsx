@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ScanStation from './ScanStation';
 import { db } from '../db/database';
@@ -10,7 +10,22 @@ jest.mock('../services/adminService', () => {
   }
   return { AdminApiError, stationScan: jest.fn() };
 });
-jest.mock('./CameraScanner', () => ({ __esModule: true, default: () => null }));
+// Stands in for the camera: type a card number and press Enter to "read" it.
+jest.mock('./CameraScanner', () => ({
+  __esModule: true,
+  default: function FakeScanner({ onCode }) {
+    return (
+      <input
+        aria-label="fake camera"
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter') return;
+          onCode(e.currentTarget.value);
+          e.currentTarget.value = '';
+        }}
+      />
+    );
+  },
+}));
 
 jest.setTimeout(20_000);
 
@@ -18,7 +33,10 @@ const AMINA = { studentId: 'stu-1', fullName: 'Amina Hassan', className: 'Form 1
 const recorded = { outcome: 'recorded', student: AMINA, mark: { status: 'present', createdAt: new Date().toISOString() } };
 const offline = () => new api.AdminApiError('Could not reach the SmartAttend server.', { code: 'NETWORK' });
 
-const scan = (user, code) => user.type(screen.getByLabelText('Card number'), `${code}{Enter}`);
+async function scan(user, code) {
+  if (!screen.queryByLabelText('fake camera')) await user.click(screen.getByRole('button', { name: 'Scan with camera' }));
+  await user.type(screen.getByLabelText('fake camera'), `${code}{Enter}`);
+}
 const result = () => document.querySelector('.scanst__result');
 
 beforeEach(async () => {
@@ -42,6 +60,36 @@ describe('ScanStation', () => {
     expect(api.stationScan).toHaveBeenCalledWith('AC221F07');
     await waitFor(() => expect(result()).toHaveTextContent('Amina Hassan'));
     expect(result()).toHaveTextContent(/marked present/);
+  });
+
+  it('has no box for typing card numbers: cards are read with the camera', async () => {
+    render(<ScanStation />);
+    // let the station finish checking for scans saved offline
+    await act(async () => { await new Promise((r) => { setTimeout(r, 50); }); });
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Scan with camera' })).toBeInTheDocument();
+  });
+
+  it('says a card was already scanned today', async () => {
+    const user = userEvent.setup();
+    api.stationScan.mockResolvedValue({
+      outcome: 'duplicate', student: AMINA, mark: { status: 'present', captureMethod: 'rfid', createdAt: new Date().toISOString() },
+    });
+    render(<ScanStation />);
+    await scan(user, 'AC221F07');
+    await waitFor(() => expect(result()).toHaveTextContent(/Already scanned today at/));
+    expect(screen.getByRole('cell', { name: 'Already scanned' })).toBeInTheDocument();
+  });
+
+  it('says already scanned for a card scanned twice with no connection, and keeps one scan', async () => {
+    const user = userEvent.setup();
+    api.stationScan.mockRejectedValue(offline());
+    render(<ScanStation />);
+    await scan(user, 'AC221F07');
+    await waitFor(() => expect(result()).toHaveTextContent('Saved on this device'));
+    await scan(user, 'AC221F07');
+    await waitFor(() => expect(result()).toHaveTextContent('Already scanned'));
+    expect(await db.stationScans.count()).toBe(1);
   });
 
   it('says so for a card the school does not know', async () => {

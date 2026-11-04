@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import QRCode from 'qrcode';
 import { encodeCode128B } from '../../lib/code128';
 
-/** The card number as Code 128 bars, for USB barcode scanners. */
+/** The card number as Code 128 bars, which the camera can read too. */
 function Barcode({ value }) {
   const { bars, width } = useMemo(() => encodeCode128B(value), [value]);
   return (
