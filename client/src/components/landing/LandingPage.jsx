@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PUBLIC_PAGES } from '../auth/publicRoute';
 import './landing.css';
 
@@ -65,12 +65,33 @@ const FAQS = [
   },
 ];
 
-const REGISTER = [
-  { name: 'Amina Wanjiru', adm: '3B/001', status: 'present' },
-  { name: 'Brian Kamau', adm: '3B/002', status: 'present' },
-  { name: 'Daniel Mutua', adm: '3B/003', status: 'absent' },
-  { name: 'Faith Achieng', adm: '3B/004', status: 'present' },
-  { name: 'Grace Muthoni', adm: '3B/005', status: 'late' },
+const REGISTERS = [
+  {
+    id: 'form3b',
+    title: 'Form 3 B',
+    marked: 32, total: 40, offline: true,
+    foot: '18 records saved on this phone, will send when online',
+    students: [
+      { name: 'Amina Wanjiru', adm: '3B/001', status: 'present' },
+      { name: 'Brian Kamau', adm: '3B/002', status: 'present' },
+      { name: 'Daniel Mutua', adm: '3B/003', status: 'absent' },
+      { name: 'Faith Achieng', adm: '3B/004', status: 'present' },
+      { name: 'Grace Muthoni', adm: '3B/005', status: 'late' },
+    ],
+  },
+  {
+    id: 'form2a',
+    title: 'Form 2 A',
+    marked: 38, total: 38, offline: false,
+    foot: 'Register sent to the school office at 7:52 am',
+    students: [
+      { name: 'Joseph Njoroge', adm: '2A/011', status: 'present' },
+      { name: 'Mercy Atieno', adm: '2A/012', status: 'present' },
+      { name: 'Peter Kiprono', adm: '2A/013', status: 'present' },
+      { name: 'Ruth Nyambura', adm: '2A/014', status: 'absent' },
+      { name: 'Samuel Ochieng', adm: '2A/015', status: 'present' },
+    ],
+  },
 ];
 
 // While a menu link scrolls the page, keep the nav on screen.
@@ -232,31 +253,7 @@ export default function LandingPage() {
             </div>
 
             <div className="lp-hero__visual lp-enter lp-enter--late" aria-hidden="true">
-              <div className="lp-mock">
-                <div className="lp-mock__head">
-                  <div>
-                    <div className="lp-mock__eyebrow">Take attendance</div>
-                    <div className="lp-mock__title">Form 3 B</div>
-                  </div>
-                  <span className="lp-tag lp-tag--offline"><span className="lp-tag__dot" />Offline</span>
-                </div>
-                <div className="lp-mock__progress">
-                  <div className="lp-mock__bar"><span style={{ width: '80%' }} /></div>
-                  <span>32 of 40 marked</span>
-                </div>
-                <ul className="lp-mock__list">
-                  {REGISTER.map((s) => (
-                    <li key={s.adm}>
-                      <span className="lp-avatar">{s.name.split(' ').map((p) => p[0]).join('')}</span>
-                      <span className="lp-mock__name">{s.name}<small>{s.adm}</small></span>
-                      <span className={`lp-status lp-status--${s.status}`}>{s.status}</span>
-                    </li>
-                  ))}
-                </ul>
-                <div className="lp-mock__foot">
-                  <Icon name="cloud" /> 18 records saved on this phone, will send when online
-                </div>
-              </div>
+              <RegisterStack />
 
               <div className="lp-float lp-float--risk">
                 <div className="lp-float__icon lp-float__icon--amber"><Icon name="pulse" /></div>
@@ -448,6 +445,73 @@ function NavLink({ to, active, children }) {
     >
       {children}
     </button>
+  );
+}
+
+/**
+ * Two register cards stacked like a fanned deck. Hovering fans them apart;
+ * hovering or tapping the card behind brings it to the front.
+ */
+function RegisterStack() {
+  const [front, setFront] = useState(REGISTERS[0].id);
+  // A card that comes forward slides out from under the pointer, leaving it
+  // over the other card; ignore hovers until the swap has settled.
+  const settledAt = useRef(0);
+  const bringForward = (id, at, { fromHover = false } = {}) => {
+    if (id === front) return;
+    if (fromHover && at < settledAt.current) return;
+    settledAt.current = at + 750;
+    setFront(id);
+  };
+  return (
+    <div className="lp-stack">
+      {REGISTERS.map((r) => {
+        const isFront = r.id === front;
+        return (
+          <div
+            key={r.id}
+            className={`lp-mock lp-stack__card ${isFront ? 'is-front' : 'is-back'}`}
+            onMouseEnter={(e) => { if (window.matchMedia?.('(hover: hover)').matches) bringForward(r.id, e.timeStamp, { fromHover: true }); }}
+            onClick={(e) => bringForward(r.id, e.timeStamp)}
+          >
+            <RegisterCard register={r} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RegisterCard({ register: r }) {
+  const done = r.marked === r.total;
+  return (
+    <>
+      <div className="lp-mock__head">
+        <div>
+          <div className="lp-mock__eyebrow">{done ? 'Register complete' : 'Take attendance'}</div>
+          <div className="lp-mock__title">{r.title}</div>
+        </div>
+        {r.offline
+          ? <span className="lp-tag lp-tag--offline"><span className="lp-tag__dot" />Offline</span>
+          : <span className="lp-tag lp-tag--synced"><span className="lp-tag__dot" />Synced</span>}
+      </div>
+      <div className="lp-mock__progress">
+        <div className="lp-mock__bar"><span style={{ width: `${Math.round((r.marked / r.total) * 100)}%` }} /></div>
+        <span>{r.marked} of {r.total} marked</span>
+      </div>
+      <ul className="lp-mock__list">
+        {r.students.map((s) => (
+          <li key={s.adm}>
+            <span className="lp-avatar">{s.name.split(' ').map((p) => p[0]).join('')}</span>
+            <span className="lp-mock__name">{s.name}<small>{s.adm}</small></span>
+            <span className={`lp-status lp-status--${s.status}`}>{s.status}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="lp-mock__foot">
+        <Icon name="cloud" /> {r.foot}
+      </div>
+    </>
   );
 }
 

@@ -164,10 +164,10 @@
 .lp-check { color: var(--lp-mint-ink); flex: none; }
 
 /* hero visual */
-.lp-hero__visual { position: relative; padding: 24px 12px 40px 40px; }
+.lp-hero__visual { position: relative; padding: 48px 28px 56px 56px; }
 .lp-mock {
   position: relative; background: var(--lp-surface); border: 1px solid var(--lp-line); border-radius: 26px;
-  padding: 22px; box-shadow: var(--lp-shadow-lg); transform: rotate(1.2deg);
+  padding: 22px; box-shadow: var(--lp-shadow-lg);
 }
 .lp-mock__head { display: flex; justify-content: space-between; align-items: flex-start; }
 .lp-mock__eyebrow { font-size: 12.5px; color: var(--lp-ink-3); font-weight: 500; }
@@ -199,6 +199,35 @@
 .lp-tag--offline { background: #fff4e0; color: var(--lp-amber-ink); }
 .lp-tag__dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
 .lp-tag--soft { background: var(--lp-brand-soft); color: var(--lp-brand-ink); }
+.lp-tag--synced { background: var(--lp-mint); color: var(--lp-mint-ink); }
+
+/* Two register cards stacked like a fanned deck (RegisterStack). Both sit in
+   one grid cell; the one behind peeks out top-left. Hovering the stack fans
+   them apart; the card behind comes forward on hover (or tap on phones). */
+.lp-stack { position: relative; display: grid; }
+.lp-stack__card {
+  grid-area: 1 / 1; cursor: pointer; user-select: none;
+  transition: transform .65s cubic-bezier(.2, .8, .2, 1), box-shadow .45s ease, filter .45s ease, opacity .45s ease;
+  will-change: transform;
+}
+.lp-stack__card.is-front { z-index: 2; transform: translate(16px, 20px) rotate(2deg); }
+.lp-stack__card.is-back {
+  z-index: 1; transform: translate(-30px, -22px) rotate(-5deg) scale(.95);
+  filter: saturate(.85) brightness(.985); box-shadow: 0 10px 30px -18px rgba(22, 19, 43, .3);
+}
+.lp-stack:hover .lp-stack__card.is-front {
+  transform: translate(34px, 30px) rotate(3.5deg);
+  box-shadow: 0 2px 4px rgba(22, 19, 43, .05), 0 40px 70px -24px rgba(49, 40, 140, .38);
+}
+.lp-stack:hover .lp-stack__card.is-back { transform: translate(-56px, -36px) rotate(-8deg) scale(.95); filter: none; }
+/* Rows slide in a touch each time a card comes to the front. */
+.lp-stack__card.is-front .lp-mock__list li { animation: lp-row .5s cubic-bezier(.2, .8, .2, 1) both; }
+.lp-stack__card.is-front .lp-mock__list li:nth-child(2) { animation-delay: .04s; }
+.lp-stack__card.is-front .lp-mock__list li:nth-child(3) { animation-delay: .08s; }
+.lp-stack__card.is-front .lp-mock__list li:nth-child(4) { animation-delay: .12s; }
+.lp-stack__card.is-front .lp-mock__list li:nth-child(5) { animation-delay: .16s; }
+.lp-stack__card .lp-mock__bar span { transition: width .8s cubic-bezier(.2, .8, .2, 1); }
+@keyframes lp-row { from { opacity: .4; transform: translateX(10px); } to { opacity: 1; transform: none; } }
 
 .lp-float {
   position: absolute; display: flex; align-items: center; gap: 12px; padding: 12px 16px 12px 12px;
@@ -208,6 +237,7 @@
 }
 .lp-float strong { display: block; font-size: 14px; }
 .lp-float span { color: var(--lp-ink-3); }
+.lp-float { z-index: 3; }
 .lp-float--risk { left: 0; bottom: 0; }
 .lp-float--scan { right: -8px; top: 0; animation-delay: -3s; }
 .lp-float__icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; flex: none; }
@@ -348,7 +378,10 @@
   .lp-lead { font-size: 17px; }
   .lp-hero__cta .lp-btn { flex: 1 1 100%; }
   .lp-hero__visual { padding: 28px 0 56px; }
-  .lp-mock { transform: none; padding: 18px; }
+  .lp-mock { padding: 18px; }
+  .lp-hero__visual { padding: 40px 14px 64px 22px; }
+  .lp-stack__card.is-front, .lp-stack:hover .lp-stack__card.is-front { transform: translate(8px, 12px) rotate(1.5deg); }
+  .lp-stack__card.is-back, .lp-stack:hover .lp-stack__card.is-back { transform: translate(-14px, -20px) rotate(-4deg) scale(.95); }
   .lp-float--scan { right: 0; top: -4px; }
   .lp-features, .lp-steps, .lp-roles { grid-template-columns: 1fr; }
   .lp-section { padding: 72px 0; }
@@ -361,6 +394,7 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .lp-float, .lp-nav__inner, .lp-enter > *, .lp-enter--late, .lp-enter--late .lp-float { animation: none; }
-  .lp-btn, .lp-card, .lp-nav, .lp-nav__inner { transition: none; }
+  .lp-btn, .lp-card, .lp-nav, .lp-nav__inner, .lp-stack__card { transition: none; }
+  .lp-stack__card .lp-mock__list li { animation: none; }
   .lp-reveal { opacity: 1; transform: none; transition: none; }
 }
