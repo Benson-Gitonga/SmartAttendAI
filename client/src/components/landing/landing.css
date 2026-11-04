@@ -1,27 +1,27 @@
 /* Landing page (lp-*). Nothing here touches the app's styles. It is always
-   light, whatever theme the app is set to: off-white page, white cards, dark
+   light, whatever theme the app is set to: white page and cards, dark grey
    text and one calm blue for buttons and labels. */
 
 .lp {
-  --lp-bg: #f7f8fa;
-  --lp-bg-tint: #eff1f4;
+  --lp-bg: #ffffff;
+  --lp-bg-tint: #f6f7f9;
   --lp-surface: #ffffff;
-  --lp-surface-2: #f3f4f6;
-  --lp-ink: #16181d;
-  --lp-ink-2: #474b54;
-  --lp-ink-3: #6b7079;
+  --lp-surface-2: #f9fafb;
+  --lp-ink: #111827;
+  --lp-ink-2: #374151;
+  --lp-ink-3: #6b7280;
   --lp-line: rgba(17, 24, 39, .10);
   --lp-line-soft: rgba(17, 24, 39, .06);
   --lp-line-strong: rgba(17, 24, 39, .18);
-  --lp-glass: rgba(247, 248, 250, .85);
+  --lp-glass: rgba(255, 255, 255, .85);
   --lp-glass-strong: rgba(255, 255, 255, .96);
   --lp-brand: #3366cc;
   --lp-brand-2: #2a56ad;
   --lp-brand-ink: #2a56ad;
   --lp-brand-soft: rgba(51, 102, 204, .08);
   --lp-brand-line: rgba(51, 102, 204, .25);
-  --lp-navy: #1e1f22;
-  --lp-ok: #15803d;
+  --lp-navy: #1f2937;
+  --lp-ok: #16a34a;
   --lp-warn: #b45309;
   --lp-mint: rgba(21, 128, 61, .09);
   --lp-mint-ink: #15803d;

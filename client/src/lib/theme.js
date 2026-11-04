@@ -1,6 +1,7 @@
 /**
  * Light / dark theme. The choice is 'system' | 'light' | 'dark', saved per
- * device. 'system' removes the attribute so the CSS follows the OS setting;
+ * device, and light until the user picks otherwise. 'system' removes the
+ * attribute so the CSS follows the OS setting;
  * the other two set <html data-theme>. index.html applies the saved choice
  * before first paint so the page never flashes the wrong theme.
  */
@@ -13,9 +14,9 @@ const EVENT = 'smartattend:theme';
 export function getTheme() {
   try {
     const v = localStorage.getItem(THEME_KEY);
-    return THEMES.includes(v) ? v : 'system';
+    return THEMES.includes(v) ? v : 'light';
   } catch {
-    return 'system';
+    return 'light';
   }
 }
 
@@ -30,7 +31,7 @@ export function applyTheme(choice = getTheme()) {
   if (choice === 'system') root.removeAttribute('data-theme');
   else root.setAttribute('data-theme', choice);
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', resolvedTheme(choice) === 'dark' ? '#1e1f22' : '#eef2f8');
+  if (meta) meta.setAttribute('content', resolvedTheme(choice) === 'dark' ? '#1e1f22' : '#f6f7f9');
 }
 
 export function setTheme(choice) {

@@ -9,7 +9,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
-    <meta name="theme-color" content="#eef2f8" />
+    <meta name="theme-color" content="#f6f7f9" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
@@ -17,12 +17,13 @@
     <title>SmartAttend AI</title>
     <script>
       // Apply the saved theme before first paint; lib/theme.js takes over after load.
+      // Nothing saved means light; 'system' (picked in the toggle) follows the device.
       try {
         var t = localStorage.getItem('smartattend:theme');
-        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
-        var dark = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+        if (t !== 'system') document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
+        var dark = t === 'dark' || (t === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
         if (dark) document.querySelector('meta[name=theme-color]').setAttribute('content', '#1e1f22');
-      } catch (e) {}
+      } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }
     </script>
   </head>
   <body>

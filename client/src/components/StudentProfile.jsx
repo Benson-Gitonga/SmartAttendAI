@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { getStudentById, getStudentHistory, getFollowUpSummary } from '../db/database';
 import {
   computeFeatures,
   scoreRiskML,
-  weeklyTrend,
   riskInsights,
   isAssessable,
   toISO,
@@ -35,58 +34,6 @@ function fmtDate(iso) {
     long: dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
     weekday: dt.toLocaleDateString('en-GB', { weekday: 'long' }),
   };
-}
-
-function TrendChart({ points }) {
-  // Drawn at the box's real pixel width, so the labels stay the same size on
-  // a phone as on a laptop instead of shrinking with the whole picture.
-  const ref = useRef(null);
-  const [w, setW] = useState(440);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof ResizeObserver === 'undefined') return undefined;
-    const ro = new ResizeObserver(([entry]) => {
-      const width = Math.round(entry.contentRect.width);
-      if (width > 0) setW(width);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  const h = 170;
-  const padL = 42; // room for the % labels
-  const padR = 20;
-  const padT = 12;
-  const padB = 26; // room for the week labels
-  const x = (i) => padL + (i * (w - padL - padR)) / Math.max(1, points.length - 1);
-  const y = (v) => padT + (1 - v) * (h - padT - padB);
-
-  const line = points
-    .map((p, i) => (p.rate == null ? null : `${x(i)},${y(p.rate)}`))
-    .filter(Boolean)
-    .join(' ');
-
-  return (
-    <svg ref={ref} className="trend-chart" viewBox={`0 0 ${w} ${h}`} role="img" aria-label="Six week attendance trend">
-      {[0, 0.5, 1].map((v) => (
-        <g key={v}>
-          <line x1={padL} y1={y(v)} x2={w - padR / 2} y2={y(v)} stroke="var(--line)" strokeWidth="1" strokeDasharray={v ? '3 3' : undefined} />
-          <text className="trend-axis" x={padL - 6} y={y(v) + 4} textAnchor="end">{v * 100}%</text>
-        </g>
-      ))}
-      {line && <polyline points={line} fill="none" stroke="var(--slate-700)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
-      {points.map((p, i) =>
-        p.rate == null ? null : (
-          <circle key={p.label} cx={x(i)} cy={y(p.rate)} r="3.5" fill="var(--slate-700)" />
-        )
-      )}
-      {points.map((p, i) => (
-        <text key={`t-${p.label}`} className="trend-axis" x={x(i)} y={h - 6} textAnchor="middle">
-          {p.label}
-        </text>
-      ))}
-    </svg>
-  );
 }
 
 const CAL_TEXT = { present: 'Present', absent: 'Absent' };
@@ -221,16 +168,15 @@ export default function StudentProfile({ studentId, className, onOpenDay }) {
     const rows = history.map((r) => ({ date: r.date, status: r.status }));
     const features = computeFeatures(rows, asOf);
     const risk = scoreRiskML(rows, asOf);
-    const trend = weeklyTrend(rows, asOf, 6);
     const insights = riskInsights(rows, features, risk, asOf);
 
-    return { rows, features, risk, trend, insights, assessable: isAssessable(rows) };
+    return { rows, features, risk, insights, assessable: isAssessable(rows) };
   }, [history]);
 
   if (loading) return <ProfilePage><p className="empty">Loading profile…</p></ProfilePage>;
   if (!student) return <ProfilePage><p className="empty">Student not found.</p></ProfilePage>;
 
-  const { rows, risk, trend, insights, features, assessable } = model;
+  const { rows, risk, insights, features, assessable } = model;
   const enrolled = student.enrolledAt ? fmtDate(student.enrolledAt).long : '-';
   const counts = { present: 0, absent: 0 };
   for (const r of history) if (r.status in counts) counts[r.status] += 1;
@@ -300,16 +246,6 @@ export default function StudentProfile({ studentId, className, onOpenDay }) {
         <div className="profile-grid__main">
           <section className="panel panel--pad">
             <AttendanceCalendar history={history} onOpenDay={onOpenDay} />
-          </section>
-
-          <section className="panel panel--pad">
-            <div className="panel__head">
-              <div>
-                <h3 className="panel__title">Weekly attendance</h3>
-                <p className="panel__sub">Share of school days attended, last 6 weeks</p>
-              </div>
-            </div>
-            <TrendChart points={trend} />
           </section>
         </div>
 
