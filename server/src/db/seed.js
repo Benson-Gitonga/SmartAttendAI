@@ -142,6 +142,19 @@ export function seed(db) {
 
 export const DEMO_CARD_UIDS = DEMO_STUDENTS.map((s) => s.card_uid);
 
+/**
+ * Delete the demo schools and, through ON DELETE CASCADE, their accounts,
+ * classes, students, cards and attendance. Schools that registered for real
+ * are untouched. Safe to re-run.
+ *
+ * @returns {number} demo schools removed
+ */
+export function removeDemoData(db) {
+  const ids = [DEMO_SCHOOL.school_id, ...PENDING_SCHOOLS.map((s) => s.school_id)];
+  const remove = db.prepare('DELETE FROM schools WHERE school_id = ?');
+  return db.transaction(() => ids.reduce((n, id) => n + remove.run(id).changes, 0))();
+}
+
 // Run directly: node src/db/seed.js
 if (import.meta.url === `file://${process.argv[1]}` || process.argv[1]?.endsWith('seed.js')) {
   const db = openDatabase();

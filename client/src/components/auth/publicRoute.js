@@ -13,6 +13,9 @@ export const PUBLIC_PAGES = {
 
 /** Which signed-out page the address asks for, and its token or code if any. */
 export function readPublicRoute(hash = typeof window !== 'undefined' ? window.location.hash : '') {
+  // The bare address (no #) is the landing page; #/ is sign-in, which every
+  // link and email already points at.
+  if (hash === '' || hash === '#') return { page: 'landing', param: null };
   const [path, param] = (() => {
     const clean = hash.replace(/^#/, '') || '/';
     const parts = clean.split('/').filter(Boolean);

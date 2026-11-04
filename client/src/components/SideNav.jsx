@@ -2,7 +2,7 @@ import { navItems } from './BottomNav';
 import Avatar from './Avatar';
 import { ChevronDownIcon, BrandCheckIcon } from './icons';
 
-const ROLE_LABEL = { admin: 'School admin', teacher: 'Teacher' };
+const ROLE_LABEL = { admin: 'School admin', teacher: 'Teacher', system_admin: 'System admin' };
 
 /** Desktop (>=900px) sidebar: brand, class picker, navigation and the signed-in user. */
 export default function SideNav({
