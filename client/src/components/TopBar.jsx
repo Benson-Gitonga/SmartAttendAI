@@ -55,7 +55,7 @@ export default function TopBar({ crumbs = [], online, onAccount }) {
         <ThemeToggle compact />
         {online !== undefined && (
           <span className={`status-chip status-chip--${online ? 'online' : 'offline'}`}>
-            <span className={`dot dot--${online ? 'present' : 'late'}`} />
+            <span className={`dot dot--${online ? 'present' : 'warn'}`} />
             {online ? 'Online' : 'Offline'}
           </span>
         )}

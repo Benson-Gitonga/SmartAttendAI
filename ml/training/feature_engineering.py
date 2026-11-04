@@ -43,7 +43,7 @@ strictly before ``as_of``**:
     the first record rather than the first calendar day so days before the
     student enrolled don't count as absences. ``nan`` with no records yet.
 
-"Attendance" means a ``present`` or ``late`` record. A scheduled school day with
+"Attendance" means a ``present`` record. A scheduled school day with
 no record counts as an absence. A rate is ``nan`` only when its window has no
 scheduled school days.
 
@@ -64,7 +64,7 @@ import pandas as pd
 
 # Matches ATTENDANCE_STATUSES in client/src/db/database.js.
 
-PRESENT_STATUSES = frozenset({"present", "late"})
+PRESENT_STATUSES = frozenset({"present"})
 ABSENT_STATUSES = frozenset({"absent"})
 
 TWO_WEEKS = dt.timedelta(days=14)
@@ -376,7 +376,7 @@ def compute_features(
     records
         Attendance event dicts for a single student. Keys may be camelCase or
         snake_case: ``date`` (ISO string / date), ``status``
-        (``present`` / ``absent`` / ``late``), optional ``createdAt``.
+        (``present`` / ``absent``), optional ``createdAt``.
     as_of
         Reference date (exclusive upper bound for feature windows).
     calendar

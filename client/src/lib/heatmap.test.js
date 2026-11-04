@@ -27,13 +27,13 @@ describe('buildWeeklyHeatmap', () => {
   it('fills missing past school days as absent and rates the graded days', () => {
     const records = [
       { studentId: 's1', date: '2026-09-07', status: 'present' },
-      { studentId: 's1', date: '2026-09-08', status: 'late' },
+      { studentId: 's1', date: '2026-09-08', status: 'present' },
       { studentId: 's1', date: '2026-09-09', status: 'absent' },
       // s1 09-10 missing means absent; 09-11 is today and unmarked, so not graded
     ];
     const { rows, classAverage } = buildWeeklyHeatmap(students, records, '2026-09-07', '2026-09-11');
     const s1 = rows.find((r) => r.student.studentId === 's1');
-    expect(s1.cells.map((c) => c.status)).toEqual(['present', 'late', 'absent', 'absent', 'upcoming']);
+    expect(s1.cells.map((c) => c.status)).toEqual(['present', 'present', 'absent', 'absent', 'upcoming']);
     expect(s1.rate).toBeCloseTo(2 / 4);
     const s2 = rows.find((r) => r.student.studentId === 's2');
     expect(s2.rate).toBe(0); // no records at all across the four past days
@@ -59,15 +59,15 @@ describe('monthBounds / schoolDaysInRange', () => {
 });
 
 describe('buildRegisterGrid', () => {
-  it('counts present, late and absent per student', () => {
+  it('counts present and absent per student', () => {
     const students = [{ studentId: 's1', fullName: 'Ann A' }];
     const records = [
       { studentId: 's1', date: '2026-09-07', status: 'present' },
-      { studentId: 's1', date: '2026-09-08', status: 'late' },
+      { studentId: 's1', date: '2026-09-08', status: 'present' },
     ];
     const days = schoolDaysInRange('2026-09-07', '2026-09-09');
     const { rows } = buildRegisterGrid(students, records, days, '2026-09-10');
-    expect(rows[0].totals).toEqual({ present: 1, late: 1, absent: 1 });
+    expect(rows[0].totals).toEqual({ present: 2, absent: 1 });
     expect(rows[0].rate).toBeCloseTo(2 / 3);
   });
 });

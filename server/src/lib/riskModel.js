@@ -16,7 +16,7 @@ const mlModel = JSON.parse(readFileSync(join(here, '..', 'data', 'riskModel.json
 const WINDOW_DAYS = 14;
 const MONTH_DAYS = 28;
 const SIX_WEEK_DAYS = 42;
-const ATTENDED = new Set(['present', 'late']);
+const ATTENDED = new Set(['present']);
 
 const WEIGHTS = { consecutive: 0.4, monthly_rate: 0.3, day_of_week: 0.15, trend: 0.15 };
 const CONSECUTIVE_NORM = 5;

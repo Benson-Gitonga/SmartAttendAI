@@ -58,7 +58,7 @@ export function recordAttendance(db, event) {
   } = event;
 
   if (!studentId) throw new Error('studentId is required');
-  if (!['present', 'absent', 'late'].includes(status)) throw new Error(`bad status: ${status}`);
+  if (!['present', 'absent'].includes(status)) throw new Error(`bad status: ${status}`);
   if (!['manual', 'rfid', 'fingerprint', 'import'].includes(captureMethod)) {
     throw new Error(`bad captureMethod: ${captureMethod}`);
   }
@@ -812,7 +812,7 @@ export function getSchoolOverview(db, schoolId) {
     .all(schoolId, date);
   const byStatus = Object.fromEntries(todayCounts.map((r) => [r.status, r.n]));
   const recordedToday = Object.values(byStatus).reduce((a, b) => a + b, 0);
-  const attendedToday = (byStatus.present ?? 0) + (byStatus.late ?? 0);
+  const attendedToday = byStatus.present ?? 0;
 
   const flagged = getFlaggedStudents(db, schoolId);
 
@@ -949,7 +949,6 @@ export function getRegisterBoard(db, schoolId, date = todayISO()) {
               COUNT(DISTINCT s.student_id) AS studentCount,
               COUNT(a.event_id) AS marked,
               SUM(a.status = 'present') AS present,
-              SUM(a.status = 'late') AS late,
               SUM(a.status = 'absent') AS absent,
               SUM(a.capture_method IN ('rfid', 'fingerprint')) AS gateMarks,
               SUM(a.capture_method = 'manual') AS manualMarks,
@@ -974,7 +973,6 @@ export function getRegisterBoard(db, schoolId, date = todayISO()) {
     return {
       ...r,
       present: n(r.present),
-      late: n(r.late),
       absent: n(r.absent),
       gateMarks: n(r.gateMarks),
       manualMarks: n(r.manualMarks),
@@ -994,10 +992,9 @@ export function getRegisterBoard(db, schoolId, date = todayISO()) {
       waiting: classes.filter((c) => ['not_taken', 'gate_only', 'partial'].includes(c.status)).length,
       students: sum('studentCount'),
       present: sum('present'),
-      late: sum('late'),
       absent: sum('absent'),
       unmarked: sum('unmarked'),
-      attendanceRate: marked > 0 ? (sum('present') + sum('late')) / marked : null,
+      attendanceRate: marked > 0 ? sum('present') / marked : null,
     },
     classes,
   };

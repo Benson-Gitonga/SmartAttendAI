@@ -114,7 +114,7 @@ export default function AdminToday({ onOpenClass, onGo }) {
         <dl className="ad-stats">
           <div><dt>Registers taken</dt><dd>{t.done} <span>of {t.classes}</span></dd></div>
           <div><dt>Attendance</dt><dd>{percent(t.attendanceRate)}</dd></div>
-          <div><dt>Present</dt><dd>{t.present + t.late}</dd></div>
+          <div><dt>Present</dt><dd>{t.present}</dd></div>
           <div><dt>Absent</dt><dd>{t.absent}</dd></div>
           <div><dt>Not marked yet</dt><dd>{t.unmarked}</dd></div>
         </dl>
@@ -161,7 +161,7 @@ export default function AdminToday({ onOpenClass, onGo }) {
                         {c.lastMarkAt && <div className="sys-table__sub">last mark {time(c.lastMarkAt)}</div>}
                       </td>
                       <td data-label="Marked" className="sys-num">{marked}/{c.studentCount}</td>
-                      <td data-label="Present" className="sys-num">{c.present + c.late}</td>
+                      <td data-label="Present" className="sys-num">{c.present}</td>
                       <td data-label="Absent" className="sys-num">{c.absent}</td>
                       <td className="sys-table__actions">
                         <button type="button" className="sys-btn sys-btn--secondary sys-btn--sm" onClick={(e) => { e.stopPropagation(); onOpenClass(c.classGroupId); }}>

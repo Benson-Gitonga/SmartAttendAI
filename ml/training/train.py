@@ -77,10 +77,12 @@ np.random.seed(SEED)
 # Raw data -> normalised attendance events + school calendar
 
 # The sheet spells each status many ways ("P", "pres", "PRESENT", ...).
+# Attendance is present or absent only; the sheet's "L" (late) rows mean the
+# student came to school, so they read as present.
 _STATUS_MAP = {
     "p": "present", "pres": "present", "present": "present",
     "a": "absent", "abs": "absent", "absent": "absent",
-    "l": "late", "late": "late",
+    "l": "present", "late": "present",
 }
 
 

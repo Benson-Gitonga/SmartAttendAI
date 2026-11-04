@@ -70,9 +70,8 @@ export default function AdminClassPage({ classGroupId, onTitle }) {
   useEffect(() => { writeAdminDate(date); }, [date]);
 
   // A draft only counts while it differs from what the server has.
-  // Older 'late' marks count as present: the register is present or absent only.
   const effective = (st) => drafts[st.studentId] ?? (st.mark
-    ? { status: st.mark.status === 'late' ? 'present' : st.mark.status, absenceReason: st.mark.absenceReason ?? null }
+    ? { status: st.mark.status, absenceReason: st.mark.absenceReason ?? null }
     : null);
   const changes = useMemo(() => (data?.students ?? []).filter((st) => {
     const d = drafts[st.studentId];

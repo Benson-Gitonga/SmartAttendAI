@@ -132,7 +132,7 @@ describe('taking or correcting a register', () => {
       marks: [
         { studentId: 'stu-1', status: 'present' },
         { studentId: 'stu-2', status: 'absent', absenceReason: 'health' },
-        { studentId: 'stu-3', status: 'late' },
+        { studentId: 'stu-3', status: 'present' },
       ],
     });
     const body = await res.json();
@@ -183,13 +183,14 @@ describe('taking or correcting a register', () => {
   });
 
   test('an earlier day can be corrected too', async () => {
-    const res = await override({ date: '2026-09-01', reason: 'late_arrival', marks: [{ studentId: 'stu-3', status: 'late' }] });
+    const res = await override({ date: '2026-09-01', reason: 'late_arrival', marks: [{ studentId: 'stu-3', status: 'present' }] });
     assert.equal(res.status, 200);
     assert.equal(db.prepare(`SELECT date FROM attendance_events WHERE student_id = 'stu-3'`).get().date, '2026-09-01');
   });
 
   for (const [label, body, status] of [
     ['no reason', { reason: undefined, marks: [{ studentId: 'stu-1', status: 'present' }] }, 400],
+    ['a "late" mark (present or absent only)', { reason: 'wrong_mark', marks: [{ studentId: 'stu-1', status: 'late' }] }, 400],
     ['"other" without a note', { reason: 'other', marks: [{ studentId: 'stu-1', status: 'present' }] }, 400],
     ['a reason that is not on the list', { reason: 'felt_like_it', marks: [{ studentId: 'stu-1', status: 'present' }] }, 400],
     ['a future date', { date: '2999-01-01', reason: 'wrong_mark', marks: [{ studentId: 'stu-1', status: 'present' }] }, 400],

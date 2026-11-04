@@ -48,11 +48,6 @@ describe('computeFeatures', () => {
     expect(f.longest_absence_streak).toBeGreaterThan(0);
   });
 
-  it('treats late as attended', () => {
-    const history = historyEndingBefore(AS_OF, 20, () => 'late');
-    expect(computeFeatures(history, AS_OF).attendance_rate_w1).toBe(1);
-  });
-
   it('reports a downward trend when recent weeks are worse', () => {
     const history = historyEndingBefore(AS_OF, 30, (i) => (i < 5 ? 'absent' : 'present'));
     // i counts from the most recent (unshift), so the last 5 school days are absent

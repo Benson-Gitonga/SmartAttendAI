@@ -30,8 +30,7 @@ const REASONS = [
   { code: 'unknown', label: "Don't know" },
 ];
 
-// A late record (e.g. from a gate scan after the bell) still counts as present here.
-const isPresent = (status) => status === 'present' || status === 'late';
+const isPresent = (status) => status === 'present';
 
 /** The nearest school day before (dir -1) or after (dir 1) `iso`. */
 function stepSchoolDay(iso, dir) {
@@ -194,10 +193,8 @@ export default function AttendanceForm({ classGroupId, initialDate = null, initi
   }, [unsaved, onDirtyChange]);
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
-  // Ticking keeps a saved "late" as it was; unticking is always absent.
   function statusFor(studentId, present) {
-    if (present) return isPresent(recorded[studentId]) ? recorded[studentId] : 'present';
-    return 'absent';
+    return present ? 'present' : 'absent';
   }
 
   function setPresent(ids, present) {

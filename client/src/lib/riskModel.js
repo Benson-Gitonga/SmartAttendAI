@@ -10,7 +10,7 @@
  * Features follow the Python pipeline in `ml/training/`:
  *   - windows are 14 / 28 calendar days, counting only school days (Mon-Fri);
  *   - a school day with no record counts as an absence;
- *   - present and late both count as attended;
+ *   - only present counts as attended;
  *   - a rate is null only when its window has no school days.
  */
 
@@ -33,7 +33,7 @@ const WEEK = 7;
 const WINDOW_DAYS = 14;
 const MONTH_DAYS = 28;
 const SIX_WEEK_DAYS = 42;
-const ATTENDED = new Set(['present', 'late']);
+const ATTENDED = new Set(['present']);
 
 /** RuleBasedScorer.WEIGHTS */
 export const RISK_WEIGHTS = {

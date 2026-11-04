@@ -22,7 +22,7 @@ function fmtShort(iso) {
  *
  * `getDay(iso, info)` returns `{ tone, text, sub?, clickable? }` for a school
  * day; `info` is the calendar's view of the day (see lib/schoolCalendar).
- * Tones: present | absent | late | good | fair | low | none | future.
+ * Tones: present | absent | good | fair | low | none | future.
  */
 export default function MonthCalendar({
   title, subtitle, firstMonth, getDay, legend = [], selected = null, onPick, children,

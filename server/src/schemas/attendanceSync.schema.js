@@ -11,7 +11,7 @@ export const attendanceRecordSchema = {
     eventId: { type: 'string', format: 'uuid' },
     studentId: { type: 'string', minLength: 1, maxLength: 64 },
     date: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
-    status: { type: 'string', enum: ['present', 'absent', 'late'] },
+    status: { type: 'string', enum: ['present', 'absent'] },
     captureMethod: {
       type: 'string',
       enum: ['manual', 'rfid', 'fingerprint', 'import'],

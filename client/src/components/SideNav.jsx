@@ -55,7 +55,7 @@ export default function SideNav({
             <span className="side-nav__user-name">{name}</span>
             <span className="side-nav__user-role">{ROLE_LABEL[role] ?? 'Teacher'}</span>
             <span className="side-nav__user-meta">
-              <span className={`dot dot--${online ? 'present' : 'late'}`} />
+              <span className={`dot dot--${online ? 'present' : 'warn'}`} />
               {online ? 'Online' : 'Offline'}
               {pending > 0 ? ` · ${pending} to sync` : ''}
             </span>

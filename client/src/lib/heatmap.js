@@ -1,7 +1,6 @@
 /**
  * Weekly attendance grid for the Heatmap screen. Uses the same conventions as
- * lib/riskModel.js: school days are Mon-Fri, a missing record is an absence,
- * and late counts as attended.
+ * lib/riskModel.js: school days are Mon-Fri and a missing record is an absence.
  */
 
 import { toISO, isSchoolDay } from './riskModel';
@@ -76,10 +75,10 @@ export function buildRegisterGrid(students, records, days, today = toISO(new Dat
         recorded: status != null,
       };
     });
-    const totals = { present: 0, late: 0, absent: 0 };
+    const totals = { present: 0, absent: 0 };
     for (const c of cells) if (c.status in totals) totals[c.status] += 1;
-    const graded = totals.present + totals.late + totals.absent;
-    const rate = graded ? (totals.present + totals.late) / graded : null;
+    const graded = totals.present + totals.absent;
+    const rate = graded ? totals.present / graded : null;
     return { student, cells, rate, totals };
   });
 
@@ -96,7 +95,6 @@ export function buildWeeklyHeatmap(students, records, weekStartISO, today = toIS
 
 export const HEATMAP_LEGEND = [
   { key: 'present', label: 'Present' },
-  { key: 'late', label: 'Late' },
   { key: 'absent', label: 'Absent' },
   { key: 'excused', label: 'Excused' },
 ];

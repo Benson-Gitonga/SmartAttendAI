@@ -76,7 +76,7 @@ describe('drainSyncQueue', () => {
   });
 
   it('marks the record failed and schedules an exponential backoff on a transport error', async () => {
-    const record = await addAttendanceEvent({ studentId: 'stu-3', date: DATE, status: 'late' });
+    const record = await addAttendanceEvent({ studentId: 'stu-3', date: DATE, status: 'absent' });
     const fetchImpl = jest.fn().mockRejectedValue(new Error('network down'));
 
     const summary = await drainSyncQueue({ fetchImpl, now: () => 1_000_000 });

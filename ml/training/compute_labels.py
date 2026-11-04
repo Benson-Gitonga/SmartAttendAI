@@ -37,7 +37,7 @@ def absence_rate_in_window(
 ) -> float:
     """Fraction of scheduled school days in ``[start, end)`` the student missed.
 
-    A scheduled school day with no ``present``/``late`` record counts as missed.
+    A scheduled school day with no ``present`` record counts as missed.
     ``nan`` when the window has no scheduled school days.
     """
     start, end = _as_date(start), _as_date(end)

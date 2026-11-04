@@ -14,8 +14,6 @@ const LOW_RATE = 0.85;
 const CODE = { present: 'P', absent: 'A', upcoming: '' };
 const STATUS_TEXT = { present: 'Present', absent: 'Absent', upcoming: 'Not yet taken' };
 
-// The register is present or absent only; older 'late' marks count as present.
-const asPresentOrAbsent = (r) => (r.status === 'late' ? { ...r, status: 'present' } : r);
 
 function parseISO(iso) {
   const [y, m, d] = iso.split('-').map(Number);
@@ -87,7 +85,7 @@ export default function Heatmap({ classGroupId, className, onOpenDay }) {
       ]);
       if (cancelled) return;
       setStudents(roll);
-      setRecords(history.filter((r) => r.date <= period.end).map(asPresentOrAbsent));
+      setRecords(history.filter((r) => r.date <= period.end));
       setLoading(false);
     })();
     return () => { cancelled = true; };

@@ -55,6 +55,17 @@ export function migrate(db) {
   // Left over from the simulated fingerprint gate, which has been removed.
   db.exec(`DROP TABLE IF EXISTS fingerprint_challenges`);
 
+  // Attendance is present or absent only. 'late' marks from older builds
+  // already counted as attended, so they become present. (An older table's
+  // CHECK still allows 'late'; new tables do not, and the code rejects it.)
+  if (hasColumn('attendance_events', 'status')) {
+    db.exec(`UPDATE attendance_events SET status = 'present' WHERE status = 'late'`);
+  }
+  if (hasColumn('attendance_overrides', 'to_status')) {
+    db.exec(`UPDATE attendance_overrides SET to_status = 'present' WHERE to_status = 'late'`);
+    db.exec(`UPDATE attendance_overrides SET from_status = 'present' WHERE from_status = 'late'`);
+  }
+
   // School application details. Added after the rebuild above, which only
   // copies the columns it knows about.
   const applicationColumns = {

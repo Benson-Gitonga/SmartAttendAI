@@ -196,6 +196,9 @@ export function AuthProvider({ children }) {
 
   const signOut = useCallback(async () => {
     await clearSession();
+    // Drop the app page (#/dashboard and so on) from the address, so signing
+    // out lands on the front page rather than straight on sign-in.
+    if (window.location.hash) window.history.replaceState(null, '', window.location.pathname + window.location.search);
     setSession(null);
     setPinState(NO_PIN);
     setStatus(AUTH_STATUS.SIGNED_OUT);

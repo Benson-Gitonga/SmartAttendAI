@@ -84,7 +84,7 @@ describe('addAttendanceEvent - writing a record', () => {
 
   it('defaults captureMethod to "manual" and preserves an explicit one', async () => {
     await addAttendanceEvent({ studentId: 'stu-1', date: DATE, status: 'present' });
-    await addAttendanceEvent({ studentId: 'stu-2', date: DATE, status: 'late', captureMethod: 'rfid' });
+    await addAttendanceEvent({ studentId: 'stu-2', date: DATE, status: 'absent', captureMethod: 'rfid' });
 
     const a = await db.attendanceEvents.where('studentId').equals('stu-1').first();
     const b = await db.attendanceEvents.where('studentId').equals('stu-2').first();
@@ -115,7 +115,7 @@ describe('duplicate prevention', () => {
   it('rolls the whole transaction back so the duplicate leaves no queue or audit trace', async () => {
     await addAttendanceEvent({ studentId: 'stu-1', date: DATE, status: 'present' });
 
-    await addAttendanceEvent({ studentId: 'stu-1', date: DATE, status: 'late' }).catch(() => {});
+    await addAttendanceEvent({ studentId: 'stu-1', date: DATE, status: 'absent' }).catch(() => {});
 
     expect(await db.attendanceEvents.count()).toBe(1);
     expect(await countPendingSync()).toBe(1);
@@ -154,7 +154,7 @@ describe('addAttendanceBatch - whole roll call', () => {
     const outcome = await addAttendanceBatch([
       { studentId: 'stu-1', date: DATE, status: 'present' },
       { studentId: 'stu-2', date: DATE, status: 'absent' }, // already recorded
-      { studentId: 'stu-3', date: DATE, status: 'late' }
+      { studentId: 'stu-3', date: DATE, status: 'absent' }
     ]);
 
     expect(outcome.saved.map((r) => r.studentId)).toEqual(['stu-1', 'stu-3']);
@@ -167,7 +167,7 @@ describe('addAttendanceBatch - whole roll call', () => {
   it('re-submitting an identical roll call saves nothing and flags all as duplicates', async () => {
     const roll = [
       { studentId: 'stu-1', date: DATE, status: 'present' },
-      { studentId: 'stu-2', date: DATE, status: 'late' }
+      { studentId: 'stu-2', date: DATE, status: 'absent' }
     ];
     await addAttendanceBatch(roll);
     const second = await addAttendanceBatch(roll);
@@ -204,20 +204,24 @@ describe('setAttendance - editing during the day', () => {
     await drainQueue(); // pretend it synced
 
     const { record, changed, created } = await setAttendance({
-      studentId: 'stu-1', date: DATE, status: 'late', recordedBy: 'teacher.a',
+      studentId: 'stu-1', date: DATE, status: 'present', recordedBy: 'teacher.a',
     });
 
     expect({ changed, created }).toEqual({ changed: true, created: false });
     expect(record.eventId).toBe(original.eventId);
-    expect(record.status).toBe('late');
+    expect(record.status).toBe('present');
 
     const stored = await db.attendanceEvents.where('eventId').equals(original.eventId).first();
-    expect(stored.status).toBe('late');
+    expect(stored.status).toBe('present');
     expect(stored.syncedAt).toBeNull();
     expect(await countPendingSync()).toBe(1);
 
     const queued = await db.syncQueue.where('eventId').equals(original.eventId).first();
     expect(queued).toMatchObject({ status: 'pending', attemptCount: 0 });
+  });
+
+  it('refuses "late": attendance is present or absent only', async () => {
+    await expect(setAttendance({ studentId: 'stu-1', date: DATE, status: 'late' })).rejects.toThrow(/present, absent/);
   });
 
   it('is a no-op when the status is unchanged', async () => {
@@ -240,7 +244,7 @@ describe('setAttendance - editing during the day', () => {
     const out = await setAttendanceBatch([
       { studentId: 'stu-1', date: DATE, status: 'present' }, // unchanged
       { studentId: 'stu-2', date: DATE, status: 'absent' },  // created
-      { studentId: 'stu-1', date: DATE, status: 'late' },    // stu-1 again -> updated
+      { studentId: 'stu-1', date: DATE, status: 'absent' },  // stu-1 again -> updated
     ]);
     expect(out.created).toEqual(['stu-2']);
     expect(out.updated).toEqual(['stu-1']);
@@ -605,11 +609,11 @@ describe("applyGateRecords - merging the gate server's records", () => {
 
   it('keeps a local edit that is still waiting to sync', async () => {
     await applyGateRecords([gateScan()]);
-    await setAttendance({ studentId: 'stu-1', date: DATE, status: 'late' }); // queued, not yet sent
+    await setAttendance({ studentId: 'stu-1', date: DATE, status: 'absent' }); // queued, not yet sent
 
     const out = await applyGateRecords([gateScan()]); // server still says present
     expect(out.updated).toEqual([]);
-    expect((await db.attendanceEvents.get({ eventId: gateScan().eventId })).status).toBe('late');
+    expect((await db.attendanceEvents.get({ eventId: gateScan().eventId })).status).toBe('absent');
   });
 
   it('the gate wins over a different offline mark, and reports it', async () => {

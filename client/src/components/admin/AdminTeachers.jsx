@@ -19,7 +19,7 @@ const lastSeen = (sqlite) => {
 
 const STATUS = {
   active: null,
-  invited: { label: 'Invited', tone: 'late' },
+  invited: { label: 'Invited', tone: 'warn' },
   disabled: { label: 'Disabled', tone: 'absent' },
 };
 

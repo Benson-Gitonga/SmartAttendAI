@@ -54,6 +54,11 @@ db.version(5).stores({
 db.version(6).stores({
   stationScans: '++id, scannedAt',
 });
+// v7: attendance is present or absent only. 'late' marks from older builds
+// already counted as attended, so they become present (the server does the same).
+db.version(7).stores({}).upgrade(async (tx) => {
+  await tx.table('attendanceEvents').where('status').equals('late').modify({ status: 'present' });
+});
 
 /** Keep a scan the station could not send; it goes up when back online. */
 export async function queueStationScan(cardUid, scannedAt = new Date().toISOString()) {
@@ -70,7 +75,7 @@ export function removeQueuedStationScan(id) {
   return db.stationScans.delete(id);
 }
 
-export const ATTENDANCE_STATUSES = ['present', 'absent', 'late'];
+export const ATTENDANCE_STATUSES = ['present', 'absent'];
 
 /**
  * Why a student was absent. Mirrors the server's attendanceSync.schema.js.
@@ -177,7 +182,7 @@ export async function addAttendanceEvent(event) {
  * yet and updating it in place if it does.
  *
  * Attendance is a living value during the school day - a student marked absent
- * at 8am who walks in at 9am should become `late`, not stay wrong until
+ * at 8am who walks in at 9am should become `present`, not stay wrong until
  * tomorrow. The record keeps its original `eventId` (the sync idempotency key -
  * its identity has not changed, only its content), gets an `updatedAt` stamp,
  * and is put back on the sync queue as `pending` so the correction propagates.

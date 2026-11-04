@@ -124,7 +124,7 @@ CREATE TABLE IF NOT EXISTS attendance_events (
   event_id       TEXT NOT NULL UNIQUE,
   student_id     TEXT NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
   date           TEXT NOT NULL,                       -- YYYY-MM-DD, school-local
-  status         TEXT NOT NULL CHECK (status IN ('present', 'absent', 'late')),
+  status         TEXT NOT NULL CHECK (status IN ('present', 'absent')),
   capture_method TEXT NOT NULL CHECK (capture_method IN ('manual', 'rfid', 'fingerprint', 'import')),
   verified       INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0, 1)),
   recorded_by    TEXT,                                -- teacher username, or NULL for hardware
@@ -190,7 +190,7 @@ CREATE TABLE IF NOT EXISTS attendance_overrides (
   student_id   TEXT NOT NULL,
   date         TEXT NOT NULL,
   from_status  TEXT,                                   -- NULL: the student had no mark
-  to_status    TEXT NOT NULL CHECK (to_status IN ('present', 'absent', 'late')),
+  to_status    TEXT NOT NULL CHECK (to_status IN ('present', 'absent')),
   from_reason  TEXT,
   to_reason    TEXT,
   reason       TEXT NOT NULL CHECK (reason IN ('teacher_absent', 'wrong_mark', 'late_arrival', 'gate_error', 'other')),

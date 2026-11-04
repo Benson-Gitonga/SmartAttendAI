@@ -1,39 +1,19 @@
 import { useState } from 'react';
 import ThemeToggle from '../ThemeToggle';
-import { BrandCheckIcon } from '../icons';
+import { BrandCheckIcon, RosterIcon, SyncIcon, BellIcon } from '../icons';
 
 const HERO_POINTS = [
-  { title: 'Register in seconds', text: 'Tick the class register, or let students scan their ID cards at the gate.' },
-  { title: 'Works without internet', text: 'Records are kept on the device and sync when the connection returns.' },
-  { title: 'Early warnings', text: 'Students at risk of persistent absence are flagged so you can follow up early.' },
+  { icon: RosterIcon, title: 'Register in seconds', text: 'Tick present or absent, or scan student ID cards.' },
+  { icon: SyncIcon, title: 'Works without internet', text: 'Saved on the phone and sent once back online.' },
+  { icon: BellIcon, title: 'Early warning', text: 'Students starting to miss school are flagged early.' },
 ];
 
-/** Picture of a register for the brand panel. Placeholder bars, not real data. */
-function RegisterIllustration() {
-  const rows = [true, true, false, true, true];
-  return (
-    <div className="pub-hero__art" aria-hidden="true">
-      <div className="pub-hero__sheet">
-        <div className="pub-hero__sheet-head">
-          <span className="pub-hero__bar pub-hero__bar--title" />
-          <span className="pub-hero__pill">Today</span>
-        </div>
-        {rows.map((present, i) => (
-          <div key={i} className="pub-hero__row">
-            <span className={`pub-hero__tick${present ? '' : ' pub-hero__tick--off'}`}>{present ? '✓' : ''}</span>
-            <span className="pub-hero__avatar" />
-            <span className="pub-hero__bar" style={{ width: `${46 + ((i * 17) % 30)}%` }} />
-            <span className={`pub-hero__status${present ? '' : ' pub-hero__status--absent'}`}>{present ? 'Present' : 'Absent'}</span>
-          </div>
-        ))}
-      </div>
-      <div className="pub-hero__card">
-        <span className="pub-hero__card-chip" />
-        <span className="pub-hero__card-lines"><span /><span /></span>
-        <span className="pub-hero__qr" />
-      </div>
-    </div>
-  );
+/** The brand link opens the front page without reloading the app. */
+function goToFrontPage(e) {
+  e.preventDefault();
+  window.history.pushState(null, '', window.location.pathname + window.location.search);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+  window.scrollTo(0, 0);
 }
 
 /**
@@ -52,13 +32,17 @@ export default function AuthLayout({ children, wide = false, aside = null }) {
             <span>SmartAttend</span>
           </div>
           <div className="pub-hero__body">
+            <p className="pub-hero__eyebrow">School attendance system</p>
             <h2 className="pub-hero__title">Daily attendance for Kenyan secondary schools</h2>
-            <RegisterIllustration />
+            <p className="pub-hero__lead">One place for teachers and the school office to keep track of who is in class.</p>
             <ul className="pub-hero__points">
-              {HERO_POINTS.map((p) => (
-                <li key={p.title}>
-                  <span className="pub-hero__check" aria-hidden="true">✓</span>
-                  <span><b>{p.title}.</b> {p.text}</span>
+              {HERO_POINTS.map(({ icon: Icon, title, text }) => (
+                <li key={title}>
+                  <span className="pub-hero__icon" aria-hidden="true"><Icon size={18} /></span>
+                  <span className="pub-hero__point">
+                    <b>{title}</b>
+                    <span>{text}</span>
+                  </span>
                 </li>
               ))}
             </ul>
@@ -68,7 +52,7 @@ export default function AuthLayout({ children, wide = false, aside = null }) {
       )}
       <div className="pub-side">
         <header className="pub-top">
-          <a className="pub-brand" href="#/">SmartAttend</a>
+          <a className="pub-brand" href="/" onClick={goToFrontPage}>SmartAttend</a>
           <ThemeToggle compact />
         </header>
         <main className={`pub-main${aside ? ' pub-main--aside' : ''}`}>

@@ -76,7 +76,7 @@ const REGISTERS = [
       { name: 'Brian Kamau', adm: '3B/002', status: 'present' },
       { name: 'Daniel Mutua', adm: '3B/003', status: 'absent' },
       { name: 'Faith Achieng', adm: '3B/004', status: 'present' },
-      { name: 'Grace Muthoni', adm: '3B/005', status: 'late' },
+      { name: 'Grace Muthoni', adm: '3B/005', status: 'absent' },
     ],
   },
   {
@@ -349,7 +349,7 @@ export default function LandingPage() {
               </div>
               <div className="lp-chart__rows">
                 <RiskRow name="Daniel Mutua" note="Absent 4 of the last 9 days" level="red" />
-                <RiskRow name="Grace Muthoni" note="Late often, missed 2 Mondays" level="amber" />
+                <RiskRow name="Grace Muthoni" note="Missed the last 2 Mondays" level="amber" />
                 <RiskRow name="Kevin Odhiambo" note="Back to normal this week" level="clear" />
               </div>
             </div>

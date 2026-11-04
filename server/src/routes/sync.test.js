@@ -116,7 +116,7 @@ describe('POST /api/sync', () => {
     db.prepare("UPDATE sync_queue SET status = 'synced', synced_at = datetime('now') WHERE event_id = ?").run(rec.eventId);
     db.prepare("UPDATE attendance_events SET synced_at = datetime('now') WHERE event_id = ?").run(rec.eventId);
 
-    const res = await postSync({ records: [{ ...rec, status: 'late' }] });
+    const res = await postSync({ records: [{ ...rec, status: 'present' }] });
     assert.equal(res.status, 200);
     const body = await res.json();
 
@@ -125,7 +125,7 @@ describe('POST /api/sync', () => {
     assert.equal(body.skippedCount, 0);
 
     const ev = db.prepare('SELECT status, synced_at FROM attendance_events WHERE event_id = ?').get(rec.eventId);
-    assert.equal(ev.status, 'late');
+    assert.equal(ev.status, 'present');
     assert.equal(ev.synced_at, null);
 
     const q = db.prepare('SELECT status FROM sync_queue WHERE event_id = ?').get(rec.eventId);
@@ -201,7 +201,7 @@ describe('POST /api/sync', () => {
     const first = record();
     await postSync({ records: [first] });
 
-    const second = record({ status: 'late' }); // same student + date, new eventId
+    const second = record({ status: 'absent' }); // same student + date, new eventId
     const res = await postSync({ records: [second] });
     const body = await res.json();
 
@@ -209,6 +209,11 @@ describe('POST /api/sync', () => {
     assert.equal(body.skipped[0].eventId, second.eventId);
     assert.equal(body.skipped[0].reason, 'duplicate_student_date');
     assert.equal(body.skipped[0].existingEventId, first.eventId);
+  });
+
+  test('rejects a "late" status: attendance is present or absent only', async () => {
+    const res = await postSync({ records: [record({ status: 'late' })] });
+    assert.equal(res.status, 400);
   });
 
   test('skips a record for a student not on this roster', async () => {

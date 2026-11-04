@@ -9,7 +9,7 @@ import MonthCalendar from './MonthCalendar';
 import Modal from './Modal';
 import { ArrowRightIcon, CheckCircleIcon, AlertTriangleIcon, InfoIcon } from './icons';
 
-const ATTENDED = new Set(['present', 'late']);
+const ATTENDED = new Set(['present']);
 const CHART_DAYS = 10;
 const AVERAGE_DAYS = 63; // the "9-week average"
 
@@ -67,7 +67,7 @@ function RateChart({ days, onOpenDay }) {
                   {d.rate == null ? 'No register taken' : (
                     <>
                       <span>{Math.round(d.rate * 100)}% attended</span>
-                      <span>{d.present + d.late} present · {d.absent} absent</span>
+                      <span>{d.present} present · {d.absent} absent</span>
                     </>
                   )}
                   <span className="ratechart__tip-hint">Click to open this day</span>
@@ -95,14 +95,14 @@ export default function Dashboard({
   const { todayStats, chartDays, termRate, dayStat, firstDate } = useMemo(() => {
     const byDate = new Map();
     for (const r of history) {
-      if (!byDate.has(r.date)) byDate.set(r.date, { present: 0, late: 0, absent: 0 });
-      byDate.get(r.date)[r.status] += 1;
+      if (!byDate.has(r.date)) byDate.set(r.date, { present: 0, absent: 0 });
+      if (r.status in byDate.get(r.date)) byDate.get(r.date)[r.status] += 1;
     }
     const stat = (date) => {
       const s = byDate.get(date);
-      if (!s) return { date, rate: null, present: 0, late: 0, absent: 0, marked: 0 };
-      const marked = s.present + s.late + s.absent;
-      return { date, ...s, marked, rate: marked ? (s.present + s.late) / marked : null };
+      if (!s) return { date, rate: null, present: 0, absent: 0, marked: 0 };
+      const marked = s.present + s.absent;
+      return { date, ...s, marked, rate: marked ? s.present / marked : null };
     };
     // history now holds every record (for the model), so cut it to nine weeks here.
     const cutoff = new Date();
@@ -168,7 +168,7 @@ export default function Dashboard({
         </button>
         <button type="button" className="kpi kpi--button kpi--link" onClick={() => onOpenRegisterFiltered?.('present')}>
           <span className="kpi__label"><span className="dot dot--present" />Present</span>
-          <span className="kpi__value">{todayStats.present + todayStats.late}</span>
+          <span className="kpi__value">{todayStats.present}</span>
           <span className="kpi__sub">today</span>
           <span className="kpi__go">See who <ArrowRightIcon size={12} /></span>
         </button>
@@ -244,7 +244,7 @@ export default function Dashboard({
           getDay={(iso) => {
             const s = dayStat(iso);
             if (!s.marked) return { tone: 'none', text: 'Not taken' };
-            const came = s.present + s.late;
+            const came = s.present;
             const tone = s.rate >= 0.9 ? 'good' : s.rate >= 0.8 ? 'fair' : 'low';
             return { tone, text: `${came} of ${s.marked}`, sub: s.absent ? `${s.absent} absent` : 'All present' };
           }}
@@ -290,7 +290,7 @@ export default function Dashboard({
                       </td>
                       <td>
                         <span className="risk-level">
-                          <span className={`dot dot--${risk.flag === 'red' ? 'absent' : 'late'}`} />
+                          <span className={`dot dot--${risk.flag === 'red' ? 'absent' : 'warn'}`} />
                           {risk.flag === 'red' ? 'High' : 'Medium'}
                         </span>
                       </td>
@@ -330,7 +330,7 @@ export default function Dashboard({
             eyebrow="Class attendance"
             title={formatLongDate(pickedDay)}
             labelId="dash-day-title"
-            badge={<span className={`modal__level${tone ? ` modal__level--${tone}` : ''}`}>{s.marked ? `${s.present + s.late} of ${s.marked} came` : 'Not taken'}</span>}
+            badge={<span className={`modal__level${tone ? ` modal__level--${tone}` : ''}`}>{s.marked ? `${s.present} of ${s.marked} came` : 'Not taken'}</span>}
             onClose={() => setPickedDay(null)}
             actions={(
               <button type="button" className="btn btn--sm" onClick={() => { setPickedDay(null); onOpenRegisterDay?.(pickedDay); }}>
@@ -343,7 +343,7 @@ export default function Dashboard({
             ) : (
               <div className="risk-note">
                 <dl className="risk-note__facts">
-                  <div><dt>At school</dt><dd>{s.present + s.late}</dd></div>
+                  <div><dt>At school</dt><dd>{s.present}</dd></div>
                   <div><dt>Absent</dt><dd>{s.absent}</dd></div>
                   <div><dt>Attendance</dt><dd>{Math.round(s.rate * 100)}%</dd></div>
                 </dl>

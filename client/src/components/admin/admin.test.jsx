@@ -36,11 +36,11 @@ beforeEach(() => {
 describe('AdminToday', () => {
   const board = {
     date: todayISO(),
-    totals: { classes: 3, done: 1, waiting: 2, students: 90, present: 50, late: 2, absent: 3, unmarked: 35, attendanceRate: 0.95 },
+    totals: { classes: 3, done: 1, waiting: 2, students: 90, present: 50, absent: 3, unmarked: 35, attendanceRate: 0.95 },
     classes: [
-      { classGroupId: 'class-1a', grade: 'Form 1', stream: 'A', teacherName: 'Mr. Kamau', teacherUserId: 'user-kamau', studentCount: 30, unmarked: 30, present: 0, late: 0, absent: 0, status: 'not_taken' },
-      { classGroupId: 'class-3b', grade: 'Form 3', stream: 'B', teacherName: 'Ms. Otieno', teacherUserId: 'user-otieno', studentCount: 30, unmarked: 0, present: 27, late: 0, absent: 3, status: 'done', lastMarkAt: new Date().toISOString() },
-      { classGroupId: 'class-4c', grade: 'Form 4', stream: 'C', teacherName: null, teacherUserId: null, studentCount: 30, unmarked: 5, present: 25, late: 0, absent: 0, status: 'gate_only' },
+      { classGroupId: 'class-1a', grade: 'Form 1', stream: 'A', teacherName: 'Mr. Kamau', teacherUserId: 'user-kamau', studentCount: 30, unmarked: 30, present: 0, absent: 0, status: 'not_taken' },
+      { classGroupId: 'class-3b', grade: 'Form 3', stream: 'B', teacherName: 'Ms. Otieno', teacherUserId: 'user-otieno', studentCount: 30, unmarked: 0, present: 27, absent: 3, status: 'done', lastMarkAt: new Date().toISOString() },
+      { classGroupId: 'class-4c', grade: 'Form 4', stream: 'C', teacherName: null, teacherUserId: null, studentCount: 30, unmarked: 5, present: 25, absent: 0, status: 'gate_only' },
     ],
   };
 

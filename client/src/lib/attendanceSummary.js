@@ -1,5 +1,5 @@
 
-export const PRESENT_STATUSES = ['present', 'late'];
+export const PRESENT_STATUSES = ['present'];
 
 /**
  * @param {Array<{studentId: string, fullName: string}>} students - the full class roll
@@ -9,7 +9,7 @@ export function summariseDay(students, records) {
   const byStudent = new Map();
   for (const r of records) byStudent.set(r.studentId, r);
 
-  const counts = { present: 0, absent: 0, late: 0, unmarked: 0 };
+  const counts = { present: 0, absent: 0, unmarked: 0 };
   const rows = students.map((student) => {
     const status = byStudent.get(student.studentId)?.status ?? null;
     if (status && status in counts) counts[status] += 1;
@@ -19,7 +19,7 @@ export function summariseDay(students, records) {
 
   const total = students.length;
   const marked = total - counts.unmarked;
-  const inSchool = counts.present + counts.late;
+  const inSchool = counts.present;
 
   return {
     total,

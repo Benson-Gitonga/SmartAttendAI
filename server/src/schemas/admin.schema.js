@@ -52,7 +52,7 @@ export const registerOverrideSchema = {
         required: ['studentId', 'status'],
         properties: {
           studentId: { type: 'string', minLength: 1, maxLength: 80 },
-          status: { enum: ['present', 'absent', 'late'] },
+          status: { enum: ['present', 'absent'] },
           absenceReason: { enum: ['fee', 'health', 'other', 'unknown'] },
         },
       },

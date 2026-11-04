@@ -74,7 +74,7 @@ function TrendChart({ points }) {
   );
 }
 
-const CAL_TEXT = { present: 'Present', late: 'Late', absent: 'Absent' };
+const CAL_TEXT = { present: 'Present', absent: 'Absent' };
 const REASON_TEXT = { fee: 'School fees', health: 'Illness or health', other: 'Other reason', unknown: 'Reason not known' };
 const METHOD_TEXT = {
   manual: 'Marked by the teacher in the register',
@@ -95,7 +95,7 @@ function fmtTime(iso) {
 function DayDialog({ iso, record, onOpenDay, onClose }) {
   const { long, weekday } = fmtDate(iso);
   const saved = fmtTime(record?.updatedAt ?? record?.createdAt);
-  const tone = record ? (record.status === 'absent' ? 'red' : record.status === 'late' ? 'amber' : 'green') : null;
+  const tone = record ? (record.status === 'absent' ? 'red' : 'green') : null;
   return (
     <Modal
       eyebrow="Attendance"
@@ -138,9 +138,9 @@ function AttendanceCalendar({ history, onOpenDay }) {
 
   const subtitle = (month) => {
     const prefix = month.slice(0, 7);
-    const n = { present: 0, late: 0, absent: 0 };
+    const n = { present: 0, absent: 0 };
     for (const r of history) if (r.date.startsWith(prefix) && r.status in n) n[r.status] += 1;
-    return `This month: ${n.present + n.late} days at school, ${n.absent} absent`;
+    return `This month: ${n.present} days at school, ${n.absent} absent`;
   };
 
   return (
@@ -159,7 +159,7 @@ function AttendanceCalendar({ history, onOpenDay }) {
         const r = records.get(iso);
         if (!r) return { tone: 'none', text: 'Not taken' };
         if (r.status === 'absent') return { tone: 'absent', text: 'Absent', sub: r.reason ? REASON_TEXT[r.reason] : null };
-        return { tone: r.status === 'late' ? 'late' : 'present', text: CAL_TEXT[r.status] };
+        return { tone: 'present', text: CAL_TEXT[r.status] };
       }}
     >
       <p className="att-cal__hint">Click a day to see its details.</p>
@@ -217,10 +217,10 @@ export default function StudentProfile({ studentId, className, onOpenDay }) {
 
   const { rows, risk, trend, insights, features, assessable } = model;
   const enrolled = student.enrolledAt ? fmtDate(student.enrolledAt).long : '-';
-  const counts = { present: 0, late: 0, absent: 0 };
+  const counts = { present: 0, absent: 0 };
   for (const r of history) if (r.status in counts) counts[r.status] += 1;
-  const recorded = counts.present + counts.late + counts.absent;
-  const overallRate = recorded ? (counts.present + counts.late) / recorded : null;
+  const recorded = counts.present + counts.absent;
+  const overallRate = recorded ? counts.present / recorded : null;
   const flagged = assessable && risk.flag !== 'green';
   const lastFollowUp = followUp.lastAt.get(studentId);
 
@@ -240,7 +240,7 @@ export default function StudentProfile({ studentId, className, onOpenDay }) {
         <div className="profile-head__status">
           {assessable ? (
             <span className={`risk-tag risk-tag--${risk.flag}`}>
-              <span className={`dot dot--${risk.flag === 'red' ? 'absent' : risk.flag === 'amber' ? 'late' : 'present'}`} />
+              <span className={`dot dot--${risk.flag === 'red' ? 'absent' : risk.flag === 'amber' ? 'warn' : 'present'}`} />
               {RISK_LABEL[risk.flag]}
             </span>
           ) : (
@@ -256,7 +256,7 @@ export default function StudentProfile({ studentId, className, onOpenDay }) {
         </div>
       </section>
 
-      <div className="stat-strip stat-strip--6">
+      <div className="stat-strip stat-strip--5">
         <div>
           <span className="stat-strip__label">Attendance (all records)</span>
           <span className="stat-strip__value">{overallRate == null ? '-' : `${Math.round(overallRate * 100)}%`}</span>
@@ -270,10 +270,6 @@ export default function StudentProfile({ studentId, className, onOpenDay }) {
         <div>
           <span className="stat-strip__label">Days present</span>
           <span className="stat-strip__value">{counts.present}</span>
-        </div>
-        <div>
-          <span className="stat-strip__label">Days late</span>
-          <span className="stat-strip__value">{counts.late}</span>
         </div>
         <div>
           <span className="stat-strip__label">Days absent</span>

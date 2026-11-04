@@ -31,7 +31,7 @@ export default function Alerts({ classGroupId, className, onOpenProfile }) {
   const tiles = [
     { id: 'all', label: 'Students flagged', value: flagged.length, sub: `of ${students.length} assessed` },
     { id: 'red', label: 'High risk', value: red, dot: 'absent', tone: 'danger' },
-    { id: 'amber', label: 'Medium risk', value: amber, dot: 'late', tone: 'warn' },
+    { id: 'amber', label: 'Medium risk', value: amber, dot: 'warn', tone: 'warn' },
     { id: 'pending', label: 'Awaiting follow-up', value: pending },
   ];
 
@@ -140,7 +140,7 @@ export default function Alerts({ classGroupId, className, onOpenProfile }) {
                       </td>
                       <td data-label="Risk level">
                         <span className="risk-level">
-                          <span className={`dot dot--${risk.flag === 'red' ? 'absent' : 'late'}`} />
+                          <span className={`dot dot--${risk.flag === 'red' ? 'absent' : 'warn'}`} />
                           {RISK_TEXT[risk.flag]}
                         </span>
                       </td>
