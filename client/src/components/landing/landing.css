@@ -399,3 +399,20 @@
   .lp-stack__card .lp-mock__list li { animation: none; }
   .lp-reveal { opacity: 1; transform: none; transition: none; }
 }
+
+/* ---------- phones: card groups swipe sideways instead of one long column.
+   Each card is a little narrower than the screen so the next one peeks in. */
+@media (max-width: 680px) {
+  .lp-features, .lp-steps, .lp-roles {
+    display: flex; gap: 12px;
+    margin: 0 -16px; padding: 4px 16px 12px;
+    overflow-x: auto; overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory; scroll-padding: 0 16px;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .lp-features::-webkit-scrollbar, .lp-steps::-webkit-scrollbar, .lp-roles::-webkit-scrollbar { display: none; }
+  .lp-features > *, .lp-steps > *, .lp-roles > * { flex: 0 0 82%; scroll-snap-align: start; }
+  /* cards off to the side never scroll into view vertically, so skip the fade-in */
+  .lp-features .lp-reveal, .lp-steps .lp-reveal, .lp-roles .lp-reveal { opacity: 1; transform: none; }
+  .lp-card, .lp-step { padding: 22px 20px; }
+}
