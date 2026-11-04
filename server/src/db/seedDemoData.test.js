@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { openDatabase } from './index.js';
-import { seed } from './seed.js';
+import { seed, removeDemoData } from './seed.js';
 import { seedDemoData, demoSchoolDays, isSchoolDay } from './seedDemoData.js';
 import { getFlaggedStudents } from './repository.js';
 
@@ -40,5 +40,20 @@ test('the flagged list has red and amber students', () => {
   seedDemoData(db); // relative to today, as the server does
   const flags = getFlaggedStudents(db, 'school-kibera-001').map((f) => f.flag);
   assert.ok(flags.includes('red') && flags.includes('amber'), flags.join(','));
+  db.close();
+});
+
+test('removeDemoData deletes the demo schools and everything under them, and leaves real schools alone', () => {
+  const db = openDatabase(':memory:');
+  seed(db);
+  seedDemoData(db, TODAY);
+  db.prepare(`INSERT INTO schools (school_id, name, county) VALUES ('school-real-001', 'Real School', 'Nairobi')`).run();
+
+  assert.equal(removeDemoData(db), 3);
+  for (const table of ['users', 'class_groups', 'students', 'rfid_cards', 'attendance_events']) {
+    assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n, 0, `${table} emptied`);
+  }
+  assert.deepEqual(db.prepare(`SELECT school_id FROM schools`).all().map((s) => s.school_id), ['school-real-001']);
+  assert.equal(removeDemoData(db), 0, 'safe to re-run');
   db.close();
 });

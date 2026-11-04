@@ -7,6 +7,10 @@ const num = (value, fallback) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
+// On/off settings: unset means the default, anything but 'false' means on.
+const flag = (value, fallback) => (value === undefined || value === '' ? fallback : value !== 'false');
+const isProduction = process.env.NODE_ENV === 'production';
+
 // OneDrive locks SQLite's WAL files, so the database lives outside the project
 // by default. Override with DB_PATH.
 const defaultDbDir =
@@ -32,9 +36,10 @@ export const config = {
   // development, where Vite serves the app.
   clientDir: process.env.CLIENT_DIST ? resolve(process.env.CLIENT_DIST) : '',
 
-  // Fill the Kibera demo school with three months of made-up attendance on
-  // start (src/db/seedDemoData.js). Never queued for the cloud.
-  demoData: process.env.DEMO_DATA !== 'false',
+  // The demo schools, accounts and roster (src/db/seed.js) plus three months
+  // of made-up attendance (src/db/seedDemoData.js), filled in on start. Off by
+  // default in production, where any demo data left over is removed on start.
+  demoData: flag(process.env.DEMO_DATA, !isProduction),
 
   // Mock RFID reader: emit a card-detected event this often.
   rfidIntervalMs: num(process.env.RFID_INTERVAL_MS, 5000),
@@ -45,8 +50,9 @@ export const config = {
   // Fraction of fingerprint challenges the mock scanner reports as a match (0..1).
   fingerprintSuccessRate: num(process.env.FINGERPRINT_SUCCESS_RATE, 0.9),
 
-  // Start the RFID simulation loop when the server boots.
-  simulationEnabled: process.env.SIMULATION_ENABLED !== 'false',
+  // Start the RFID simulation loop when the server boots. Off by default in
+  // production, where its made-up scans would land in real records.
+  simulationEnabled: flag(process.env.SIMULATION_ENABLED, !isProduction),
 
   // Gate devices send this in the X-Device-Key header.
   // Empty means POST /api/rfid/scan is open, as before.

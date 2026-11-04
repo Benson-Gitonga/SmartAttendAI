@@ -1,7 +1,7 @@
 import { Worker } from 'node:worker_threads';
 import { config } from './config.js';
 import { getDb, closeDb } from './db/index.js';
-import { seed } from './db/seed.js';
+import { seed, removeDemoData } from './db/seed.js';
 import { seedDemoData } from './db/seedDemoData.js';
 import { createApp } from './app.js';
 import { createCardHandler, describeOutcome } from './attendance/handler.js';
@@ -10,8 +10,14 @@ import { createMailer } from './mail/mailer.js';
 import { dirname, join } from 'node:path';
 
 const db = getDb();
-seed(db);
-const demo = config.demoData ? seedDemoData(db) : null;
+let demo = null;
+let demoRemoved = 0;
+if (config.demoData) {
+  seed(db);
+  demo = seedDemoData(db);
+} else {
+  demoRemoved = removeDemoData(db);
+}
 
 const cardHandler = createCardHandler({ db });
 // Without SES, the dev outbox is kept next to the database so a restart does
@@ -30,7 +36,7 @@ const server = app.listen(config.port, () => {
     brevo: `Brevo from ${config.mail.from}${config.mail.brevoApiKey ? '' : ' (no BREVO_API_KEY, nothing will send)'}`,
   };
   console.log(`  Email: ${email[config.mail.transport] ?? 'not sent, printed here and listed at /#/dev/outbox'}`);
-  console.log(`  Demo data: ${demo ? `on, ${demo.schoolDays} school days back (${demo.records} new records)` : 'off (DEMO_DATA=false)'}`);
+  console.log(`  Demo data: ${demo ? `on, ${demo.schoolDays} school days back (${demo.records} new records)` : `off${demoRemoved ? `, removed ${demoRemoved} demo schools` : ''} (DEMO_DATA)`}`);
   console.log(`  Cloud sync: ${config.sync.apiUrl && !config.sync.workerDisabled ? config.sync.apiUrl : 'off, no SYNC_API_GATEWAY_URL (records wait in sync_queue)'}`);
   console.log(`  Gate device key: ${config.deviceApiKey ? 'required (DEVICE_API_KEY)' : 'off, /api/rfid/scan is open'}`);
   console.log(`  Staff sign-in: ${config.auth.tokenSecret ? 'on' : 'on (no AUTH_TOKEN_SECRET, sign-ins end on restart)'}`);
