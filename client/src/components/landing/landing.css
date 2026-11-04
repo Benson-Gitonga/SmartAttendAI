@@ -331,7 +331,7 @@
 
 .lp-faq { display: flex; flex-direction: column; gap: 12px; }
 .lp-faq__item { background: var(--lp-surface); border: 1px solid var(--lp-line); border-radius: 16px; transition: box-shadow .2s ease; }
-.lp-faq__item.is-open { box-shadow: var(--lp-shadow); }
+.lp-faq__item[data-open] { box-shadow: var(--lp-shadow); }
 .lp-faq__q {
   display: flex; justify-content: space-between; align-items: center; gap: 16px; width: 100%;
   padding: 20px 22px; border: 0; background: none; text-align: left; cursor: pointer;
@@ -343,7 +343,7 @@
   background: var(--lp-brand); transform: translate(-50%, -50%); transition: transform .2s ease;
 }
 .lp-faq__sign::after { transform: translate(-50%, -50%) rotate(90deg); }
-.lp-faq__item.is-open .lp-faq__sign::after { transform: translate(-50%, -50%) rotate(0deg); }
+.lp-faq__item[data-open] .lp-faq__sign::after { transform: translate(-50%, -50%) rotate(0deg); }
 .lp-faq__a { padding: 0 22px 20px; color: var(--lp-ink-2); }
 
 /* ---------- final CTA + footer ---------- */

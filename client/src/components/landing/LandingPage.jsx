@@ -391,7 +391,9 @@ export default function LandingPage() {
               {FAQS.map((f, i) => {
                 const open = openFaq === i;
                 return (
-                  <div key={f.q} className={`lp-faq__item lp-reveal${open ? ' is-open' : ''}`} style={delay(i, 70)}>
+                  // Open state lives in data-open, not className: React rewriting
+                  // className would drop the is-in class useReveal adds and hide the item.
+                  <div key={f.q} className="lp-faq__item lp-reveal" data-open={open || undefined} style={delay(i, 70)}>
                     <button type="button" className="lp-faq__q" aria-expanded={open} onClick={() => setOpenFaq(open ? -1 : i)}>
                       {f.q}
                       <span className="lp-faq__sign" aria-hidden="true" />
