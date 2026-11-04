@@ -1,5 +1,6 @@
 import Modal from './Modal';
 import RiskBreakdown from './RiskBreakdown';
+import RiskExplanation from './RiskExplanation';
 
 const RISK_LABEL = { red: 'High risk', amber: 'Medium risk', green: 'On track' };
 
@@ -20,6 +21,7 @@ export default function RiskDialog({ student, rows, features, risk, reasons, onC
       )}
     >
       <RiskBreakdown name={student.fullName} rows={rows} features={features} risk={risk} reasons={reasons} />
+      <RiskExplanation student={student} rows={rows} />
     </Modal>
   );
 }

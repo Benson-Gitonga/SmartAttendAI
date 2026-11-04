@@ -4235,3 +4235,21 @@ html { background: transparent; }
 @keyframes pending-spin { to { transform: rotate(360deg); } }
 @media (max-width: 380px) { .pending-chip__label { display: none; } }
 @media (prefers-reduced-motion: reduce) { .pending-chip svg { animation: none; } }
+
+/* ---------- "Why this score": SHAP factors in the risk pop-up (RiskExplanation) */
+.risk-why { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+.risk-why .risk-note__heading { margin: 0; }
+.risk-why__note { margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--ink-soft); }
+.risk-why__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.risk-why__row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; }
+.risk-why__top { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.risk-why__label { color: var(--ink); font-weight: 600; }
+.risk-why__value { color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.risk-why__bar { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.risk-why__bar span { display: block; height: 100%; border-radius: inherit; transition: width .5s ease; }
+.risk-why__row--up .risk-why__bar span { background: var(--danger); }
+.risk-why__row--down .risk-why__bar span { background: var(--ok); }
+.risk-why__effect { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.risk-why__row--up .risk-why__effect { color: var(--danger-ink); }
+.risk-why__row--down .risk-why__effect { color: var(--ok-ink); }
+.risk-why__foot { margin: 0; font-size: 12px; color: var(--ink-muted); }
