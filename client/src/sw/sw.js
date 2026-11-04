@@ -7,7 +7,9 @@ import { registerRoute, NavigationRoute } from 'workbox-routing';
 import { NetworkFirst } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 
-import { registerSyncQueue, registerDurableQueueSync } from '../workers/syncQueue';
+// Static imports only: service workers don't allow import(), and the helper
+// Vite adds for it uses import.meta, which stops this classic script loading.
+import { registerSyncQueue, registerDurableQueueSync, backgroundSyncPlugin } from '../workers/syncQueue';
 import { drainSyncQueue } from '../services/syncService';
 
 self.skipWaiting();
@@ -41,7 +43,6 @@ self.addEventListener('message', (event) => {
   if (event.data?.type === 'REPLAY_SYNC') {
     event.waitUntil(
       (async () => {
-        const { backgroundSyncPlugin } = await import('../workers/syncQueue');
         await backgroundSyncPlugin.queue.replayRequests().catch(() => {});
         await drainSyncQueue().catch(() => {});
       })(),
