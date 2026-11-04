@@ -3262,6 +3262,9 @@ select.pub-input { padding-right: 8px; }
 .camscan__video { width: 100%; height: 100%; object-fit: cover; }
 .camscan__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: calc(12px + env(safe-area-inset-top)) 16px 12px; background: #1f2328; color: #fff; }
 .camscan__title { font-size: 15px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.camscan__tools { flex: none; display: flex; align-items: center; gap: 8px; }
+.camscan__torch { padding: 4px 10px; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 999px; background: none; color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.camscan__torch[aria-pressed="true"] { background: #fff; color: #1f2328; }
 .camscan__progress { flex: none; padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.14); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .camscan__target { position: absolute; top: 40%; left: 50%; width: min(78vw, 340px); height: min(50vw, 210px); transform: translate(-50%, -50%); border: 3px solid rgba(255, 255, 255, 0.9); border-radius: 12px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35); transition: border-color 0.12s; }
 .camscan__target--ok { border-color: #3fb950; }
