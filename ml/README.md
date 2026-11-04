@@ -109,7 +109,33 @@ python -m venv venv && ./venv/Scripts/python.exe -m pip install -r requirements.
 `server/src/data/riskModel.json`, which `riskModel.js` on each side walks
 with plain arithmetic (`scoreRiskML`), so risk scoring works fully offline.
 
+## Explanations (SHAP)
+
+The risk pop-up shows "Why this score": SHAP values worked out on the phone
+by `client/src/lib/riskExplain.js`, offline, against the student's classmates
+(or, with fewer than 3 classmates on record, the same student with full
+attendance).
+
+- **Method:** exact *interventional* TreeSHAP, as
+  `shap.TreeExplainer(model, background, feature_perturbation="interventional")`.
+  The export has no per-node training counts, which path-dependent TreeSHAP
+  needs. Each tree reads only a few features, so every coalition is evaluated
+  exactly; tests check it against brute-force Shapley over all 4,096
+  coalitions of the full model.
+- **Grouped:** the six attendance features overlap, and SHAP split credit
+  between them unpredictably (one "raises", another "lowers" for one story).
+  They are explained as one factor with exact group Shapley values, alongside
+  runs of absence, weekday bunching, fee/illness reasons and point in the term.
+- **Consistency filter:** the model has no monotonic constraints, so a factor
+  can push the wrong way (e.g. better attendance than the class but "raises
+  risk"). Such factors are left out and counted in a note; the values shown
+  are the real SHAP values. On the demo school this hid 15 factors across
+  37 students, and every amber/red student still had a reason shown.
+
 ## Not yet done
 
-- **SHAP-based explainability**: there is no per-student explanation of a
-  score yet. The export only carries the tree structure.
+- **Monotonic constraints:** retrain with `monotonic_cst` on
+  `HistGradientBoostingClassifier` (lower attendance may only raise risk, longer
+  absence runs may only raise risk). That removes the wrong-way pushes at the
+  source, so the consistency filter above stops hiding anything. Needs the
+  SCH-01/SCH-02 training data.

@@ -4253,3 +4253,4 @@ html { background: transparent; }
 .risk-why__row--up .risk-why__effect { color: var(--danger-ink); }
 .risk-why__row--down .risk-why__effect { color: var(--ok-ink); }
 .risk-why__foot { margin: 0; font-size: 12px; color: var(--ink-muted); }
+.risk-why__vs { color: var(--ink-muted); }

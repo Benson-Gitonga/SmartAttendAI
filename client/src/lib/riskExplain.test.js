@@ -1,5 +1,5 @@
 import mlModel from '../data/riskModel.json';
-import { shapValues, rawScore, explainStudentRisk, mlFeatureVector, MODEL_FEATURES } from './riskExplain';
+import { shapValues, rawScore, explainStudentRisk, mlFeatureVector, MODEL_FEATURES, FACTOR_GROUPS, MIN_IMPACT } from './riskExplain';
 
 const n = MODEL_FEATURES.length;
 const idx = Object.fromEntries(MODEL_FEATURES.map((f, i) => [f, i]));
@@ -68,6 +68,22 @@ describe('shapValues (exact interventional TreeSHAP)', () => {
     expect(base + values.reduce((a, b) => a + b, 0)).toBeCloseTo(raw, 9);
   });
 
+  it('groups: exact group Shapley values that still add up', () => {
+    const background = [steady, vec({ attendance_rate_career: 0.8 })];
+    const groups = FACTOR_GROUPS.map((g) => g.features.map((f) => idx[f]));
+    expect(groups.flat().sort((a, b) => a - b)).toEqual(MODEL_FEATURES.map((_, i) => i)); // every feature, once
+    const { values, base, raw } = shapValues(struggling, background, { groups });
+    expect(values).toHaveLength(FACTOR_GROUPS.length);
+    expect(base + values.reduce((a, b) => a + b, 0)).toBeCloseTo(raw, 9);
+  });
+
+  it('groups of one feature give the same answer as no grouping', () => {
+    const singles = MODEL_FEATURES.map((_, i) => [i]);
+    const a = shapValues(struggling, [steady]).values;
+    const b = shapValues(struggling, [steady], { groups: singles }).values;
+    a.forEach((v, i) => expect(b[i]).toBeCloseTo(v, 12));
+  });
+
   it('is fast enough for a phone: one student against 40 classmates', () => {
     const background = Array.from({ length: 40 }, (_, k) => vec({ attendance_rate_w1: 0.5 + k / 100, days_into_term: 10 + k }));
     const t0 = performance.now();
@@ -97,12 +113,23 @@ describe('explainStudentRisk', () => {
     const e = explainStudentRisk(student, classmates, asOf);
     expect(e.comparedWith).toBe('classmates');
     expect(e.peers).toBe(4);
-    expect(e.factors).toHaveLength(MODEL_FEATURES.length);
+    expect(e.factors).toHaveLength(FACTOR_GROUPS.length);
     const sizes = e.factors.map((f) => Math.abs(f.impact));
     expect(sizes).toEqual([...sizes].sort((a, b) => b - a));
-    expect(e.factors[0].impact).toBeGreaterThan(0); // the top reason pushes risk up
     expect(e.probability).toBeGreaterThan(e.baseProbability);
-    expect(e.factors.every((f) => typeof f.label === 'string' && typeof f.value === 'string')).toBe(true);
+
+    // Worse attendance than the class, so attendance is shown raising risk.
+    const attendance = e.shown.find((f) => f.key === 'attendance');
+    expect(attendance).toBeDefined();
+    expect(attendance.impact).toBeGreaterThan(0);
+    expect(parseInt(attendance.student, 10)).toBeLessThan(parseInt(attendance.comparison, 10));
+  });
+
+  it('only shows factors that agree with the data, and counts the rest', () => {
+    const e = explainStudentRisk(history(2), [history(0), history(10), history(8), history(12)], asOf);
+    expect(e.shown.every((f) => f.consistent && Math.abs(f.impact) >= MIN_IMPACT)).toBe(true);
+    const big = e.factors.filter((f) => Math.abs(f.impact) >= MIN_IMPACT);
+    expect(e.hidden).toBe(big.filter((f) => !f.consistent).length);
   });
 
   it('falls back to full attendance when there are too few classmates', () => {

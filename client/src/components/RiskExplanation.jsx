@@ -5,8 +5,6 @@ import { toISO } from '../lib/riskModel';
 
 // The model's career rate needs every record.
 const ALL_HISTORY = '0000-01-01';
-/** Factors smaller than this (log-odds) are not worth showing. */
-const MIN_IMPACT = 0.02;
 const MAX_FACTORS = 4;
 
 /**
@@ -48,11 +46,13 @@ export default function RiskExplanation({ student, rows }) {
   if (state.status === 'error') return null;
 
   const { explanation: e } = state;
-  const shown = e.factors.filter((f) => Math.abs(f.impact) >= MIN_IMPACT).slice(0, MAX_FACTORS);
-  const largest = Math.max(...shown.map((f) => Math.abs(f.impact)), MIN_IMPACT);
-  const reference = e.comparedWith === 'classmates'
+  const shown = e.shown.slice(0, MAX_FACTORS);
+  const largest = Math.max(...shown.map((f) => Math.abs(f.impact)), 1e-9);
+  const classmates = e.comparedWith === 'classmates';
+  const reference = classmates
     ? `Compared with ${e.peers} classmate${e.peers === 1 ? '' : 's'} (average risk ${Math.round(e.baseProbability * 100)}%)`
     : 'Compared with coming to school every day';
+  const otherLabel = classmates ? 'class' : 'every day';
 
   return (
     <section className="risk-why">
@@ -67,10 +67,13 @@ export default function RiskExplanation({ student, rows }) {
           {shown.map((f) => {
             const up = f.impact > 0;
             return (
-              <li key={f.feature} className={`risk-why__row risk-why__row--${up ? 'up' : 'down'}`}>
+              <li key={f.key} className={`risk-why__row risk-why__row--${up ? 'up' : 'down'}`}>
                 <div className="risk-why__top">
                   <span className="risk-why__label">{f.label}</span>
-                  <span className="risk-why__value">{f.value}</span>
+                  <span className="risk-why__value">
+                    {f.student}
+                    {f.comparison && <span className="risk-why__vs"> · {otherLabel} {f.comparison}</span>}
+                  </span>
                 </div>
                 <div className="risk-why__bar" aria-hidden="true">
                   <span style={{ width: `${Math.max(6, (Math.abs(f.impact) / largest) * 100)}%` }} />
@@ -83,6 +86,7 @@ export default function RiskExplanation({ student, rows }) {
       )}
       <p className="risk-why__foot">
         Worked out with SHAP, which splits the model&apos;s score into each factor&apos;s share.
+        {e.hidden > 0 && ` ${e.hidden} effect${e.hidden === 1 ? '' : 's'} that went against the attendance figures ${e.hidden === 1 ? 'is' : 'are'} not shown.`}
       </p>
     </section>
   );

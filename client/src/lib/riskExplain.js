@@ -25,44 +25,6 @@ import { computeFeatures, computeMlExtraFeatures, toISO } from './riskModel';
 
 export const MODEL_FEATURES = mlModel.features;
 
-/** Plain-language names for the teacher. */
-export const FEATURE_LABELS = {
-  attendance_rate_w1: 'Attendance in the last 2 weeks',
-  attendance_rate_w2: 'Attendance 2 to 4 weeks ago',
-  attendance_rate_w3: 'Attendance 4 to 6 weeks ago',
-  longest_absence_streak: 'Longest run of absent days',
-  absence_episode_count: 'Separate absences',
-  dow_concentration: 'Absences bunched on one weekday',
-  attendance_trend: 'Recent change in attendance',
-  fee_absence_rate: 'Absences for school fees',
-  health_absence_rate: 'Absences for illness',
-  attendance_rate_term: 'Attendance this term',
-  days_into_term: 'How far into the term',
-  attendance_rate_career: 'Attendance since joining',
-};
-
-const pct = (v) => `${Math.round(v * 100)}%`;
-const FORMAT = {
-  attendance_rate_w1: pct,
-  attendance_rate_w2: pct,
-  attendance_rate_w3: pct,
-  attendance_rate_term: pct,
-  attendance_rate_career: pct,
-  fee_absence_rate: pct,
-  health_absence_rate: pct,
-  dow_concentration: pct,
-  attendance_trend: (v) => `${v > 0 ? '+' : ''}${Math.round(v * 100)} points`,
-  longest_absence_streak: (v) => `${v} day${v === 1 ? '' : 's'}`,
-  absence_episode_count: (v) => `${v}`,
-  days_into_term: (v) => `day ${v}`,
-};
-
-/** A feature's value, formatted for the teacher. */
-export function formatFeature(name, value) {
-  if (value == null || Number.isNaN(value)) return 'no data';
-  return (FORMAT[name] ?? String)(value);
-}
-
 /** The model's 12 inputs for one student, in model order (null when unknown). */
 export function mlFeatureVector(history, asOf = toISO(new Date())) {
   const all = { ...computeFeatures(history, asOf), ...computeMlExtraFeatures(history, asOf) };
@@ -119,11 +81,22 @@ const popcount = (m) => { let c = 0; while (m) { m &= m - 1; c += 1; } return c;
 
 /**
  * Add one tree's exact interventional Shapley values for x against a single
- * background row r into `phi`.
+ * background row r into `phi`. The players are groups of features
+ * (`groupOf[feature]` = group index): switching a group to the student's
+ * values switches all of its features together.
  */
-function addTreeShap(tree, feats, x, r, phi, scratch) {
-  // Features where x and r agree cannot change this tree's output.
-  const players = feats.filter((f) => x[f] !== r[f]);
+function addTreeShap(tree, feats, groupOf, x, r, phi, scratch) {
+  // Groups this tree reads where the student and the background row differ;
+  // any other group cannot change this tree's output.
+  const players = [];
+  const members = [];
+  for (const f of feats) {
+    if (x[f] === r[f]) continue;
+    const g = groupOf[f];
+    let j = players.indexOf(g);
+    if (j < 0) { j = players.length; players.push(g); members.push([]); }
+    members[j].push(f);
+  }
   const n = players.length;
   if (n === 0) return;
 
@@ -131,7 +104,10 @@ function addTreeShap(tree, feats, x, r, phi, scratch) {
   const size = 1 << n;
   const v = new Float64Array(size);
   for (let mask = 0; mask < size; mask += 1) {
-    for (let j = 0; j < n; j += 1) scratch[players[j]] = mask & (1 << j) ? x[players[j]] : r[players[j]];
+    for (let j = 0; j < n; j += 1) {
+      const fromStudent = mask & (1 << j);
+      for (const f of members[j]) scratch[f] = fromStudent ? x[f] : r[f];
+    }
     v[mask] = walk(tree, scratch);
   }
 
@@ -152,26 +128,35 @@ function addTreeShap(tree, feats, x, r, phi, scratch) {
  *
  * @param {Array<number|null>} x  the student's features, in model order
  * @param {Array<Array<number|null>>} background  reference rows, same order
+ * @param {{ groups?: number[][], model?: object }} [opts]
+ *   groups: lists of feature indices explained together as one player
+ *   (exact group Shapley values). Default: every feature on its own.
  * @returns {{ values: number[], base: number, raw: number,
  *             probability: number, baseProbability: number }}
- *   values[i] is feature i's contribution in log-odds; base + sum = raw.
+ *   values[i] is player i's contribution in log-odds; base + sum = raw.
  */
-export function shapValues(x, background, model = mlModel) {
+export function shapValues(x, background, { groups, model = mlModel } = {}) {
   if (!background.length) throw new Error('shapValues: background is empty');
   const nFeatures = model.features.length;
+  const playerGroups = groups ?? model.features.map((_, i) => [i]);
+  const groupOf = new Array(nFeatures).fill(-1);
+  playerGroups.forEach((g, gi) => g.forEach((f) => { groupOf[f] = gi; }));
+  if (groupOf.includes(-1)) throw new Error('shapValues: every feature must be in a group');
+
   const feats = treeFeatures(model);
-  const values = new Array(nFeatures).fill(0);
+  const nPlayers = playerGroups.length;
+  const values = new Array(nPlayers).fill(0);
   const scratch = new Array(nFeatures);
-  const phi = new Array(nFeatures);
+  const phi = new Array(nPlayers);
 
   let base = 0;
   for (const r of background) {
     phi.fill(0);
-    model.trees.forEach((tree, t) => addTreeShap(tree, feats[t], x, r, phi, scratch));
-    for (let f = 0; f < nFeatures; f += 1) values[f] += phi[f];
+    model.trees.forEach((tree, t) => addTreeShap(tree, feats[t], groupOf, x, r, phi, scratch));
+    for (let p = 0; p < nPlayers; p += 1) values[p] += phi[p];
     base += rawScore(r, model);
   }
-  for (let f = 0; f < nFeatures; f += 1) values[f] /= background.length;
+  for (let p = 0; p < nPlayers; p += 1) values[p] /= background.length;
   base /= background.length;
 
   const raw = rawScore(x, model);
@@ -191,14 +176,82 @@ function fullAttendanceReference(history, asOf) {
 }
 
 /**
- * Why the model scored this student as it did, for the profile.
+ * What a teacher sees as one factor. Related features are explained together
+ * (exact group Shapley values): the attendance rates all measure the same
+ * thing, and SHAP splits credit between overlapping features unpredictably,
+ * so shown one by one they could point opposite ways for one story.
+ *
+ * `worseWhen` says which way a factor should push risk: 'lower' (a lower
+ * value than the comparison should raise risk) or 'higher'. `measure` is the
+ * number compared for that check and shown to the teacher.
+ */
+const avg = (vals) => {
+  const v = vals.filter((z) => z != null && !Number.isNaN(z));
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+};
+export const FACTOR_GROUPS = [
+  {
+    key: 'attendance',
+    label: 'Attendance',
+    features: ['attendance_rate_w1', 'attendance_rate_w2', 'attendance_rate_w3', 'attendance_trend', 'attendance_rate_term', 'attendance_rate_career'],
+    worseWhen: 'lower',
+    // Recent weeks, this term and since joining, weighted equally.
+    measure: (f) => avg([avg([f.attendance_rate_w1, f.attendance_rate_w2, f.attendance_rate_w3]), f.attendance_rate_term, f.attendance_rate_career]),
+    format: (v) => `${Math.round(v * 100)}%`,
+  },
+  {
+    key: 'absences',
+    label: 'Runs of absence',
+    features: ['longest_absence_streak', 'absence_episode_count'],
+    worseWhen: 'higher',
+    measure: (f) => f.longest_absence_streak,
+    format: (v) => `${Math.round(v * 10) / 10} day${Math.round(v) === 1 ? '' : 's'} in a row`,
+  },
+  {
+    key: 'weekday',
+    label: 'Absences on the same weekday',
+    features: ['dow_concentration'],
+    worseWhen: 'higher',
+    measure: (f) => f.dow_concentration,
+    format: (v) => `${Math.round(v * 100)}% on one day`,
+  },
+  {
+    key: 'reasons',
+    label: 'Absences for fees or illness',
+    features: ['fee_absence_rate', 'health_absence_rate'],
+    worseWhen: 'higher',
+    measure: (f) => avg([f.fee_absence_rate, f.health_absence_rate]),
+    format: (v) => `${Math.round(v * 100)}%`,
+  },
+  {
+    key: 'timing',
+    label: 'Point in the term',
+    features: ['days_into_term'],
+    worseWhen: null, // context, not good or bad
+    measure: (f) => f.days_into_term,
+    format: (v) => `day ${Math.round(v)}`,
+  },
+];
+
+/** Factors smaller than this (log-odds) are not worth showing. */
+export const MIN_IMPACT = 0.02;
+
+const named = (vector) => Object.fromEntries(MODEL_FEATURES.map((f, i) => [f, vector[i]]));
+
+/**
+ * Why the model scored this student as it did, for the risk pop-up.
  *
  * @param {Array<{date: string, status: string}>} history the student's records
  * @param {Array<Array<{date: string, status: string}>>} peerHistories classmates' records
  * @returns {{ comparedWith: 'classmates'|'full_attendance', peers: number,
  *             probability: number, baseProbability: number,
- *             factors: Array<{ feature: string, label: string, value: string, impact: number }> }}
- *   factors are sorted by size of impact (log-odds); positive raises risk.
+ *             factors: Array<Factor>, shown: Array<Factor>, hidden: number }}
+ *   Factor = { key, label, impact, student, comparison, consistent }:
+ *   impact is the group's SHAP value in log-odds (positive raises risk);
+ *   student / comparison are formatted values; consistent is false when the
+ *   model's push goes against the data (e.g. better attendance than the class
+ *   but "raises risk"), which a model without monotonic constraints can do.
+ *   `shown` are the consistent factors big enough to matter, largest first.
  */
 export function explainStudentRisk(history, peerHistories = [], asOf = toISO(new Date())) {
   const x = mlFeatureVector(history, asOf);
@@ -209,22 +262,40 @@ export function explainStudentRisk(history, peerHistories = [], asOf = toISO(new
 
   const useClass = peers.length >= MIN_PEERS;
   const background = useClass ? peers : [fullAttendanceReference(history, asOf)];
-  const shap = shapValues(x, background);
+  const idx = Object.fromEntries(MODEL_FEATURES.map((f, i) => [f, i]));
+  const shap = shapValues(x, background, { groups: FACTOR_GROUPS.map((g) => g.features.map((f) => idx[f])) });
 
-  const factors = MODEL_FEATURES
-    .map((feature, i) => ({
-      feature,
-      label: FEATURE_LABELS[feature] ?? feature,
-      value: formatFeature(feature, x[i]),
-      impact: shap.values[i],
-    }))
-    .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
+  const xs = named(x);
+  const bs = background.map(named);
+  const factors = FACTOR_GROUPS.map((g, gi) => {
+    const sv = g.measure(xs);
+    const cv = avg(bs.map((b) => g.measure(b)));
+    const impact = shap.values[gi];
+    let consistent = true;
+    if (g.worseWhen && sv != null && cv != null) {
+      const diff = sv - cv;
+      if (Math.abs(diff) < 1e-9) consistent = false; // same as the class: nothing to explain
+      else consistent = (g.worseWhen === 'lower' ? diff < 0 : diff > 0) === impact > 0;
+    }
+    return {
+      key: g.key,
+      label: g.label,
+      impact,
+      student: sv == null ? 'no data' : g.format(sv),
+      comparison: cv == null ? null : g.format(cv),
+      consistent,
+    };
+  }).sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
 
+  const big = factors.filter((f) => Math.abs(f.impact) >= MIN_IMPACT);
+  const shown = big.filter((f) => f.consistent);
   return {
     comparedWith: useClass ? 'classmates' : 'full_attendance',
     peers: useClass ? peers.length : 0,
     probability: shap.probability,
     baseProbability: shap.baseProbability,
     factors,
+    shown,
+    hidden: big.length - shown.length,
   };
 }
