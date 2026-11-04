@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -68,7 +69,10 @@ CACHE_VERSION = 3                 # bump to invalidate ml/data/supervised_*.pkl
 
 ML_DIR = _HERE.parent
 REPO_ROOT = ML_DIR.parent
-DATA_DIR = ML_DIR / "data"
+# The cached tables hold per-student rows built from real school records.
+# SMARTATTEND_ML_DATA moves them out of the project folder, e.g. when the
+# project sits in a synced (OneDrive) folder.
+DATA_DIR = Path(os.environ["SMARTATTEND_ML_DATA"]) if os.environ.get("SMARTATTEND_ML_DATA") else ML_DIR / "data"
 MODELS_DIR = ML_DIR / "models"
 RESULTS_DIR = ML_DIR / "results"
 

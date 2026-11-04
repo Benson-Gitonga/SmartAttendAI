@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { stationScan } from '../services/adminService';
-import { queueStationScan, getQueuedStationScans, removeQueuedStationScan } from '../db/database';
+import { queueStationScan, getQueuedStationScans, removeQueuedStationScan, GATE_CAPTURE_METHODS } from '../db/database';
 import CameraScanner from './CameraScanner';
 import { useWakeLock } from '../hooks/useWakeLock';
 import { signalScan } from '../lib/scanSignal';
@@ -12,47 +12,41 @@ const RETRY_MS = 20_000;
 
 const RESULT = {
   recorded: { tone: 'ok', title: (r) => r.student.fullName, text: (r) => `${r.student.className} · marked present ${timeOf(r.mark.createdAt)}` },
-  duplicate: { tone: 'info', title: (r) => r.student.fullName, text: (r) => `Already marked ${r.mark.status} today at ${timeOf(r.mark.createdAt)}` },
+  duplicate: {
+    tone: 'info',
+    title: (r) => r.student.fullName,
+    text: (r) => (GATE_CAPTURE_METHODS.includes(r.mark.captureMethod)
+      ? `Already scanned today at ${timeOf(r.mark.createdAt)}`
+      : `Already marked ${r.mark.status} today at ${timeOf(r.mark.createdAt)}`),
+  },
+  'queued-duplicate': { tone: 'info', title: () => 'Already scanned', text: (r) => `Card ${r.cardUid} was scanned at ${timeOf(r.scannedAt)} and is waiting to send.` },
   queued: { tone: 'info', title: () => 'Saved on this device', text: (r) => `Card ${r.cardUid}. No connection: it is sent when you are back online.` },
   'unknown-card': { tone: 'error', title: () => 'Card not recognised', text: (r) => `${r.cardUid} is not an active card at this school. Check the card, or give the student a new one.` },
   error: { tone: 'error', title: () => 'Scan not saved', text: (r) => r.message },
 };
 
-const LOG_LABEL = { recorded: 'Present', duplicate: 'Already marked', queued: 'Waiting to send', 'unknown-card': 'Unknown card' };
-const LOG_TONE = { recorded: 'active', duplicate: 'inactive', queued: 'pending' };
+const LOG_LABEL = { recorded: 'Present', duplicate: 'Already scanned', 'queued-duplicate': 'Already scanned', queued: 'Waiting to send', 'unknown-card': 'Unknown card' };
+const LOG_TONE = { recorded: 'active', duplicate: 'inactive', 'queued-duplicate': 'inactive', queued: 'pending' };
 
 const isOffline = (err) => err?.code === 'NETWORK';
 
 /**
  * A scan station for the gate or the office, run by the school admin or a
- * teacher on gate duty: a USB barcode scanner types the card number and Enter
- * into the box (it works like a keyboard), or the device camera reads the
- * card's QR code. Each card marks the student present for the day.
+ * teacher on gate duty: the device camera reads each student's ID card, and
+ * each card marks the student present for the day.
  *
  * Without a connection, scans are kept on this device with the time they
  * happened and sent once it is back online, so a dropped connection at the
  * gate loses nothing.
  */
 export default function ScanStation() {
-  const inputRef = useRef(null);
   const sendingRef = useRef(false);
-  const [code, setCode] = useState('');
-  const [busy, setBusy] = useState(false);
   const [latest, setLatest] = useState(null);
   const [log, setLog] = useState([]);
   const [camera, setCamera] = useState(false);
   const [waiting, setWaiting] = useState(0);
 
   useWakeLock();
-
-  // Keep the box focused so the scanner's keystrokes always land in it.
-  useEffect(() => {
-    if (camera) return undefined;
-    const refocus = () => { if (document.activeElement?.tagName !== 'SELECT') inputRef.current?.focus(); };
-    refocus();
-    const timer = setInterval(refocus, 1500);
-    return () => clearInterval(timer);
-  }, [camera]);
 
   const addToLog = useCallback((result, key) => {
     const entry = { ...result, at: result.scannedAt ?? new Date().toISOString(), key };
@@ -102,24 +96,30 @@ export default function ScanStation() {
   async function scan(raw) {
     const cardUid = raw.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (!cardUid) return;
-    setBusy(true);
     let result;
     let key = `${Date.now()}-${cardUid}`;
     try {
       result = await stationScan(cardUid);
     } catch (err) {
       if (isOffline(err)) {
-        const kept = await queueStationScan(cardUid);
-        key = `queued-${kept.id}`;
-        result = { outcome: 'queued', cardUid, scannedAt: kept.scannedAt };
-        await countWaiting();
+        // Offline the server cannot say "already scanned", so check the scans kept on this device.
+        const today = new Date().toDateString();
+        const earlier = (await getQueuedStationScans())
+          .find((q) => q.cardUid === cardUid && new Date(q.scannedAt).toDateString() === today);
+        if (earlier) {
+          result = { outcome: 'queued-duplicate', cardUid, scannedAt: earlier.scannedAt };
+        } else {
+          const kept = await queueStationScan(cardUid);
+          key = `queued-${kept.id}`;
+          result = { outcome: 'queued', cardUid, scannedAt: kept.scannedAt };
+          await countWaiting();
+        }
       } else {
         result = { outcome: 'error', cardUid, message: err.message ?? 'Could not save the scan' };
       }
     }
     setLatest(addToLog(result, key));
     signalScan(RESULT[result.outcome].tone);
-    setBusy(false);
   }
 
   const counts = log.reduce((c, e) => ({ ...c, [e.outcome]: (c[e.outcome] ?? 0) + 1 }), {});
@@ -148,24 +148,6 @@ export default function ScanStation() {
       )}
 
       <section className="sys-panel scanst">
-        <form
-          className="scanst__form"
-          onSubmit={(e) => { e.preventDefault(); const v = code; setCode(''); scan(v); }}
-        >
-          <label className="sys-field__label" htmlFor="scan-input">Card number</label>
-          <input
-            id="scan-input"
-            ref={inputRef}
-            className="sys-input scanst__input"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="Scan a card, or type its number and press Enter"
-            disabled={busy}
-          />
-        </form>
-
         <div className={`scanst__result${shown ? ` scanst__result--${shown.tone}` : ''}`} role="status" aria-live="polite">
           {shown ? (
             <>
@@ -176,7 +158,7 @@ export default function ScanStation() {
               </div>
             </>
           ) : (
-            <div className="scanst__text">Waiting for the first card…</div>
+            <div className="scanst__text">Tap “Scan with camera” and hold a student’s card in the frame.</div>
           )}
         </div>
       </section>
@@ -186,7 +168,7 @@ export default function ScanStation() {
           <div className="sys-toolbar">
             <span className="sys-toolbar__title">This session</span>
             <span className="sys-toolbar__count">
-              {counts.recorded ?? 0} marked present · {counts.duplicate ?? 0} already marked
+              {counts.recorded ?? 0} marked present · {(counts.duplicate ?? 0) + (counts['queued-duplicate'] ?? 0)} already scanned
               {counts.queued ? ` · ${counts.queued} waiting to send` : ''}
               {' · '}{(counts['unknown-card'] ?? 0) + (counts.error ?? 0)} problems
             </span>

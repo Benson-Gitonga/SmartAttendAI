@@ -10,11 +10,12 @@ jest.mock('../auth/AuthContext', () => ({
 // Stands in for the camera: each button "reads" one card.
 jest.mock('./CameraScanner', () => ({
   __esModule: true,
-  default: function FakeScanner({ onCode }) {
+  default: function FakeScanner({ onCode, feedback }) {
     return (
       <div>
         <button type="button" onClick={() => onCode('c-001')}>read card C001</button>
         <button type="button" onClick={() => onCode('ZZZZ')}>read unknown card</button>
+        {feedback && <p data-testid="scan-feedback">{feedback.title}: {feedback.text}</p>}
       </div>
     );
   },
@@ -128,6 +129,21 @@ describe('AttendanceForm with the school gate', () => {
 });
 
 describe('AttendanceForm scanning cards on the phone, offline', () => {
+  it('says a card was already scanned when it is scanned again', async () => {
+    globalThis.fetch = jest.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    const user = userEvent.setup();
+    render(<AttendanceForm classGroupId={CLASS} />);
+    await screen.findByText(/Offline\./);
+
+    await user.click(screen.getByRole('button', { name: 'Scan cards' }));
+    await user.click(screen.getByRole('button', { name: 'read card C001' }));
+    await waitFor(() => expect(screen.getByTestId('scan-feedback')).toHaveTextContent('Amina Wanjiru: Marked present'));
+
+    await user.click(screen.getByRole('button', { name: 'read card C001' }));
+    await waitFor(() => expect(screen.getByTestId('scan-feedback')).toHaveTextContent(/Amina Wanjiru: Already scanned at \S/));
+    expect(await db.attendanceEvents.where('[studentId+date]').equals(['stu-1', TODAY]).count()).toBe(1);
+  });
+
   it('saves each scan at once and starts everyone else absent', async () => {
     globalThis.fetch = jest.fn().mockRejectedValue(new TypeError('Failed to fetch'));
     const user = userEvent.setup();

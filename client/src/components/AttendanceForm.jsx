@@ -247,7 +247,10 @@ export default function AttendanceForm({ classGroupId, initialDate = null, initi
     }
     const id = student.studentId;
     if (isPresent(recorded[id])) {
-      answerScan('info', student.fullName, 'Already marked present');
+      const earlier = saved[id];
+      const time = timeOf(earlier.updatedAt ?? earlier.createdAt);
+      const at = time ? ` at ${time}` : '';
+      answerScan('info', student.fullName, isGateRecord(id) ? `Already scanned${at}` : `Already marked present${at}`);
       return;
     }
     try {

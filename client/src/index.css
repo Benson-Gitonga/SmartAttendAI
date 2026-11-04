@@ -3241,8 +3241,7 @@ select.pub-input { padding-right: 8px; }
 .scanst { padding: 20px; }
 .sys-banner--warn { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn-ink); }
 .scanst-wait { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 0; }
-.scanst__input { height: 48px; font-size: 20px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.06em; }
-.scanst__result { margin-top: 16px; padding: 18px 16px; border: 1px solid var(--sys-line); border-left-width: 4px; border-radius: 4px; background: var(--surface-2); }
+.scanst__result { padding: 18px 16px; border: 1px solid var(--sys-line); border-left-width: 4px; border-radius: 4px; background: var(--surface-2); }
 .scanst__result { display: flex; align-items: center; gap: 14px; min-height: 92px; }
 .scanst__result--ok { border-left-color: var(--ok); background: var(--ok-bg); }
 .scanst__result--info { border-left-color: var(--warn-strong); background: var(--warn-bg); }
@@ -3257,8 +3256,13 @@ select.pub-input { padding-right: 8px; }
 .camscan { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; background: #000; }
 .camscan__frame { position: relative; flex: 1; overflow: hidden; }
 .camscan__video { width: 100%; height: 100%; object-fit: cover; }
+/* The front camera shows a mirror image, like a selfie, so the card is easier to line up. */
+.camscan__video--mirror { transform: scaleX(-1); }
 .camscan__top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: calc(12px + env(safe-area-inset-top)) 16px 12px; background: #1f2328; color: #fff; }
 .camscan__title { font-size: 15px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.camscan__tools { flex: none; display: flex; align-items: center; gap: 8px; }
+.camscan__torch { padding: 4px 10px; border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 999px; background: none; color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.camscan__torch[aria-pressed="true"] { background: #fff; color: #1f2328; }
 .camscan__progress { flex: none; padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.14); font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .camscan__target { position: absolute; top: 40%; left: 50%; width: min(78vw, 340px); height: min(50vw, 210px); transform: translate(-50%, -50%); border: 3px solid rgba(255, 255, 255, 0.9); border-radius: 12px; box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35); transition: border-color 0.12s; }
 .camscan__target--ok { border-color: #3fb950; }
@@ -4202,8 +4206,6 @@ html { background: transparent; }
   .sys-table .sys-table__empty { flex: 1 1 100%; }
 
   /* the scan station's card box: smaller type so the hint fits */
-  .scanst__input { font-size: 16px; letter-spacing: 0.02em; }
-  .scanst__input::placeholder { font-family: var(--font); letter-spacing: 0; }
 
   /* plain tables (dashboard's "needing attention"): tighter cells so three
      columns fit a phone without a sideways scroll */
@@ -4231,6 +4233,25 @@ html { background: transparent; }
 @keyframes pending-spin { to { transform: rotate(360deg); } }
 @media (max-width: 380px) { .pending-chip__label { display: none; } }
 @media (prefers-reduced-motion: reduce) { .pending-chip svg { animation: none; } }
+
+/* ---------- "Why this score": SHAP factors in the risk pop-up (RiskExplanation) */
+.risk-why { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; padding-top: 16px; border-top: 1px solid var(--line-soft); }
+.risk-why .risk-note__heading { margin: 0; }
+.risk-why__note { margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--ink-soft); }
+.risk-why__list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.risk-why__row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; }
+.risk-why__top { grid-column: 1 / -1; display: flex; justify-content: space-between; gap: 12px; font-size: 14px; }
+.risk-why__label { color: var(--ink); font-weight: 600; }
+.risk-why__value { color: var(--ink-soft); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.risk-why__bar { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.risk-why__bar span { display: block; height: 100%; border-radius: inherit; transition: width .5s ease; }
+.risk-why__row--up .risk-why__bar span { background: var(--danger); }
+.risk-why__row--down .risk-why__bar span { background: var(--ok); }
+.risk-why__effect { font-size: 12px; font-weight: 600; white-space: nowrap; }
+.risk-why__row--up .risk-why__effect { color: var(--danger-ink); }
+.risk-why__row--down .risk-why__effect { color: var(--ok-ink); }
+.risk-why__foot { margin: 0; font-size: 12px; color: var(--ink-muted); }
+.risk-why__vs { color: var(--ink-muted); }
 
 /* ================================ panel: sign-in + application sidebar === */
 /* The brand panels beside the sign-in and school application forms: a soft,
