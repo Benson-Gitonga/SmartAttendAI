@@ -1,47 +1,43 @@
-/* Landing page (lp-*). Nothing here touches the app's styles. Its colours
-   are the sign-in panel's: neutral charcoal with a faint grid, white text, soft
-   blue labels and the app's bright blue for buttons, so the front page, the
-   sign-in panel and the school application all look like one product. It
-   stays charcoal in both the light and dark themes, like the sign-in panel. */
+/* Landing page (lp-*). Nothing here touches the app's styles. It is always
+   light, whatever theme the app is set to: off-white page, white cards, dark
+   text and one calm blue for buttons and labels. */
 
 .lp {
-  --lp-bg: #111214;
-  --lp-bg-tint: #16171a;
-  --lp-surface: #1a1c20;
-  --lp-surface-2: #222428;
-  --lp-ink: #ffffff;
-  --lp-ink-2: #c8cad0;
-  --lp-ink-3: #8b8e96;
-  --lp-line: rgba(255, 255, 255, .16);
-  --lp-line-soft: rgba(255, 255, 255, .10);
-  --lp-line-strong: rgba(255, 255, 255, .30);
-  --lp-glass: rgba(17, 18, 20, .78);
-  --lp-glass-strong: rgba(22, 23, 26, .94);
-  --lp-brand: #4a7fd6;
-  --lp-brand-2: #3d6ec2;
-  --lp-brand-ink: #9cb9ea;
-  --lp-brand-soft: rgba(74, 127, 214, .18);
-  --lp-brand-line: rgba(106, 150, 224, .36);
-  --lp-navy: #1a1c20;
-  --lp-ok: #2ea56a;
-  --lp-warn: #d49a2e;
-  --lp-mint: rgba(46, 165, 106, .14);
-  --lp-mint-ink: #63c992;
-  --lp-mint-line: rgba(46, 165, 106, .34);
-  --lp-amber: rgba(212, 154, 46, .14);
-  --lp-amber-ink: #e4b45a;
-  --lp-red: rgba(217, 83, 79, .15);
-  --lp-red-ink: #ee8f8b;
+  --lp-bg: #f7f8fa;
+  --lp-bg-tint: #eff1f4;
+  --lp-surface: #ffffff;
+  --lp-surface-2: #f3f4f6;
+  --lp-ink: #16181d;
+  --lp-ink-2: #474b54;
+  --lp-ink-3: #6b7079;
+  --lp-line: rgba(17, 24, 39, .10);
+  --lp-line-soft: rgba(17, 24, 39, .06);
+  --lp-line-strong: rgba(17, 24, 39, .18);
+  --lp-glass: rgba(247, 248, 250, .85);
+  --lp-glass-strong: rgba(255, 255, 255, .96);
+  --lp-brand: #3366cc;
+  --lp-brand-2: #2a56ad;
+  --lp-brand-ink: #2a56ad;
+  --lp-brand-soft: rgba(51, 102, 204, .08);
+  --lp-brand-line: rgba(51, 102, 204, .25);
+  --lp-navy: #1e1f22;
+  --lp-ok: #15803d;
+  --lp-warn: #b45309;
+  --lp-mint: rgba(21, 128, 61, .09);
+  --lp-mint-ink: #15803d;
+  --lp-mint-line: rgba(21, 128, 61, .25);
+  --lp-amber: rgba(180, 83, 9, .09);
+  --lp-amber-ink: #b45309;
+  --lp-red: rgba(185, 28, 28, .08);
+  --lp-red-ink: #b91c1c;
   --lp-radius: 20px;
   /* flat, like the sign-in panel: borders separate things, not glows */
   --lp-shadow: none;
   --lp-shadow-lg: none;
 
-  color-scheme: dark;
+  color-scheme: light;
   min-height: 100vh;
   background:
-    linear-gradient(rgba(255, 255, 255, .035) 1px, transparent 1px) 0 0 / 36px 36px,
-    linear-gradient(90deg, rgba(255, 255, 255, .035) 1px, transparent 1px) 0 0 / 36px 36px,
     var(--lp-bg);
   color: var(--lp-ink);
   font-family: var(--font);
@@ -71,7 +67,7 @@
 .lp-btn--ghost:hover { background: var(--lp-line-soft); }
 .lp-btn--soft { background: var(--lp-surface); color: var(--lp-ink); border-color: var(--lp-line); }
 .lp-btn--soft:hover { border-color: var(--lp-line-strong); transform: translateY(-1px); }
-.lp-btn--white { background: #fff; color: #2f5fb0; }
+.lp-btn--white { background: #fff; color: var(--lp-brand-2); }
 .lp-btn--white:hover { transform: translateY(-1px); }
 .lp-btn--outline-white { color: #fff; border-color: rgba(255, 255, 255, .45); background: transparent; }
 .lp-btn--outline-white:hover { background: rgba(255, 255, 255, .1); }
@@ -152,7 +148,7 @@
 .lp-card.lp-reveal.is-in:hover { transform: translateY(-4px); }
 
 /* ---------- hero ---------- */
-.lp-hero { position: relative; padding: 156px 0 88px; }
+.lp-hero { position: relative; padding: 112px 0 72px; }
 .lp-hero__glow { display: none; }
 .lp-hero__grid { position: relative; display: grid; grid-template-columns: 1.05fr 1fr; gap: 56px; align-items: center; }
 .lp-pill {
@@ -350,14 +346,11 @@
 .lp-cta { padding: 24px 0 104px; }
 .lp-cta__box {
   position: relative; overflow: hidden; padding: 72px 32px; border-radius: 32px; text-align: center; color: #fff;
-  background:
-    linear-gradient(rgba(255, 255, 255, .05) 1px, transparent 1px) 0 0 / 36px 36px,
-    linear-gradient(90deg, rgba(255, 255, 255, .05) 1px, transparent 1px) 0 0 / 36px 36px,
-    var(--lp-surface);
-  border: 1px solid var(--lp-brand-line);
+  background: var(--lp-brand);
+  border: 0;
 }
 .lp-cta__box h2 { font-family: var(--font-display); font-size: clamp(28px, 3.4vw, 42px); line-height: 1.15; letter-spacing: -.03em; font-weight: 800; }
-.lp-cta__box p { max-width: 560px; margin: 14px auto 0 !important; color: #b5b7bd; font-size: 17.5px; }
+.lp-cta__box p { max-width: 560px; margin: 14px auto 0 !important; color: rgba(255, 255, 255, .85); font-size: 17.5px; }
 
 .lp-footer { border-top: 1px solid var(--lp-line); padding: 40px 0 28px; color: var(--lp-ink-2); font-size: 14.5px; }
 .lp-footer__inner { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px; }
@@ -370,7 +363,7 @@
 @media (max-width: 1020px) {
   .lp-nav__links { display: none; }
   .lp-hero__grid, .lp-split { grid-template-columns: 1fr; gap: 48px; }
-  .lp-hero { padding-top: 128px; }
+  .lp-hero { padding-top: 104px; }
   .lp-hero__visual { max-width: 520px; margin: 0 auto; width: 100%; }
   .lp-features { grid-template-columns: repeat(2, 1fr); }
   .lp-facts__grid { grid-template-columns: repeat(2, 1fr); }
@@ -382,7 +375,7 @@
   .lp-hide-sm { display: none; }
   .lp-nav { top: 10px; padding: 0 10px; }
   .lp-nav__inner, .lp-nav.is-scrolled .lp-nav__inner { height: 56px; padding: 0 6px 0 18px; }
-  .lp-hero { padding-top: 112px; }
+  .lp-hero { padding-top: 88px; }
   .lp-lead { font-size: 17px; }
   .lp-hero__cta .lp-btn { flex: 1 1 100%; }
   .lp-hero__visual { padding: 28px 0 56px; }

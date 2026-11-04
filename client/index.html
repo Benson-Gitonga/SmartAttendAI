@@ -21,7 +21,7 @@
         var t = localStorage.getItem('smartattend:theme');
         if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
         var dark = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
-        if (dark) document.querySelector('meta[name=theme-color]').setAttribute('content', '#111214');
+        if (dark) document.querySelector('meta[name=theme-color]').setAttribute('content', '#1e1f22');
       } catch (e) {}
     </script>
   </head>
