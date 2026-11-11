@@ -5,6 +5,7 @@ import {
   setUpWithGoogle as serverGoogleSetUp,
   registerSchool as serverRegisterSchool,
   redeemSetupCode,
+  registerSchoolWithCode as serverRegisterSchoolWithCode,
   setPasswordWithLink,
   signOut as clearSession,
   loadStoredSession,
@@ -167,6 +168,14 @@ export function AuthProvider({ children }) {
     return next;
   }, [applySession]);
 
+  /** Set up a new school with a system admin's invite code; its admin is signed straight in. */
+  const registerSchoolWithCode = useCallback(async (code, application) => {
+    const next = await serverRegisterSchoolWithCode(code, application);
+    await clearLockout(next.username);
+    await applySession(next, { fresh: true });
+    return next;
+  }, [applySession]);
+
   /** Keep the device's copy of the school's name and status up to date. */
   const refreshSchool = useCallback(async (school) => {
     const next = await updateStoredSchool(school);
@@ -224,6 +233,7 @@ export function AuthProvider({ children }) {
     signInWithGoogle,
     setUpWithGoogle,
     registerSchool,
+    registerSchoolWithCode,
     joinWithCode,
     setPasswordFromLink,
     refreshSchool,
@@ -231,7 +241,7 @@ export function AuthProvider({ children }) {
     unlockWithPin,
     enrolPin,
   }), [
-    status, session, pinState, signIn, signInWithGoogle, setUpWithGoogle, registerSchool, joinWithCode, setPasswordFromLink, refreshSchool,
+    status, session, pinState, signIn, signInWithGoogle, setUpWithGoogle, registerSchool, registerSchoolWithCode, joinWithCode, setPasswordFromLink, refreshSchool,
     signOut, unlockWithPin, enrolPin,
   ]);
 

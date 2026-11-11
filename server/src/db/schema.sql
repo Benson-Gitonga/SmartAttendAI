@@ -84,6 +84,25 @@ CREATE TABLE IF NOT EXISTS setup_codes (
 
 CREATE INDEX IF NOT EXISTS idx_setup_codes_user ON setup_codes(user_id);
 
+-- One-time codes a system admin gives someone to set up a new school. The
+-- school they register with it is approved at once (no review queue). Same
+-- code format as setup_codes, entered on the same "I have an invite code" page.
+-- `email` and `school_name`, when set, are filled in for the person; a set
+-- email must be the one they register with.
+CREATE TABLE IF NOT EXISTS school_invites (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  code_hash   TEXT NOT NULL UNIQUE,
+  email       TEXT COLLATE NOCASE,
+  school_name TEXT,
+  note        TEXT,                                   -- for the system admin, e.g. who it was sent to
+  created_by  TEXT,                                   -- system admin username
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at  TEXT NOT NULL,                          -- ISO 8601
+  used_at     TEXT,
+  school_id   TEXT REFERENCES schools(school_id) ON DELETE SET NULL,  -- the school registered with it
+  revoked_at  TEXT
+);
+
 CREATE TABLE IF NOT EXISTS class_groups (
   class_group_id TEXT PRIMARY KEY,
   school_id      TEXT NOT NULL REFERENCES schools(school_id) ON DELETE CASCADE,

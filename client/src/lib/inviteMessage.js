@@ -36,3 +36,11 @@ export function shareLinks({ phone, email, subject, message }) {
     email: `mailto:${email ?? ''}?subject=${encodeURIComponent(subject)}&body=${text}`,
   };
 }
+
+/** The message a system admin sends someone with a code to set up a new school. */
+export function schoolInviteMessage({ schoolName, code, expiresAt, origin }) {
+  const until = new Date(expiresAt).toLocaleDateString('en-KE', { weekday: 'long', day: 'numeric', month: 'long' });
+  const link = joinLink(code, origin);
+  const forSchool = schoolName ? ` for ${schoolName}` : '';
+  return `You're invited to set up SmartAttend${forSchool}. Open this link and fill in your school's details:\n${link}\n\nOr go to ${origin ?? window.location.origin}, choose "I have an invite code" and enter ${code}.\n\nIt works once, until ${until}.`;
+}

@@ -81,3 +81,38 @@ export const approveSchool = (schoolId, opts) => review(schoolId, 'approve', opt
 export const rejectSchool = (schoolId, opts) => review(schoolId, 'reject', opts);
 export const disableSchool = (schoolId, opts) => review(schoolId, 'disable', opts);
 export const enableSchool = (schoolId, opts) => review(schoolId, 'enable', opts);
+
+// Invite codes for new schools: whoever sets up a school with one skips the review queue.
+
+/** @returns {Promise<object[]>} every invite, newest first, each with a `state` (ok, used, revoked, expired) */
+export async function getSchoolInvites() {
+  const res = await authorised('/api/system-admin/school-invites');
+  if (!res.ok) throw new SystemAdminError('FAILED', `The server responded ${res.status}.`);
+  return (await res.json()).invites ?? [];
+}
+
+/**
+ * A new invite code. The code is only ever returned here, so show it now.
+ * @param {{schoolName?: string, email?: string, note?: string}} details all optional
+ * @returns {Promise<{id:number, code:string, expiresAt:string, email:string|null, schoolName:string|null}>}
+ */
+export async function createSchoolInvite(details = {}) {
+  const body = Object.fromEntries(Object.entries(details).map(([k, v]) => [k, v?.trim?.() ?? v]).filter(([, v]) => v));
+  const res = await authorised('/api/system-admin/school-invites', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 409) throw new SystemAdminError('CONFLICT', json.error ?? 'This email already has a SmartAttend account.');
+  if (res.status === 400) throw new SystemAdminError('FAILED', 'Check the email address.');
+  if (!res.ok) throw new SystemAdminError('FAILED', `The server responded ${res.status}.`);
+  return json;
+}
+
+/** Stop an unused invite code from working. */
+export async function revokeSchoolInvite(id) {
+  const res = await authorised(`/api/system-admin/school-invites/${encodeURIComponent(id)}/revoke`, { method: 'POST' });
+  if (!res.ok) throw new SystemAdminError('FAILED', `The server responded ${res.status}.`);
+  return res.json();
+}

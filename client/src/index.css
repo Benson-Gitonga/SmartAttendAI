@@ -3114,6 +3114,8 @@ div.followup-badge {
 select.pub-input { padding-right: 8px; }
 .pub-input:focus { outline: none; border-color: var(--pub-blue); box-shadow: 0 0 0 3px rgba(51, 102, 204, 0.15); }
 .pub-input:disabled { background: var(--surface-2); }
+/* The invite code box on #/join: big, spaced, easy to read back. */
+.pub-input--code { font-size: 20px; font-weight: 600; letter-spacing: .18em; text-align: center; font-variant-numeric: tabular-nums; }
 .pub-field--error .pub-input { border-color: var(--pub-red); }
 .pub-input--code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.12em; text-transform: uppercase; }
 .pub-password { position: relative; }
@@ -4327,4 +4329,13 @@ html { background: transparent; }
 
   /* profile numbers: the odd one out fills the last row instead of sitting half-width */
   .stat-strip--5 > div:last-child { grid-column: span 2; border-bottom: 0; }
+}
+
+/* System admin: school invite codes (components/SchoolInvites.jsx). */
+.sys-invites { margin-top: 24px; }
+.sys-invites__title { margin: 0; font-size: 15px; font-weight: 600; color: var(--sys-ink, var(--ink)); }
+.sys-invite-code {
+  margin: 4px 0 16px; padding: 14px; border-radius: 10px; text-align: center;
+  background: var(--surface-2); border: 1px dashed var(--sys-line);
+  font-size: 26px; font-weight: 700; letter-spacing: .2em; font-variant-numeric: tabular-nums; user-select: all;
 }

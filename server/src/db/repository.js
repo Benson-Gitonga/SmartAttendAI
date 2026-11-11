@@ -1246,6 +1246,97 @@ export function inviteTeacher(db, { schoolId, fullName, email, phone = null, cre
   })();
 }
 
+// School invite codes: a system admin hands someone a code, and the school
+// they register with it is approved at once. See school_invites in schema.sql.
+
+const INVITE_COLUMNS = `i.id, i.email, i.school_name AS schoolName, i.note, i.created_by AS createdBy,
+  i.created_at AS createdAt, i.expires_at AS expiresAt, i.used_at AS usedAt, i.revoked_at AS revokedAt,
+  i.school_id AS schoolId, s.name AS registeredSchoolName`;
+
+function inviteState(row, now) {
+  if (row.usedAt) return 'used';
+  if (row.revokedAt) return 'revoked';
+  if (Date.parse(row.expiresAt) <= now) return 'expired';
+  return 'ok';
+}
+
+/** A new school invite code. The code itself is only returned here; the table keeps its hash. */
+export function createSchoolInvite(db, { email = null, schoolName = null, note = null, createdBy = null, ttlMs = CODE_TTL_MS, now = Date.now() } = {}) {
+  const code = generateCode();
+  const expiresAt = new Date(now + ttlMs).toISOString();
+  const info = db.prepare(
+    `INSERT INTO school_invites (code_hash, email, school_name, note, created_by, expires_at) VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(hashCode(code), email?.trim().toLowerCase() || null, schoolName?.trim() || null, note?.trim() || null, createdBy, expiresAt);
+  logAudit(db, { action: 'school_invite.created', actorId: createdBy, recordId: String(info.lastInsertRowid), detail: { email, schoolName, expiresAt } });
+  return { id: Number(info.lastInsertRowid), code, expiresAt, email: email?.trim().toLowerCase() || null, schoolName: schoolName?.trim() || null };
+}
+
+/** Every school invite, newest first, each with its `state` (ok, used, revoked, expired). */
+export function listSchoolInvites(db, now = Date.now()) {
+  return db
+    .prepare(`SELECT ${INVITE_COLUMNS} FROM school_invites i LEFT JOIN schools s ON s.school_id = i.school_id ORDER BY i.id DESC`)
+    .all()
+    .map((row) => ({ ...row, state: inviteState(row, now) }));
+}
+
+/** Stop an unused invite from working. Returns the invite, or null when there is no such invite. */
+export function revokeSchoolInvite(db, id, { actor = null, now = Date.now() } = {}) {
+  db.prepare(`UPDATE school_invites SET revoked_at = datetime('now') WHERE id = ? AND used_at IS NULL AND revoked_at IS NULL`).run(id);
+  const row = db.prepare(`SELECT ${INVITE_COLUMNS} FROM school_invites i LEFT JOIN schools s ON s.school_id = i.school_id WHERE i.id = ?`).get(id);
+  if (!row) return null;
+  logAudit(db, { action: 'school_invite.revoked', actorId: actor, recordId: String(id) });
+  return { ...row, state: inviteState(row, now) };
+}
+
+/** What a school invite code is for. `state` is 'ok', 'used', 'revoked', 'expired' or 'unknown'. */
+export function lookupSchoolInvite(db, code, now = Date.now()) {
+  if (!looksLikeCode(code)) return { state: 'unknown' };
+  const row = db
+    .prepare(`SELECT ${INVITE_COLUMNS} FROM school_invites i LEFT JOIN schools s ON s.school_id = i.school_id WHERE i.code_hash = ?`)
+    .get(hashCode(code));
+  if (!row) return { state: 'unknown' };
+  return { ...row, state: inviteState(row, now) };
+}
+
+export class InviteEmailMismatchError extends Error {
+  constructor(expected) {
+    super('this invite is for a different email address');
+    this.name = 'InviteEmailMismatchError';
+    this.expected = expected;
+  }
+}
+
+/**
+ * Register a school with a system admin's invite code. The school is approved
+ * at once and its admin account is active with the chosen password, so they
+ * can sign straight in and invite teachers. Returns { school, user }, or null
+ * when the code no longer works. Throws RegistrationConflictError like an
+ * application, and InviteEmailMismatchError when the invite names another email.
+ *
+ * @param {object} applicant  fullName, email, phone, jobTitle, passwordHash
+ */
+export function registerSchoolWithInvite(db, code, school, applicant, now = Date.now()) {
+  return db.transaction(() => {
+    const invite = lookupSchoolInvite(db, code, now);
+    if (invite.state !== 'ok') return null;
+    const email = applicant.email.trim().toLowerCase();
+    if (invite.email && invite.email.toLowerCase() !== email) throw new InviteEmailMismatchError(invite.email);
+
+    const created = registerSchoolApplication(db, school, applicant);
+    const reviewer = invite.createdBy ?? 'system admin';
+    db.prepare(
+      `UPDATE schools SET status = 'active', reviewed_by = ?, reviewed_at = datetime('now'), review_note = ? WHERE school_id = ?`
+    ).run(reviewer, 'Registered with an invite code', created.school.schoolId);
+    // An invite sent to this exact address shows they own it.
+    if (invite.email) {
+      db.prepare(`UPDATE users SET email_verified_at = datetime('now') WHERE user_id = ?`).run(created.user.userId);
+    }
+    db.prepare(`UPDATE school_invites SET used_at = datetime('now'), school_id = ? WHERE id = ?`).run(created.school.schoolId, invite.id);
+    logAudit(db, { action: 'school_invite.used', actorId: email, recordId: String(invite.id), detail: { schoolId: created.school.schoolId, invitedBy: reviewer } });
+    return { school: getSchool(db, created.school.schoolId), user: getUser(db, created.user.userId) };
+  })();
+}
+
 /** A teacher in this school (any status), or null. */
 export function getSchoolTeacher(db, schoolId, userId) {
   const user = getUser(db, userId);

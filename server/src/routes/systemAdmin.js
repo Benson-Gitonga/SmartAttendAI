@@ -7,7 +7,7 @@
 
 import { Router } from 'express';
 import { validate } from '../lib/validate.js';
-import { schoolReviewSchema } from '../schemas/schoolRegistration.schema.js';
+import { schoolReviewSchema, schoolInviteSchema } from '../schemas/schoolRegistration.schema.js';
 import {
   getAllSchools,
   getSchool,
@@ -18,6 +18,10 @@ import {
   SchoolTransitionError,
   isSchoolAdminVerified,
   logAudit,
+  createSchoolInvite,
+  listSchoolInvites,
+  revokeSchoolInvite,
+  findUserByEmail,
 } from '../db/repository.js';
 
 /**
@@ -133,6 +137,36 @@ export function createSystemAdminRouter({ db, auth, emails }) {
       }
     });
   }
+
+  // Invite codes for new schools. Whoever registers a school with one skips
+  // the review queue: the school is approved at once.
+  router.get('/school-invites', (req, res) => {
+    res.json({ invites: listSchoolInvites(db) });
+  });
+
+  router.post('/school-invites', (req, res) => {
+    const body = req.body ?? {};
+    const { valid, errors } = validate(schoolInviteSchema, body);
+    if (!valid) return res.status(400).json({ error: 'invalid invite', errors });
+    if (body.email?.trim() && findUserByEmail(db, body.email.trim().toLowerCase())) {
+      return res.status(409).json({ error: 'This email already has a SmartAttend account.', field: 'email' });
+    }
+    const invite = createSchoolInvite(db, {
+      email: body.email?.trim() || null,
+      schoolName: body.schoolName,
+      note: body.note,
+      createdBy: req.systemAdmin.sub,
+    });
+    res.status(201).json(invite);
+  });
+
+  router.post('/school-invites/:id/revoke', (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(404).json({ error: 'invite not found' });
+    const invite = revokeSchoolInvite(db, id, { actor: req.systemAdmin.sub });
+    if (!invite) return res.status(404).json({ error: 'invite not found' });
+    res.json(invite);
+  });
 
   // The original toggle, kept for older clients: { status: 'active' | 'inactive' }.
   router.post('/schools/:id/status', (req, res) => {

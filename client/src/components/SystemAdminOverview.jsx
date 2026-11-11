@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  getAllSchools, approveSchool, rejectSchool, disableSchool, enableSchool,
+  getAllSchools, approveSchool, rejectSchool, disableSchool, enableSchool, getSchoolInvites,
 } from '../services/systemAdminService';
+import { SchoolInviteList, InviteSchoolDialog } from './SchoolInvites';
 import { useAuth } from '../auth/AuthContext';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
 import { showToast } from '../lib/toast';
@@ -10,7 +11,7 @@ import Toaster from './Toaster';
 import SideNav from './SideNav';
 import TopBar from './TopBar';
 import {
-  SearchIcon, LogOutIcon, CheckCircleIcon, XCircleIcon, PowerIcon, SyncIcon,
+  SearchIcon, LogOutIcon, CheckCircleIcon, XCircleIcon, PowerIcon, SyncIcon, MailIcon,
 } from './icons';
 
 const STATUS_LABEL = {
@@ -127,6 +128,8 @@ export default function SystemAdminOverview() {
   const [openId, setOpenId] = useState(null); // school shown in the side panel
   const [pendingAction, setPendingAction] = useState(null); // { school, action }
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [invites, setInvites] = useState([]);
+  const [inviting, setInviting] = useState(false);
 
   // The server's sign-in ran out: back to the sign-in screen.
   const handleError = useCallback((err) => {
@@ -141,9 +144,10 @@ export default function SystemAdminOverview() {
   const load = useCallback(async () => {
     setRefreshing(true);
     try {
-      const result = await getAllSchools();
+      const [result, inviteList] = await Promise.all([getAllSchools(), getSchoolInvites()]);
       setSchools(result.schools);
       setCounts(result.counts);
+      setInvites(inviteList);
       setError(null);
       // Open on the review queue when something is waiting, otherwise on all schools.
       setFilter((current) => current ?? (result.counts.pending > 0 ? 'pending' : 'all'));
@@ -191,6 +195,9 @@ export default function SystemAdminOverview() {
                 )}
               </div>
               <div className="sys-pagehead__actions">
+                <button type="button" className="sys-btn sys-btn--primary" onClick={() => setInviting(true)}>
+                  <MailIcon size={14} /> Invite a school
+                </button>
                 <button type="button" className="sys-btn sys-btn--secondary" onClick={load} disabled={refreshing}>
                   <SyncIcon size={14} className={refreshing ? 'sa-spin' : undefined} /> Refresh
                 </button>
@@ -277,6 +284,8 @@ export default function SystemAdminOverview() {
                 </tbody>
               </table>
             </section>
+
+            {schools && <SchoolInviteList invites={invites} onRevoked={load} onUnauthorized={handleError} />}
           </main>
         </div>
       </div>
@@ -295,6 +304,10 @@ export default function SystemAdminOverview() {
             await load();
           }}
         />
+      )}
+
+      {inviting && (
+        <InviteSchoolDialog onClose={() => setInviting(false)} onCreated={load} onUnauthorized={handleError} />
       )}
 
       {confirmSignOut && (

@@ -278,6 +278,25 @@ export async function redeemSetupCode(code, password, { fetchImpl = globalThis.f
   throw new AuthError('CODE', json.error ?? 'That code does not work.', { state: json.state ?? 'unknown' });
 }
 
+/**
+ * Set up a new school with a system admin's invite code. The school is
+ * approved at once and its admin is signed straight in.
+ *
+ * @param {string} code
+ * @param {{school: object, applicant: object}} application  applicant includes the password
+ * @throws {AuthError} NETWORK | CONFLICT (with `field`) | INVALID_INPUT | LOCKED | CODE (with `state`) | FAILED
+ */
+export async function registerSchoolWithCode(code, application, { fetchImpl = globalThis.fetch } = {}) {
+  if (offline()) throw new AuthError('NETWORK', 'Connect to the internet to set up your school.');
+  const { res, json } = await postJson('/api/auth/register-school', { code: code.trim(), ...application }, fetchImpl);
+  if (res.ok) return persist(sessionFromServer(json));
+  if (res.status === 409) throw new AuthError('CONFLICT', json.error ?? 'This school or email is already registered.', { field: json.field });
+  if (res.status === 429) throw new AuthError('LOCKED', json.error ?? 'Too many wrong codes. Try again in a few minutes.');
+  if (res.status === 400) throw new AuthError('INVALID_INPUT', 'Some details are not valid. Check the school code, email and phone number.');
+  if (json.state) throw new AuthError('CODE', json.error ?? 'That invite code does not work.', { state: json.state });
+  throw new AuthError('FAILED', `The server could not set up the school (${res.status}).`);
+}
+
 export async function loadStoredSession() {
   const session = (await db.authState.get(SESSION_KEY)) ?? null;
   if (!session) return null;

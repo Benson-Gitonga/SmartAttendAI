@@ -9,6 +9,9 @@ jest.mock('../services/systemAdminService', () => ({
   rejectSchool: jest.fn(),
   disableSchool: jest.fn(),
   enableSchool: jest.fn(),
+  getSchoolInvites: jest.fn(),
+  createSchoolInvite: jest.fn(),
+  revokeSchoolInvite: jest.fn(),
 }));
 const mockSignOut = jest.fn();
 jest.mock('../auth/AuthContext', () => ({
@@ -42,6 +45,7 @@ const card = (name) => screen.getByText(name).closest('tr');
 
 beforeEach(() => {
   service.getAllSchools.mockResolvedValue(listing([KISUMU, KIBERA, MOI]));
+  service.getSchoolInvites.mockResolvedValue([]);
 });
 
 describe('SystemAdminOverview', () => {
@@ -227,5 +231,38 @@ describe('SystemAdminOverview', () => {
     service.getAllSchools.mockRejectedValue(new Error('network down'));
     render(<SystemAdminOverview />);
     expect(await screen.findByRole('alert')).toHaveTextContent('network down');
+  });
+
+  it('creates a school invite code and shows it once with ways to send it', async () => {
+    const user = userEvent.setup();
+    service.createSchoolInvite.mockResolvedValue({
+      id: 1, code: 'K7QM-4XPA', expiresAt: '2026-11-18T00:00:00Z', email: 'principal@benson.ac.ke', schoolName: 'Benson Secondary School',
+    });
+    render(<SystemAdminOverview />);
+    await user.click(await screen.findByRole('button', { name: /Invite a school/ }));
+    await user.type(screen.getByLabelText(/School name/), 'Benson Secondary School');
+    await user.type(screen.getByLabelText(/Their email/), 'principal@benson.ac.ke');
+    await user.click(screen.getByRole('button', { name: 'Create invite code' }));
+
+    expect(service.createSchoolInvite).toHaveBeenCalledWith({ schoolName: 'Benson Secondary School', email: 'principal@benson.ac.ke', note: '' });
+    expect(await screen.findByLabelText('Invite code')).toHaveTextContent('K7QM-4XPA');
+    expect(screen.getByRole('link', { name: 'WhatsApp' }).getAttribute('href')).toContain(encodeURIComponent('#/join/K7QM-4XPA'));
+    expect(service.getSchoolInvites).toHaveBeenCalledTimes(2);
+  });
+
+  it('lists invite codes and cancels one that is still waiting', async () => {
+    const user = userEvent.setup();
+    service.getSchoolInvites.mockResolvedValue([
+      { id: 2, schoolName: 'Benson Secondary School', email: null, state: 'ok', createdAt: '2026-11-11 08:00:00', expiresAt: '2026-11-18T08:00:00Z', createdBy: 'sysadmin' },
+      { id: 1, schoolName: null, registeredSchoolName: 'Nyeri High', state: 'used', createdAt: '2026-11-01 08:00:00', usedAt: '2026-11-02 08:00:00', expiresAt: '2026-11-08T08:00:00Z' },
+    ]);
+    service.revokeSchoolInvite.mockResolvedValue({ id: 2, state: 'revoked' });
+    render(<SystemAdminOverview />);
+    const list = await screen.findByRole('region', { name: 'School invite codes' });
+    expect(within(list).getByText('Nyeri High')).toBeInTheDocument();
+    expect(within(list).getAllByRole('button', { name: 'Cancel code' })).toHaveLength(1);
+    await user.click(within(list).getByRole('button', { name: 'Cancel code' }));
+    await user.click(screen.getByRole('button', { name: 'Yes, cancel it' }));
+    expect(service.revokeSchoolInvite).toHaveBeenCalledWith(2);
   });
 });

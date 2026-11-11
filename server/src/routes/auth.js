@@ -11,6 +11,7 @@ import { Router } from 'express';
 import { validate } from '../lib/validate.js';
 import {
   signInSchema, setupCodeSchema, setPasswordSchema, emailTokenSchema, forgotPasswordSchema,
+  schoolInviteRegistrationSchema,
 } from '../schemas/schoolRegistration.schema.js';
 import { describeAccount } from '../auth/userAuth.js';
 import { createGoogleVerifier, GoogleTokenError } from '../auth/googleAuth.js';
@@ -19,6 +20,7 @@ import { createAttemptLimiter } from '../auth/tokens.js';
 import {
   logAudit, lookupSetupCode, redeemSetupCode, lookupEmailToken, confirmEmailWithToken, setPasswordWithToken,
   setUpWithGoogle, linkGoogleAccount, unlinkGoogleAccount,
+  lookupSchoolInvite, registerSchoolWithInvite, RegistrationConflictError, InviteEmailMismatchError,
 } from '../db/repository.js';
 
 const REFUSED = {
@@ -51,6 +53,20 @@ const CODE_PROBLEMS = {
   used: [410, 'This link has already been used. Sign in with your password, or ask your school admin for a new link.'],
   revoked: [410, 'This link no longer works. Ask your school admin for a new one.'],
   expired: [410, 'This link has expired. Ask your school admin for a new one.'],
+};
+
+// The same, for a code a system admin gave someone to set up a new school.
+const SCHOOL_INVITE_PROBLEMS = {
+  used: [410, 'This invite code has already been used to set up a school. Sign in instead.'],
+  revoked: [410, 'This invite code has been cancelled. Ask SmartAttend for a new one.'],
+  expired: [410, 'This invite code has expired. Ask SmartAttend for a new one.'],
+};
+
+// Registration conflicts, as for an application (routes/schools.js).
+const SCHOOL_CONFLICTS = {
+  email: 'An account with this email already exists. Sign in, or use "Forgot password" if you have not set one yet.',
+  school_code: 'A school with this code is already registered on SmartAttend.',
+  school_name: 'A school with this name is already registered in this county.',
 };
 
 export function createAuthRouter({
@@ -114,13 +130,62 @@ export function createAuthRouter({
     return res.status(status).json({ error, state });
   };
 
-  // Who the code is for, so the page can say "Welcome, Ms. Otieno".
+  const refuseSchoolInvite = (res, state) => {
+    const [status, error] = SCHOOL_INVITE_PROBLEMS[state];
+    return res.status(status).json({ error, state, kind: 'school' });
+  };
+
+  // Who the code is for, so the page can say "Welcome, Ms. Otieno". The same
+  // page takes a system admin's school invite code: `kind` says which it is.
   router.get('/setup-codes/:code', (req, res) => {
     if (tooMany(req, res)) return undefined;
     const found = lookupSetupCode(db, req.params.code);
+    if (found.state === 'unknown') {
+      const invite = lookupSchoolInvite(db, req.params.code);
+      if (invite.state === 'ok') {
+        const { email, schoolName, expiresAt } = invite;
+        return res.json({ kind: 'school', email, schoolName, expiresAt });
+      }
+      if (invite.state !== 'unknown') return refuseSchoolInvite(res, invite.state);
+    }
     if (found.state !== 'ok') return refuse(req, res, found.state);
     const { fullName, email, schoolName, purpose, expiresAt } = found;
-    res.json({ fullName, email, schoolName, purpose, expiresAt });
+    res.json({ kind: 'staff', fullName, email, schoolName, purpose, expiresAt });
+  });
+
+  // Set up a new school with a system admin's invite code. The school is
+  // approved at once and its admin is signed straight in.
+  router.post('/register-school', (req, res, next) => {
+    if (tooMany(req, res)) return undefined;
+    const { valid, errors } = validate(schoolInviteRegistrationSchema, req.body ?? {});
+    if (!valid) return res.status(400).json({ error: 'Some details are not valid.', errors });
+
+    const { code, school, applicant } = req.body;
+    const invite = lookupSchoolInvite(db, code);
+    if (invite.state === 'unknown') {
+      codeLimiter.fail(req.ip);
+      return res.status(404).json({ error: 'That invite code is not right. Check it and try again.', state: 'unknown', kind: 'school' });
+    }
+    if (invite.state !== 'ok') return refuseSchoolInvite(res, invite.state);
+
+    const { password, ...person } = applicant;
+    let created;
+    try {
+      created = registerSchoolWithInvite(db, code, school, { ...person, passwordHash: hashPassword(password) });
+    } catch (err) {
+      if (err instanceof RegistrationConflictError) {
+        return res.status(409).json({ error: SCHOOL_CONFLICTS[err.field], field: err.field });
+      }
+      if (err instanceof InviteEmailMismatchError) {
+        return res.status(409).json({ error: `This invite is for ${err.expected}. Use that email address.`, field: 'email' });
+      }
+      return next(err);
+    }
+    if (!created) return refuseSchoolInvite(res, 'revoked');
+
+    codeLimiter.succeed(req.ip);
+    logAudit(db, { action: 'user.signed_in', actorId: created.user.email, recordId: created.user.userId, detail: { ip: req.ip, via: 'school_invite' } });
+    res.status(201).json({ ...userAuth.issueToken(created.user), ...describeAccount(db, created.user) });
   });
 
   // Set the password and sign straight in.

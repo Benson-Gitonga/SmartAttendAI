@@ -129,3 +129,39 @@ export const forgotPasswordSchema = {
     email: { type: 'string', format: 'email', maxLength: 254 },
   },
 };
+
+/**
+ * POST /api/auth/register-school: a school set up with a system admin's
+ * invite code. The same school and applicant details as an application, but
+ * the password is chosen now, because the school is approved at once.
+ */
+export const schoolInviteRegistrationSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  $id: 'https://smartattend.example/schemas/school-invite-registration.json',
+  title: 'SchoolInviteRegistration',
+  type: 'object',
+  additionalProperties: false,
+  required: ['code', 'school', 'applicant'],
+  properties: {
+    code: { type: 'string', minLength: 8, maxLength: 20 },
+    school: schoolRegistrationSchema.properties.school,
+    applicant: {
+      ...schoolRegistrationSchema.properties.applicant,
+      required: ['fullName', 'email', 'password'],
+    },
+  },
+};
+
+/** POST /api/system-admin/school-invites: everything is optional. */
+export const schoolInviteSchema = {
+  $schema: 'https://json-schema.org/draft/2020-12/schema',
+  $id: 'https://smartattend.example/schemas/school-invite.json',
+  title: 'SchoolInvite',
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    email: { anyOf: [{ type: 'string', format: 'email', maxLength: 254 }, { const: '' }] },
+    schoolName: { type: 'string', maxLength: 120 },
+    note: { type: 'string', maxLength: 200 },
+  },
+};
