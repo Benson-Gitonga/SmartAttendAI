@@ -96,49 +96,45 @@ files. Settings are in [`server/.env.example`](server/.env.example).
 
 Docker: `docker compose up` runs the server only.
 
-## Deploying to Render
+## Deploying (Cloudflare Pages + Azure)
 
-The live site is https://smartattend-9fpf.onrender.com. The [`Dockerfile`](Dockerfile)
-at the project root builds the teacher app and runs the server, which serves the
-app and `/api` from one address. [`render.yaml`](render.yaml) describes the
-service, and every push to the deployed branch redeploys it.
+The teacher app is served from Cloudflare Pages and the server runs on Azure
+App Service (https://smartattend-api.azurewebsites.net). A Pages Function
+([`client/functions/api/[[path]].js`](client/functions/api/[[path]].js))
+forwards every `/api/*` request to the server, so the browser only ever sees
+the Pages address: no CORS, and the service worker and offline sync work as
+they do locally.
 
-The free plan has no persistent disk, so the database resets on each deploy and
-spin-down and the demo data is seeded again. `render.yaml` explains how to keep
-the data on a paid plan. Leave `SYNC_API_GATEWAY_URL` unset until the AWS tier
-exists. Email uses Brevo until Amazon SES is ready: set `MAIL_TRANSPORT=brevo`,
-`BREVO_API_KEY`, and `MAIL_FROM` with a sender verified in Brevo.
+**Server.** Every push to `main` that passes the tests builds the root
+[`Dockerfile`](Dockerfile) (the PWA plus the server) and pushes it to Azure
+Container Registry; a registry webhook then restarts the App Service on the new
+image (see the `deploy` job in [`ci.yml`](.github/workflows/ci.yml)). Its
+settings, all in the App Service's environment variables:
 
-## Deploying to Cloudflare Pages + Render
+| Setting | Value |
+|---|---|
+| `DB_PATH` | `/home/data/smartattend.db` (`/home` survives restarts) |
+| `SQLITE_JOURNAL_MODE` | `DELETE` (WAL does not work on the `/home` share) |
+| `AUTH_TOKEN_SECRET`, `SYSTEM_ADMIN_*` | see [`server/.env.example`](server/.env.example) |
+| `APP_URL` | the Pages address, for links in emails |
+| `DEMO_DATA` | `false` |
+| `MAIL_TRANSPORT`, `BREVO_API_KEY`, `MAIL_FROM` | Brevo, until Amazon SES is ready |
 
-The teacher app is served from Cloudflare Pages and the server runs on Render.
-A Pages Function ([`client/functions/api/[[path]].js`](client/functions/api/[[path]].js))
-forwards every `/api/*` request to Render, so the browser only ever sees the
-Pages address: no CORS, and the service worker and offline sync work as they
-do locally.
+To apply changed settings, stop the App Service and start it again rather than
+restarting it: a restart briefly runs the old and new containers together and
+the new one cannot open the database.
 
-1. **Render.** On [render.com](https://render.com), choose **New → Blueprint**
-   and pick this repo; [`render.yaml`](render.yaml) sets up the service. Fill
-   in the variables it asks for (see the Railway table above). Note the
-   service's address, e.g. `https://smartattend.onrender.com`.
-2. **Cloudflare Pages.** In the Cloudflare dashboard, choose **Workers & Pages
-   → Create → Pages → Connect to Git** and pick this repo, with:
+**Cloudflare Pages.** Connected to this repo with:
 
-   | Setting | Value |
-   |---|---|
-   | Production branch | `main` |
-   | Root directory | `client` |
-   | Build command | `npm run build` |
-   | Build output directory | `dist` |
-   | Environment variables | `API_ORIGIN` = the Render address from step 1, `NODE_VERSION` = `22` |
+| Setting | Value |
+|---|---|
+| Production branch | `main` |
+| Root directory | `client` |
+| Build command | `npm run build` |
+| Build output directory | `dist` |
+| Environment variables | `API_ORIGIN` = the server's address, `NODE_VERSION` = `22` |
 
-3. **Back on Render**, set `APP_URL` to the Pages address (e.g.
-   `https://smartattend.pages.dev`) so links in emails open the app there.
-
-Every push to `main` then redeploys both. On Render's free plan the server
-sleeps after 15 minutes idle (the first request then takes about a minute)
-and its database is wiped on every deploy or sleep; demo data is re-seeded on
-start.
+The server is moving to AWS (Stockholm); this section will change with it.
 
 ## Tests
 
@@ -153,11 +149,11 @@ GitHub Actions runs all three on every push to `main` and on pull requests
 
 ## Status
 
-Working and live on Render: the teacher app, the admin and system admin pages,
-card scanning with absence reasons, and the risk model.
+Working and live (Cloudflare Pages + Azure): the teacher app, the admin and
+system admin pages, card scanning with absence reasons, and the risk model with
+"Why this score" explanations.
 
 Not done yet:
 
 - The cloud tier is written but not deployed.
 - Absence reasons are recorded but not yet used in the risk score (the fee and illness features are still 0).
-- No per-student explanation of a risk score yet (SHAP).

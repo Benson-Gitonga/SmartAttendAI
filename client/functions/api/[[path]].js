@@ -1,10 +1,12 @@
 /**
  * Cloudflare Pages Function: forwards every /api/* request to the Tier 2
- * server on Render, so the PWA on Pages and its API share one address. The
- * app, its service worker and the offline sync queue all call relative /api
- * paths, so nothing in src/ needs to know where the server lives.
+ * server, so the PWA on Pages and its API share one address. The app, its
+ * service worker and the offline sync queue all call relative /api paths, so
+ * nothing in src/ needs to know where the server lives.
  *
- * Set API_ORIGIN in the Pages project (e.g. https://smartattend.onrender.com).
+ * Set API_ORIGIN in the Pages project to the server's address
+ * (e.g. https://smartattend-api.azurewebsites.net). The visitor's address is
+ * passed on in X-Forwarded-For; see TRUST_PROXY in server/.env.example.
  */
 export async function onRequest({ request, env }) {
   if (!env.API_ORIGIN) {
@@ -23,7 +25,7 @@ export async function onRequest({ request, env }) {
   try {
     return await fetch(forwarded, { redirect: 'manual' });
   } catch {
-    // Render's free plan sleeps; the first request after a while can fail.
+    // The server is down or restarting.
     return Response.json({ error: 'the server could not be reached, try again shortly' }, { status: 502 });
   }
 }

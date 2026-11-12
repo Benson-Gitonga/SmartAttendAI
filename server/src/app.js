@@ -32,6 +32,7 @@ import {
  * @param {string} [opts.appUrl] where the PWA lives, for links in emails
  * @param {ReturnType<typeof createGoogleVerifier>} [opts.google] checks "Continue with Google" tokens
  * @param {string} [opts.clientDir] the built PWA to serve; '' = API only
+ * @param {boolean|number|string} [opts.trustProxy] Express "trust proxy" (see config.js)
  */
 export function createApp({
   db,
@@ -41,9 +42,11 @@ export function createApp({
   mailer = createMailer(config.mail),
   appUrl = config.appUrl,
   clientDir = config.clientDir,
+  trustProxy = config.trustProxy,
   google = createGoogleVerifier(config.google),
 } = {}) {
   const app = express();
+  app.set('trust proxy', trustProxy);
   const emails = createAccountEmails({ db, mailer, appUrl });
   app.use(express.json());
   if (logger) app.use(morgan('dev'));

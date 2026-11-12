@@ -7,6 +7,15 @@ const num = (value, fallback) => {
   return Number.isFinite(n) ? n : fallback;
 };
 
+// TRUST_PROXY: a hop count ("2"), "false"/unset, or addresses/subnets that
+// Express's "trust proxy" setting accepts ("loopback", "10.0.0.0/8, ...").
+export function parseTrustProxy(value) {
+  const v = String(value ?? '').trim();
+  if (!v || v === 'false' || v === '0') return false;
+  if (/^\d+$/.test(v)) return Number(v);
+  return v;
+}
+
 // OneDrive locks SQLite's WAL files, so the database lives outside the project
 // by default. Override with DB_PATH.
 const defaultDbDir =
@@ -74,9 +83,15 @@ export const config = {
     brevoApiKey: process.env.BREVO_API_KEY || '',
   },
 
-  // Where the PWA lives, for the links in emails. On Render, the service's own
-  // address is used when APP_URL is not set.
-  appUrl: (process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:5173').replace(/\/+$/, ''),
+  // Where the PWA lives, for the links in emails.
+  appUrl: (process.env.APP_URL || 'http://localhost:5173').replace(/\/+$/, ''),
+
+  // How many proxies sit in front of the server, so req.ip is the visitor's
+  // address (read from X-Forwarded-For) rather than the last proxy's. The
+  // sign-in and code lockouts are keyed on it. Off by default: only set it
+  // where every request really comes through those proxies, or anyone could
+  // write a fake address into the header.
+  trustProxy: parseTrustProxy(process.env.TRUST_PROXY),
 
   // The one system admin account (src/auth/systemAdminAuth.js). Set with
   // `npm run sysadmin:set`; only a hash of the password is kept. With no username
