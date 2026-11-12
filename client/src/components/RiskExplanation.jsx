@@ -1,11 +1,28 @@
 import { useEffect, useState } from 'react';
 import { getClassHistory } from '../db/database';
 import { explainStudentRisk } from '../lib/riskExplain';
-import { toISO } from '../lib/riskModel';
+import { REASON_COVERAGE_MIN, toISO } from '../lib/riskModel';
 
 // The model's career rate needs every record.
 const ALL_HISTORY = '0000-01-01';
 const MAX_FACTORS = 4;
+
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** "Absence reasons, last 4 weeks: 3 for fees, 2 sick, 5 not given." plus whether they counted. */
+export function reasonsLine(r) {
+  if (!r || r.marked === 0) return null;
+  const parts = [
+    r.fee && `${r.fee} for fees`,
+    r.health && `${r.health} sick`,
+    r.other && `${r.other} other`,
+    r.notGiven && `${r.notGiven} not given`,
+  ].filter(Boolean);
+  const counted = r.used
+    ? 'These count towards the score.'
+    : `Not counted in the score: a reason was given for ${Math.round(r.coverage * 100)}% of absences, and at least ${Math.round(REASON_COVERAGE_MIN * 100)}% is needed.`;
+  return `Absence reasons, last 4 weeks (${plural(r.marked, 'absence')}): ${parts.join(', ')}. ${counted}`;
+}
 
 /**
  * "Why this score": the SHAP values for one student's risk, worked out on
@@ -24,7 +41,7 @@ export default function RiskExplanation({ student, rows }) {
         for (const r of classRows) {
           if (r.studentId === student.studentId) continue;
           if (!byStudent.has(r.studentId)) byStudent.set(r.studentId, []);
-          byStudent.get(r.studentId).push({ date: r.date, status: r.status });
+          byStudent.get(r.studentId).push({ date: r.date, status: r.status, reason: r.reason });
         }
         const explanation = explainStudentRisk(rows, [...byStudent.values()], toISO(new Date()));
         if (!cancelled) setState({ status: 'ready', explanation });
@@ -84,6 +101,7 @@ export default function RiskExplanation({ student, rows }) {
           })}
         </ul>
       )}
+      {reasonsLine(e.reasons) && <p className="risk-why__note risk-why__reasons">{reasonsLine(e.reasons)}</p>}
       <p className="risk-why__foot">
         Worked out with SHAP, which splits the model&apos;s score into each factor&apos;s share.
         {e.hidden > 0 && ` ${e.hidden} effect${e.hidden === 1 ? '' : 's'} that went against the attendance figures ${e.hidden === 1 ? 'is' : 'are'} not shown.`}

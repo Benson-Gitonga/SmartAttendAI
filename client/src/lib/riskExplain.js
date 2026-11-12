@@ -21,7 +21,7 @@
  */
 
 import mlModel from '../data/riskModel.json';
-import { computeFeatures, computeMlExtraFeatures, toISO } from './riskModel';
+import { absenceReasonSummary, computeFeatures, computeMlExtraFeatures, toISO } from './riskModel';
 
 export const MODEL_FEATURES = mlModel.features;
 
@@ -247,7 +247,8 @@ const named = (vector) => Object.fromEntries(MODEL_FEATURES.map((f, i) => [f, ve
  * @param {Array<Array<{date: string, status: string}>>} peerHistories classmates' records
  * @returns {{ comparedWith: 'classmates'|'full_attendance', peers: number,
  *             probability: number, baseProbability: number,
- *             factors: Array<Factor>, shown: Array<Factor>, hidden: number }}
+ *             factors: Array<Factor>, shown: Array<Factor>, hidden: number,
+ *             reasons: ReturnType<typeof absenceReasonSummary> }}
  *   Factor = { key, label, impact, student, comparison, consistent }:
  *   impact is the group's SHAP value in log-odds (positive raises risk);
  *   student / comparison are formatted values; consistent is false when the
@@ -299,5 +300,6 @@ export function explainStudentRisk(history, peerHistories = [], asOf = toISO(new
     factors,
     shown,
     hidden: big.length - shown.length,
+    reasons: absenceReasonSummary(history, asOf),
   };
 }

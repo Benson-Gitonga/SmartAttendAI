@@ -151,9 +151,10 @@ GitHub Actions runs all three on every push to `main` and on pull requests
 
 Working and live (Cloudflare Pages + Azure): the teacher app, the admin and
 system admin pages, card scanning with absence reasons, and the risk model with
-"Why this score" explanations.
+"Why this score" explanations. Absence reasons (fees, sick) count towards a
+student's risk score only when at least 70% of their absences in the last four
+weeks have a reason, as in the schools the model was trained on (about 79%).
 
 Not done yet:
 
 - The cloud tier is written but not deployed.
-- Absence reasons are recorded but not yet used in the risk score (the fee and illness features are still 0).
