@@ -722,9 +722,9 @@ function historyByStudent(db, studentIds, sinceISO) {
   if (studentIds.length === 0) return byStudent;
   const placeholders = studentIds.map(() => '?').join(',');
   const rows = db
-    .prepare(`SELECT student_id, date, status FROM attendance_events WHERE student_id IN (${placeholders}) AND date >= ? ORDER BY date`)
+    .prepare(`SELECT student_id, date, status, reason FROM attendance_events WHERE student_id IN (${placeholders}) AND date >= ? ORDER BY date`)
     .all(...studentIds, sinceISO);
-  for (const r of rows) byStudent.get(r.student_id)?.push({ date: r.date, status: r.status });
+  for (const r of rows) byStudent.get(r.student_id)?.push({ date: r.date, status: r.status, reason: r.reason });
   return byStudent;
 }
 
@@ -816,6 +816,20 @@ export function getSchoolOverview(db, schoolId) {
 
   const flagged = getFlaggedStudents(db, schoolId);
 
+  // How many absences in the last four weeks have a reason (fees, sick or
+  // other; "unknown" does not count). The risk score only uses a student's
+  // reasons when most of their absences have one.
+  const reasons = db
+    .prepare(
+      `SELECT COUNT(*) AS absences,
+              COALESCE(SUM(a.reason IN ('fee', 'health', 'other')), 0) AS withReason
+         FROM attendance_events a
+         JOIN students s ON s.student_id = a.student_id
+         JOIN class_groups c ON c.class_group_id = s.class_group_id
+        WHERE c.school_id = ? AND a.status = 'absent' AND a.date > ? AND a.date <= ?`
+    )
+    .get(schoolId, daysAgoISO(28), date);
+
   return {
     schoolId,
     date,
@@ -825,6 +839,11 @@ export function getSchoolOverview(db, schoolId) {
     attendanceRateToday: recordedToday > 0 ? attendedToday / recordedToday : null,
     flaggedCount: flagged.length,
     needsFollowUpCount: flagged.filter((f) => f.needsFollowUp).length,
+    absenceReasons: {
+      absences: reasons.absences,
+      withReason: reasons.withReason,
+      share: reasons.absences > 0 ? reasons.withReason / reasons.absences : null,
+    },
   };
 }
 

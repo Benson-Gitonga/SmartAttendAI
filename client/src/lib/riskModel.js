@@ -238,10 +238,49 @@ export function breakdownRows(components) {
 
 // Trained model
 
+/** Share of a student's marked absences that must have a reason before the
+ * reasons count towards the score. The model was trained on schools where
+ * about 79% of absences had one; with far fewer, a missing reason would read
+ * as "not fees, not illness" and students whose teachers record reasons would
+ * score higher than identical students whose teachers do not. */
+export const REASON_COVERAGE_MIN = 0.7;
+/** Reasons that count as recorded. "unknown" does not, so picking it every
+ * time cannot reach the coverage bar. */
+const RECORDED_REASONS = new Set(['fee', 'health', 'other']);
+
 /**
- * The 5 extra features the trained model uses. The app does not record absence
- * reasons, so the fee and health rates are always 0, as in training. The
- * career rate needs the student's full history, not just the recent weeks.
+ * Absence reasons over the model's four-week window (the same days as the
+ * streak and weekday features).
+ * @returns {{ absences: number, marked: number, fee: number, health: number,
+ *   other: number, notGiven: number, coverage: number|null, used: boolean }}
+ *   absences = school days not attended (as the model counts them, including
+ *   days with no record); marked = days marked absent, which can carry a
+ *   reason; coverage = share of marked days with a recorded reason; used =
+ *   whether the reasons feed fee_absence_rate / health_absence_rate.
+ */
+export function absenceReasonSummary(history, asOf = toISO(new Date())) {
+  const byDate = new Map(history.map((r) => [r.date, r]));
+  const out = { absences: 0, marked: 0, fee: 0, health: 0, other: 0, notGiven: 0, coverage: null, used: false };
+  for (const d of schoolDaysBetween(addDays(asOf, -MONTH_DAYS), asOf)) {
+    const r = byDate.get(d);
+    if (ATTENDED.has(r?.status)) continue;
+    out.absences += 1;
+    if (r?.status !== 'absent') continue;
+    out.marked += 1;
+    if (RECORDED_REASONS.has(r.reason)) out[r.reason] += 1;
+    else out.notGiven += 1;
+  }
+  if (out.marked > 0) {
+    out.coverage = (out.fee + out.health + out.other) / out.marked;
+    out.used = out.coverage >= REASON_COVERAGE_MIN;
+  }
+  return out;
+}
+
+/**
+ * The 5 extra model features. Fee and health rates come from absence reasons
+ * when enough are recorded (absenceReasonSummary), else 0. The career rate
+ * needs the student's full history, not just the recent weeks.
  */
 export function computeMlExtraFeatures(history, asOf = toISO(new Date())) {
   const byDate = new Map(history.map((r) => [r.date, r.status]));
@@ -257,9 +296,12 @@ export function computeMlExtraFeatures(history, asOf = toISO(new Date())) {
       : null;
   }
 
+  const reasons = absenceReasonSummary(history, asOf);
+  const reasonRate = (n) => (reasons.used && reasons.absences ? n / reasons.absences : 0);
+
   return {
-    fee_absence_rate: 0,
-    health_absence_rate: 0,
+    fee_absence_rate: reasonRate(reasons.fee),
+    health_absence_rate: reasonRate(reasons.health),
     attendance_rate_term: rate_term,
     days_into_term,
     attendance_rate_career: careerRate(history, byDate, asOf),

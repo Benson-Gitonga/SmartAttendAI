@@ -1,4 +1,6 @@
 import {
+  absenceReasonSummary,
+  REASON_COVERAGE_MIN,
   computeFeatures,
   computeMlExtraFeatures,
   detectPatterns,
@@ -211,10 +213,84 @@ describe('computeMlExtraFeatures', () => {
     expect(computeMlExtraFeatures([], AS_OF).attendance_rate_career).toBeNull();
   });
 
-  it('fee/health absence rate are always 0 (no reason data collected yet)', () => {
+  it('fee/health absence rate are 0 when no reasons are recorded', () => {
     const f = computeMlExtraFeatures(historyEndingBefore(AS_OF, 20, () => 'absent'), AS_OF);
     expect(f.fee_absence_rate).toBe(0);
     expect(f.health_absence_rate).toBe(0);
+  });
+});
+
+/** Absent every school day; `reasonFor(i)` gives day i's reason (0 = most recent). */
+function absentWithReasons(count, reasonFor) {
+  return historyEndingBefore(AS_OF, count, () => 'absent').reverse()
+    .map((r, i) => ({ ...r, reason: reasonFor(i) })).reverse();
+}
+
+describe('absence reasons in the risk score', () => {
+  it('uses the fee and sick rates when most absences have a reason', () => {
+    // Every absence has a reason: half fees, three in ten sick, the rest other.
+    const history = absentWithReasons(40, (i) => (i % 10 < 5 ? 'fee' : i % 10 < 8 ? 'health' : 'other'));
+    const s = absenceReasonSummary(history, AS_OF);
+    expect(s.marked).toBe(s.absences);
+    expect(s.fee + s.health + s.other).toBe(s.marked);
+    expect(s.coverage).toBe(1);
+    expect(s.used).toBe(true);
+
+    const f = computeMlExtraFeatures(history, AS_OF);
+    expect(f.fee_absence_rate).toBeCloseTo(s.fee / s.absences, 9);
+    expect(f.health_absence_rate).toBeCloseTo(s.health / s.absences, 9);
+    expect(f.fee_absence_rate).toBeGreaterThan(0.4);
+    expect(f.health_absence_rate).toBeGreaterThan(0.2);
+  });
+
+  it('leaves reasons out when too few absences have one', () => {
+    const history = absentWithReasons(40, (i) => (i % 2 === 0 ? 'fee' : null));
+    const s = absenceReasonSummary(history, AS_OF);
+    expect(s.coverage).toBeLessThan(REASON_COVERAGE_MIN);
+    expect(s.used).toBe(false);
+    expect(s.notGiven).toBeGreaterThan(0);
+    const f = computeMlExtraFeatures(history, AS_OF);
+    expect(f.fee_absence_rate).toBe(0);
+    expect(f.health_absence_rate).toBe(0);
+  });
+
+  it('counts the reasons once the share reaches the bar', () => {
+    // 3 in 10 not given: 70% exactly when the window holds a multiple of 10.
+    const history = absentWithReasons(40, (i) => (i % 10 < 3 ? null : 'health'));
+    const s = absenceReasonSummary(history, AS_OF);
+    expect(s.used).toBe(s.coverage >= REASON_COVERAGE_MIN);
+    expect(s.coverage).toBeGreaterThanOrEqual(0.65);
+  });
+
+  it('does not count "unknown" as a recorded reason', () => {
+    const history = absentWithReasons(40, () => 'unknown');
+    const s = absenceReasonSummary(history, AS_OF);
+    expect(s.coverage).toBe(0);
+    expect(s.notGiven).toBe(s.marked);
+    expect(s.used).toBe(false);
+    expect(computeMlExtraFeatures(history, AS_OF).fee_absence_rate).toBe(0);
+  });
+
+  it('gives the same score as before when no reasons are recorded', () => {
+    const plain = historyEndingBefore(AS_OF, 40, (i) => (i % 4 === 0 ? 'absent' : 'present'));
+    const withNulls = plain.map((r) => ({ ...r, reason: null }));
+    expect(scoreRiskML(withNulls, AS_OF).score).toBe(scoreRiskML(plain, AS_OF).score);
+  });
+
+  it('fee and sick reasons can only raise the score', () => {
+    const plain = historyEndingBefore(AS_OF, 40, (i) => (i % 3 === 0 ? 'absent' : 'present'));
+    const tagged = (reason) => plain.map((r) => (r.status === 'absent' ? { ...r, reason } : r));
+    const base = scoreRiskML(plain, AS_OF).score;
+    expect(scoreRiskML(tagged('fee'), AS_OF).score).toBeGreaterThanOrEqual(base);
+    expect(scoreRiskML(tagged('health'), AS_OF).score).toBeGreaterThan(base);
+    expect(scoreRiskML(tagged('other'), AS_OF).score).toBe(base);
+  });
+
+  it('ignores a reason on a day the student was present', () => {
+    const history = historyEndingBefore(AS_OF, 40, () => 'present').map((r) => ({ ...r, reason: 'fee' }));
+    const s = absenceReasonSummary(history, AS_OF);
+    expect(s.absences).toBe(0);
+    expect(s.used).toBe(false);
   });
 });
 

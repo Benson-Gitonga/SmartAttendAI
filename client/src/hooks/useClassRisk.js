@@ -38,7 +38,7 @@ export function useClassRisk(classGroupId) {
     const byStudent = new Map();
     for (const r of history) {
       if (!byStudent.has(r.studentId)) byStudent.set(r.studentId, []);
-      byStudent.get(r.studentId).push({ date: r.date, status: r.status });
+      byStudent.get(r.studentId).push({ date: r.date, status: r.status, reason: r.reason });
     }
     return students.map((student) => {
       const rows = byStudent.get(student.studentId) ?? [];

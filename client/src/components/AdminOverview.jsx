@@ -101,6 +101,14 @@ export default function AdminOverview({ onOpenClass }) {
           <div className="stat-card__value">{overview.needsFollowUpCount}</div>
           <div className="stat-card__label">Needs follow-up</div>
         </div>
+        {overview.absenceReasons && (
+          <div className="stat-card" title="Absences in the last 4 weeks with a reason (fees, sick or other). A student's reasons count towards their risk score only when most of their absences have one.">
+            <div className="stat-card__value">
+              {overview.absenceReasons.share != null ? `${Math.round(overview.absenceReasons.share * 100)}%` : '-'}
+            </div>
+            <div className="stat-card__label">Absences with a reason (4 weeks)</div>
+          </div>
+        )}
       </div>
 
       <h2 className="section-heading">Classes</h2>

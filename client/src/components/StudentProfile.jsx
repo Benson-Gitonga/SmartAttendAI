@@ -165,7 +165,7 @@ export default function StudentProfile({ studentId, className, onOpenDay }) {
 
   const model = useMemo(() => {
     const asOf = toISO(new Date());
-    const rows = history.map((r) => ({ date: r.date, status: r.status }));
+    const rows = history.map((r) => ({ date: r.date, status: r.status, reason: r.reason }));
     const features = computeFeatures(rows, asOf);
     const risk = scoreRiskML(rows, asOf);
     const insights = riskInsights(rows, features, risk, asOf);
