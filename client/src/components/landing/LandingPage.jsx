@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { PUBLIC_PAGES } from '../auth/publicRoute';
+import { useInstallPrompt } from '../../lib/installPrompt';
 import './landing.css';
 
 /**
@@ -431,9 +432,39 @@ export default function LandingPage() {
             <a href={PUBLIC_PAGES.join}>Join with a code</a>
           </nav>
         </div>
-        <div className="lp-wrap lp-footer__base">© {new Date().getFullYear()} SmartAttend</div>
+        <div className="lp-wrap lp-footer__base">
+          <span>© {new Date().getFullYear()} SmartAttend</span>
+          <InstallLink />
+        </div>
       </footer>
     </div>
+  );
+}
+
+/** "Install the app" in the footer; hidden once installed or where the browser can't install it. */
+function InstallLink() {
+  const { mode, install } = useInstallPrompt();
+  const [iosHelp, setIosHelp] = useState(false);
+  if (!mode) return null;
+  return (
+    <span className="lp-install">
+      <button
+        type="button"
+        className="lp-install__btn"
+        aria-expanded={mode === 'ios' ? iosHelp : undefined}
+        onClick={() => (mode === 'ios' ? setIosHelp((v) => !v) : install())}
+      >
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 3v12" /><path d="m7 10 5 5 5-5" /><path d="M5 21h14" />
+        </svg>
+        Install the app
+      </button>
+      {iosHelp && (
+        <span className="lp-install__help" role="status">
+          In Safari, tap the Share button, then <strong>Add to Home Screen</strong>.
+        </span>
+      )}
+    </span>
   );
 }
 

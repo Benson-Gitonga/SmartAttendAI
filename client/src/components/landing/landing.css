@@ -357,7 +357,15 @@
 .lp-footer__links { display: flex; flex-wrap: wrap; gap: 20px; margin-left: auto; }
 .lp-footer__links a { color: var(--lp-ink-2); text-decoration: none; font-weight: 500; }
 .lp-footer__links a:hover { color: var(--lp-brand); }
-.lp-footer__base { margin-top: 24px; color: var(--lp-ink-3); font-size: 13px; }
+.lp-footer__base { margin-top: 24px; color: var(--lp-ink-3); font-size: 13px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; }
+.lp-install { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.lp-install__btn {
+  display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; font-weight: 500; color: var(--lp-ink-2);
+}
+.lp-install__btn:hover { color: var(--lp-brand); }
+.lp-install__btn:focus-visible { outline: 3px solid var(--lp-brand-line); outline-offset: 3px; border-radius: 4px; }
+.lp-install__help { color: var(--lp-ink-2); }
 
 /* ---------- responsive ---------- */
 @media (max-width: 1020px) {

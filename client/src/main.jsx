@@ -6,6 +6,10 @@ import { registerServiceWorker } from './sw/register'
 import { startSyncOnReconnect } from './services/syncService'
 import { startRosterSyncOnReconnect } from './services/rosterSyncService'
 import { requestPersistentStorage } from './lib/persistentStorage'
+import { listenForInstallPrompt } from './lib/installPrompt'
+
+// Before render: Chrome may offer the install prompt straight away.
+listenForInstallPrompt()
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
