@@ -19,7 +19,7 @@ function fetchReturning(payload, { ok = true, status = 200 } = {}) {
 }
 
 const scan = (studentId, eventId, createdAt = `${DATE}T05:10:00Z`) => ({
-  eventId, studentId, date: DATE, status: 'present', captureMethod: 'rfid',
+  eventId, studentId, date: DATE, status: 'present', captureMethod: 'card',
   verified: false, recordedBy: null, reason: null, source: 'simulation', createdAt,
 });
 

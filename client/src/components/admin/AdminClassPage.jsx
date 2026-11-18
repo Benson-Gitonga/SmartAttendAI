@@ -22,7 +22,7 @@ const OVERRIDE_REASONS = {
   other: 'Something else (explain below)',
 };
 
-const SOURCE = { rfid: 'Gate', fingerprint: 'Gate', manual: 'Teacher' };
+const SOURCE = { card: 'Gate', manual: 'Teacher' };
 const classLabel = (c) => (c ? [c.grade, c.stream].filter(Boolean).join(' ') || 'Class' : 'Class');
 const shortTime = (iso) => (iso ? new Date(iso).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit' }) : '');
 

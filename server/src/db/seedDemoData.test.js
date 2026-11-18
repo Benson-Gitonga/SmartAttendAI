@@ -50,7 +50,7 @@ test('removeDemoData deletes the demo schools and everything under them, and lea
   db.prepare(`INSERT INTO schools (school_id, name, county) VALUES ('school-real-001', 'Real School', 'Nairobi')`).run();
 
   assert.equal(removeDemoData(db), 3);
-  for (const table of ['users', 'class_groups', 'students', 'rfid_cards', 'attendance_events']) {
+  for (const table of ['users', 'class_groups', 'students', 'id_cards', 'attendance_events']) {
     assert.equal(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n, 0, `${table} emptied`);
   }
   assert.deepEqual(db.prepare(`SELECT school_id FROM schools`).all().map((s) => s.school_id), ['school-real-001']);

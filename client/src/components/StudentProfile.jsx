@@ -40,8 +40,7 @@ const CAL_TEXT = { present: 'Present', absent: 'Absent' };
 const REASON_TEXT = { fee: 'School fees', health: 'Illness or health', other: 'Other reason', unknown: 'Reason not known' };
 const METHOD_TEXT = {
   manual: 'Marked by the teacher in the register',
-  rfid: 'ID card scanned at the gate',
-  fingerprint: 'Fingerprint at the gate',
+  card: 'ID card scanned',
   import: 'Imported from earlier records',
 };
 

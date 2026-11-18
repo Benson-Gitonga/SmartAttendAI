@@ -189,9 +189,9 @@ two pending demo schools so the approval queue is not empty.
 
 `POST /api/gate/scan` (`recordStationScan` in `src/db/repository.js`):
 
-1. Resolve the printed card number to a student (`rfid_cards` -> `students`). Unknown card -> audit row, stop.
+1. Resolve the printed card number to a student (`id_cards` -> `students`). Unknown card -> audit row, stop.
 2. Already marked today -> reported as a duplicate. No second row is written.
-3. Otherwise write attendance with `capture_method = 'rfid'`. That value marks any scanned card, barcode or QR; the name dates from the earlier RFID design.
+3. Otherwise write attendance with `capture_method = 'card'`. That value marks any scanned ID card, by barcode or QR code.
 
 A station that was offline sends its saved scans with `scannedAt`, so each lands on the day it happened. A time ahead of the server's clock gets a `422`.
 
@@ -239,7 +239,7 @@ roll call". Unknown class → 404; malformed `date` → 400.
 12 tables, defined in `src/db/schema.sql` (`CREATE TABLE IF NOT EXISTS`, so it's
 safe to run on every boot). Full description in `../docs/schema.md`.
 
-- `schools` -> `class_groups` -> `students` -> `rfid_cards`
+- `schools` -> `class_groups` -> `students` -> `id_cards`
 - `students` -> `attendance_events` -> `sync_queue` -> (`syncWorker.js`) -> AWS
 - `students` -> `follow_ups` (contact attempts for flagged students)
 - `audit_log`: standalone (action / actor / record / detail / timestamp)

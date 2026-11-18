@@ -46,8 +46,8 @@ afterEach(async () => {
 
 describe("GET /api/admin/schools/:id/today, the day's register board", () => {
   test('shows which classes have taken the register', async () => {
-    recordAttendance(db, { studentId: 'stu-1', date: TODAY, captureMethod: 'rfid', source: 'simulation' });
-    recordAttendance(db, { studentId: 'stu-2', date: TODAY, captureMethod: 'rfid', source: 'simulation' });
+    recordAttendance(db, { studentId: 'stu-1', date: TODAY, captureMethod: 'card', source: 'simulation' });
+    recordAttendance(db, { studentId: 'stu-2', date: TODAY, captureMethod: 'card', source: 'simulation' });
 
     const res = await api('/api/admin/schools/school-1/today', admin);
     const board = await res.json();

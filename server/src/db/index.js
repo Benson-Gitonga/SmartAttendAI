@@ -89,7 +89,7 @@ export function migrate(db) {
   }
   rebuildSchoolsForApproval(db);
 
-  // Left over from the simulated fingerprint gate, which has been removed.
+  // A table from an early prototype, no longer used.
   db.exec(`DROP TABLE IF EXISTS fingerprint_challenges`);
 
   // Attendance is present or absent only. 'late' marks from older builds
@@ -102,6 +102,11 @@ export function migrate(db) {
     db.exec(`UPDATE attendance_overrides SET to_status = 'present' WHERE to_status = 'late'`);
     db.exec(`UPDATE attendance_overrides SET from_status = 'present' WHERE from_status = 'late'`);
   }
+
+  // ID cards used to live in a table with an older name; move them across.
+  moveCardsTable(db);
+  // A scanned ID card is stored as capture_method 'card'.
+  rebuildAttendanceForCardMethod(db);
 
   // School application details. Added after the rebuild above, which only
   // copies the columns it knows about.
@@ -189,6 +194,67 @@ function rebuildSchoolsForApproval(db) {
       `);
       const broken = brokenKeys() - brokenBefore;
       if (broken > 0) throw new Error(`schools rebuild broke ${broken} class foreign key(s)`);
+    })();
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
+}
+
+/** Name the ID card table had in older databases. */
+const OLD_CARDS_TABLE = 'rfid_cards';
+
+/**
+ * schema.sql has already created an empty id_cards table, so copy any cards
+ * from the old table into it and drop the old one (its indexes go with it).
+ */
+function moveCardsTable(db) {
+  const old = db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(OLD_CARDS_TABLE);
+  if (!old) return;
+  db.transaction(() => {
+    db.exec(`INSERT OR IGNORE INTO id_cards (card_uid, student_id, issued_at, active)
+               SELECT card_uid, student_id, issued_at, active FROM ${OLD_CARDS_TABLE}`);
+    db.exec(`DROP TABLE ${OLD_CARDS_TABLE}`);
+  })();
+}
+
+/**
+ * Older databases allow other capture_method values in the CHECK and not
+ * 'card'. SQLite cannot alter a CHECK in place, so the table is copied into
+ * one with the new CHECK, with every scanned-card value becoming 'card'.
+ * Foreign keys are off during the swap so the drop does not cascade into
+ * sync_queue or attendance_overrides.
+ */
+function rebuildAttendanceForCardMethod(db) {
+  const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'attendance_events'`).get();
+  if (!row || !/capture_method IN \(/.test(row.sql) || row.sql.includes("'card'")) return;
+
+  const newSql = row.sql
+    .replace(/CREATE TABLE\s+(IF NOT EXISTS\s+)?"?attendance_events"?/i, 'CREATE TABLE attendance_events_new')
+    .replace(/capture_method IN \([^)]*\)/, "capture_method IN ('manual', 'card', 'import')");
+  const columns = db.prepare(`SELECT name FROM pragma_table_info('attendance_events')`).all().map((c) => c.name);
+  const select = columns
+    .map((c) => (c === 'capture_method'
+      ? `CASE WHEN capture_method IN ('manual', 'import') THEN capture_method ELSE 'card' END`
+      : c))
+    .join(', ');
+
+  const children = ['sync_queue', 'attendance_overrides'].filter((name) =>
+    db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(name));
+  const brokenKeys = () =>
+    children.reduce((n, name) => n + db.prepare(`PRAGMA foreign_key_check(${name})`).all().length, 0);
+  const brokenBefore = brokenKeys();
+
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.transaction(() => {
+      db.exec(newSql);
+      db.exec(`INSERT INTO attendance_events_new (${columns.join(', ')}) SELECT ${select} FROM attendance_events`);
+      db.exec(`DROP TABLE attendance_events`);
+      db.exec(`ALTER TABLE attendance_events_new RENAME TO attendance_events`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_attendance_date ON attendance_events(date)`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance_events(student_id)`);
+      const broken = brokenKeys() - brokenBefore;
+      if (broken > 0) throw new Error(`attendance rebuild broke ${broken} foreign key(s)`);
     })();
   } finally {
     db.pragma('foreign_keys = ON');

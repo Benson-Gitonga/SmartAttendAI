@@ -152,7 +152,7 @@ describe('the scan station', () => {
     assert.equal(body.student.fullName, 'Amina Hassan');
 
     const row = db.prepare('SELECT * FROM attendance_events').get();
-    assert.deepEqual([row.date, row.status, row.capture_method], [todayISO(), 'present', 'rfid']);
+    assert.deepEqual([row.date, row.status, row.capture_method], [todayISO(), 'present', 'card']);
 
     const again = await (await send('POST', '/api/gate/scan', admin, { cardUid: student.cardUid })).json();
     assert.equal(again.outcome, 'duplicate');

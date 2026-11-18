@@ -73,7 +73,7 @@ describe('ScanStation', () => {
   it('says a card was already scanned today', async () => {
     const user = userEvent.setup();
     api.stationScan.mockResolvedValue({
-      outcome: 'duplicate', student: AMINA, mark: { status: 'present', captureMethod: 'rfid', createdAt: new Date().toISOString() },
+      outcome: 'duplicate', student: AMINA, mark: { status: 'present', captureMethod: 'card', createdAt: new Date().toISOString() },
     });
     render(<ScanStation />);
     await scan(user, 'AC221F07');

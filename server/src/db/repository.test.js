@@ -35,7 +35,7 @@ describe('schema', () => {
       'class_groups',
       'email_tokens',
       'follow_ups',
-      'rfid_cards',
+      'id_cards',
       'school_invites',
       'schools',
       'setup_codes',
@@ -47,7 +47,7 @@ describe('schema', () => {
 
   test('seed loads the demo class and binds a card to every student', () => {
     assert.equal(db.prepare('SELECT COUNT(*) n FROM students').get().n, 10);
-    assert.equal(db.prepare('SELECT COUNT(*) n FROM rfid_cards WHERE active = 1').get().n, 10);
+    assert.equal(db.prepare('SELECT COUNT(*) n FROM id_cards WHERE active = 1').get().n, 10);
     assert.equal(findStudentByCardUid(db, '04A1B2C3')?.student_id, STUDENT);
     assert.equal(findStudentByCardUid(db, 'NOPE'), null);
   });
@@ -59,14 +59,14 @@ describe('recordAttendance - writing a record', () => {
       studentId: STUDENT,
       date: DATE,
       status: 'present',
-      captureMethod: 'rfid',
+      captureMethod: 'card',
     });
 
     assert.ok(event.eventId);
     const row = db.prepare('SELECT * FROM attendance_events WHERE event_id = ?').get(event.eventId);
     assert.equal(row.student_id, STUDENT);
     assert.equal(row.date, DATE);
-    assert.equal(row.capture_method, 'rfid');
+    assert.equal(row.capture_method, 'card');
     assert.equal(row.source, 'simulation');
 
     assert.equal(countPendingSync(db), 1);
@@ -77,7 +77,7 @@ describe('recordAttendance - writing a record', () => {
   });
 
   test('stores the capture_method it is given', () => {
-    for (const [i, method] of ['manual', 'rfid', 'fingerprint'].entries()) {
+    for (const [i, method] of ['manual', 'card'].entries()) {
       const e = recordAttendance(db, {
         studentId: `stu-form3b-00${i + 1}`,
         date: DATE,
@@ -98,18 +98,18 @@ describe('recordAttendance - writing a record', () => {
 
 describe('duplicate prevention', () => {
   test('a second record for the same student and date is rejected', () => {
-    recordAttendance(db, { studentId: STUDENT, date: DATE, captureMethod: 'rfid' });
+    recordAttendance(db, { studentId: STUDENT, date: DATE, captureMethod: 'card' });
 
     assert.throws(
-      () => recordAttendance(db, { studentId: STUDENT, date: DATE, captureMethod: 'fingerprint' }),
+      () => recordAttendance(db, { studentId: STUDENT, date: DATE, captureMethod: 'manual' }),
       DuplicateAttendanceError
     );
   });
 
   test('the rejected write leaves no partial rows behind', () => {
-    recordAttendance(db, { studentId: STUDENT, date: DATE, captureMethod: 'rfid' });
+    recordAttendance(db, { studentId: STUDENT, date: DATE, captureMethod: 'card' });
     try {
-      recordAttendance(db, { studentId: STUDENT, date: DATE, captureMethod: 'rfid' });
+      recordAttendance(db, { studentId: STUDENT, date: DATE, captureMethod: 'card' });
     } catch {
       /* expected */
     }
@@ -119,24 +119,24 @@ describe('duplicate prevention', () => {
   });
 
   test('the same student on a different date is allowed', () => {
-    recordAttendance(db, { studentId: STUDENT, date: DATE, captureMethod: 'rfid' });
+    recordAttendance(db, { studentId: STUDENT, date: DATE, captureMethod: 'card' });
     assert.doesNotThrow(() =>
-      recordAttendance(db, { studentId: STUDENT, date: OTHER_DATE, captureMethod: 'rfid' })
+      recordAttendance(db, { studentId: STUDENT, date: OTHER_DATE, captureMethod: 'card' })
     );
     assert.equal(getAttendanceForDate(db, DATE).length, 1);
     assert.equal(getAttendanceForDate(db, OTHER_DATE).length, 1);
   });
 
   test('different students on the same date are allowed', () => {
-    recordAttendance(db, { studentId: 'stu-form3b-001', date: DATE, captureMethod: 'rfid' });
-    recordAttendance(db, { studentId: 'stu-form3b-002', date: DATE, captureMethod: 'rfid' });
+    recordAttendance(db, { studentId: 'stu-form3b-001', date: DATE, captureMethod: 'card' });
+    recordAttendance(db, { studentId: 'stu-form3b-002', date: DATE, captureMethod: 'card' });
     assert.equal(getAttendanceForDate(db, DATE).length, 2);
   });
 
   test('a reused event_id is rejected (idempotency key)', () => {
-    recordAttendance(db, { studentId: 'stu-form3b-001', date: DATE, captureMethod: 'rfid', eventId: 'evt-1' });
+    recordAttendance(db, { studentId: 'stu-form3b-001', date: DATE, captureMethod: 'card', eventId: 'evt-1' });
     assert.throws(() =>
-      recordAttendance(db, { studentId: 'stu-form3b-002', date: DATE, captureMethod: 'rfid', eventId: 'evt-1' })
+      recordAttendance(db, { studentId: 'stu-form3b-002', date: DATE, captureMethod: 'card', eventId: 'evt-1' })
     );
   });
 });
@@ -144,12 +144,12 @@ describe('duplicate prevention', () => {
 describe('getStats', () => {
   test('counts today\'s records by method', () => {
     const today = todayISO();
-    recordAttendance(db, { studentId: 'stu-form3b-001', date: today, captureMethod: 'rfid' });
-    recordAttendance(db, { studentId: 'stu-form3b-002', date: today, captureMethod: 'fingerprint', verified: 1 });
+    recordAttendance(db, { studentId: 'stu-form3b-001', date: today, captureMethod: 'card' });
+    recordAttendance(db, { studentId: 'stu-form3b-002', date: today, captureMethod: 'manual' });
 
     const stats = getStats(db, today);
     assert.equal(stats.totalAttendance, 2);
-    assert.deepEqual(stats.attendanceByMethod, { rfid: 1, fingerprint: 1 });
+    assert.deepEqual(stats.attendanceByMethod, { card: 1, manual: 1 });
     assert.equal(stats.pendingSync, 2);
   });
 });

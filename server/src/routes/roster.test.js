@@ -123,7 +123,7 @@ describe('POST /api/roster/students/:id/card', () => {
     await post('/api/roster/students/stu-1/card', { cardUid: 'AAAAAAAA' });
     const res = await post('/api/roster/students/stu-1/card', { cardUid: 'BBBBBBBB' });
     assert.equal(res.status, 200);
-    const active = db.prepare('SELECT card_uid FROM rfid_cards WHERE student_id = ? AND active = 1').all('stu-1');
+    const active = db.prepare('SELECT card_uid FROM id_cards WHERE student_id = ? AND active = 1').all('stu-1');
     assert.equal(active.length, 1);
     assert.equal(active[0].card_uid, 'BBBBBBBB');
   });

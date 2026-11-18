@@ -1,6 +1,6 @@
 /**
- * Inbound half of the gate <-> teacher loop: pull what the school gate (Tier 2
- * RFID + fingerprint server) has recorded for a class today, so the roll call
+ * Inbound half of the gate <-> teacher loop: pull what the ID card scan station
+ * (via the Tier 2 server) has recorded for a class today, so the roll call
  * only asks the teacher about students who did not scan in.
  *
  *   gate scans -> Tier 2 SQLite -> GET /api/gate/classes/:id/attendance
