@@ -32,10 +32,10 @@ school admin assigned), `created_at`. Only the school admin creates classes.
 `full_name`, `enrolled_at`, `active` (0/1).
 `attendance_events` is append-only so the full history is kept.
 
-### 4. `rfid_cards`
-`card_uid` (PK, text, the number printed on the student's ID card as a barcode and QR code; the table name dates from the earlier RFID design), `student_id` (FK → students),
+### 4. `id_cards`
+`card_uid` (PK, text, the number printed on the student's ID card as a barcode and QR code), `student_id` (FK → students),
 `issued_at`, `active` (0/1).
-Partial unique index `idx_rfid_one_active_card` enforces **one active card per
+Partial unique index `idx_cards_one_active` enforces **one active card per
 student**; a re-issued card keeps the old row with `active = 0`.
 
 ### 5. `attendance_events`
@@ -47,11 +47,11 @@ The append-only attendance log.
 | `event_id` | text, **UNIQUE**. Device-generated idempotency key; matches the client's `eventId` |
 | `student_id` | FK → students |
 | `date` | `YYYY-MM-DD`, school-local |
-| `status` | `present` \| `absent` \| `late` |
-| `capture_method` | `manual` \| `rfid` (any scanned card) \| `fingerprint` (old records only) \| `import` |
-| `verified` | unused since the fingerprint gate was removed; always 0 for new records |
+| `status` | `present` \| `absent` |
+| `capture_method` | `manual` \| `card` (ID card scanned) \| `import` |
+| `verified` | unused; always 0 |
 | `recorded_by` | staff email or username |
-| `source` | `client` \| `manual` \| `simulation` (seeded demo data) |
+| `source` | `client` \| `manual` | `card` (ID card scanned) | `import` |\| `simulation` (seeded demo data) |
 | `reason` | absence reason: `fee` \| `health` \| `other` \| `unknown`, or `NULL` (not given / not absent). `fee` + `health` feed the risk model |
 | `created_at` | timestamp |
 | `synced_at` | timestamp, set by `syncWorker.js` once AWS confirms the row; `NULL` until then |
@@ -79,7 +79,7 @@ a record that isn't there.
 
 ### 8. `audit_log`
 Standalone traceability log. `id`, `action` (e.g. `attendance.recorded`,
-`attendance.rejected`, `rfid.unknown_card`), `actor_id`, `record_id`,
+`attendance.rejected`, `scan.unknown_card`), `actor_id`, `record_id`,
 `detail` (JSON text), `timestamp`.
 
 ### 10. `users`
@@ -102,5 +102,5 @@ A school admin taking or correcting a register: `event_id`, `student_id`,
 | `syncQueue` | `sync_queue` |
 | `auditLog` | `audit_log` |
 | `riskScores` | *deferred* |
-| (none) | `rfid_cards` |
+| (none) | `id_cards` |
 | `pinCredentials`, `authState` | *client-only (offline auth)* |
