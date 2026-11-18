@@ -26,7 +26,7 @@ export function findStudentByCardUid(db, cardUid) {
   return db
     .prepare(
       `SELECT s.student_id, s.full_name, s.admission_no, s.class_group_id, c.card_uid
-         FROM rfid_cards c
+         FROM id_cards c
          JOIN students s ON s.student_id = c.student_id
         WHERE c.card_uid = ? AND c.active = 1`
     )
@@ -59,7 +59,7 @@ export function recordAttendance(db, event) {
 
   if (!studentId) throw new Error('studentId is required');
   if (!['present', 'absent'].includes(status)) throw new Error(`bad status: ${status}`);
-  if (!['manual', 'rfid', 'fingerprint', 'import'].includes(captureMethod)) {
+  if (!['manual', 'card', 'import'].includes(captureMethod)) {
     throw new Error(`bad captureMethod: ${captureMethod}`);
   }
 
@@ -184,7 +184,7 @@ export function getLastGateScanAt(db, schoolId) {
                 FROM attendance_events a
                 JOIN students s     ON s.student_id = a.student_id
                 JOIN class_groups c ON c.class_group_id = s.class_group_id
-               WHERE a.capture_method IN ('rfid', 'fingerprint')
+               WHERE a.capture_method IN ('card')
                  AND c.school_id = ?`)
     .get(schoolId);
   return toIsoTimestamp(row.at);
@@ -666,9 +666,9 @@ export function patchStudent(db, studentId, patch = {}) {
 /** One active card per student, so any other active card is deactivated first. */
 export function upsertCard(db, { cardUid, studentId }) {
   const tx = db.transaction(() => {
-    db.prepare(`UPDATE rfid_cards SET active = 0 WHERE student_id = ? AND active = 1 AND card_uid != ?`).run(studentId, cardUid);
+    db.prepare(`UPDATE id_cards SET active = 0 WHERE student_id = ? AND active = 1 AND card_uid != ?`).run(studentId, cardUid);
     db.prepare(
-      `INSERT INTO rfid_cards (card_uid, student_id, active) VALUES (?, ?, 1)
+      `INSERT INTO id_cards (card_uid, student_id, active) VALUES (?, ?, 1)
        ON CONFLICT(card_uid) DO UPDATE SET student_id = excluded.student_id, active = 1`
     ).run(cardUid, studentId);
   });
@@ -969,7 +969,7 @@ export function getRegisterBoard(db, schoolId, date = todayISO()) {
               COUNT(a.event_id) AS marked,
               SUM(a.status = 'present') AS present,
               SUM(a.status = 'absent') AS absent,
-              SUM(a.capture_method IN ('rfid', 'fingerprint')) AS gateMarks,
+              SUM(a.capture_method IN ('card')) AS gateMarks,
               SUM(a.capture_method = 'manual') AS manualMarks,
               MAX(a.created_at) AS lastMarkAt
          FROM class_groups c
@@ -1163,7 +1163,7 @@ export function getTeacherClasses(db, userId) {
         ORDER BY c.grade, c.stream`
     )
     .all(userId);
-  const cards = db.prepare(`SELECT card_uid AS cardUid FROM rfid_cards WHERE student_id = ? AND active = 1`);
+  const cards = db.prepare(`SELECT card_uid AS cardUid FROM id_cards WHERE student_id = ? AND active = 1`);
   return classes.map((c) => ({
     ...c,
     students: getStudentsForClass(db, c.classGroupId).map((st) => ({
@@ -1581,8 +1581,7 @@ export function findUserForReset(db, email) {
 }
 
 // Students, managed by the school admin only. Each student gets a card number
-// on enrolment; it is printed as a barcode/QR on their ID card and also works
-// on the RFID gate.
+// on enrolment; it is printed as a barcode and QR code on their ID card.
 
 export class StudentInputError extends Error {}
 
@@ -1590,7 +1589,7 @@ const STUDENT_COLUMNS = `st.student_id AS studentId, st.class_group_id AS classG
   st.full_name AS fullName, st.guardian_phone AS guardianPhone, st.guardian_email AS guardianEmail,
   st.enrolled_at AS enrolledAt, st.active,
   c.grade, c.stream,
-  (SELECT r.card_uid FROM rfid_cards r WHERE r.student_id = st.student_id AND r.active = 1) AS cardUid`;
+  (SELECT r.card_uid FROM id_cards r WHERE r.student_id = st.student_id AND r.active = 1) AS cardUid`;
 
 const toStudent = (row) => row && {
   ...row,
@@ -1600,7 +1599,7 @@ const toStudent = (row) => row && {
 
 /** A new card number: 8 hex characters, unique across every card ever issued. */
 export function generateCardUid(db) {
-  const taken = db.prepare(`SELECT 1 FROM rfid_cards WHERE card_uid = ?`);
+  const taken = db.prepare(`SELECT 1 FROM id_cards WHERE card_uid = ?`);
   for (let i = 0; i < 20; i += 1) {
     const uid = randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
     if (!taken.get(uid)) return uid;
@@ -1664,7 +1663,7 @@ export function enrolStudent(db, schoolId, { classGroupId, fullName, admissionNo
       `INSERT INTO students (student_id, class_group_id, admission_no, full_name, guardian_phone, guardian_email, enrolled_at, active)
        VALUES (?, ?, ?, ?, ?, ?, ?, 1)`
     ).run(studentId, classGroupId, adm ?? '', fullName.trim(), cleanText(guardianPhone), cleanText(guardianEmail), todayISO());
-    db.prepare(`INSERT INTO rfid_cards (card_uid, student_id, active) VALUES (?, ?, 1)`).run(generateCardUid(db), studentId);
+    db.prepare(`INSERT INTO id_cards (card_uid, student_id, active) VALUES (?, ?, 1)`).run(generateCardUid(db), studentId);
     logAudit(db, { action: 'student.enrolled', actorId: actor, recordId: studentId, detail: { classGroupId, admissionNo: adm } });
   })();
   return getSchoolStudent(db, schoolId, studentId);
@@ -1821,8 +1820,8 @@ export function reissueStudentCard(db, schoolId, studentId, { actor = null } = {
   if (!student) return null;
   const uid = generateCardUid(db);
   db.transaction(() => {
-    db.prepare(`UPDATE rfid_cards SET active = 0 WHERE student_id = ? AND active = 1`).run(studentId);
-    db.prepare(`INSERT INTO rfid_cards (card_uid, student_id, active) VALUES (?, ?, 1)`).run(uid, studentId);
+    db.prepare(`UPDATE id_cards SET active = 0 WHERE student_id = ? AND active = 1`).run(studentId);
+    db.prepare(`INSERT INTO id_cards (card_uid, student_id, active) VALUES (?, ?, 1)`).run(uid, studentId);
     logAudit(db, { action: 'student.card_reissued', actorId: actor, recordId: studentId, detail: { from: student.cardUid, to: uid } });
   })();
   return getSchoolStudent(db, schoolId, studentId);
@@ -1849,7 +1848,7 @@ export function recordStationScan(db, schoolId, cardUid, { actor = null, scanned
     .get(student.studentId, date);
   if (existing) return { outcome: 'duplicate', student, mark: { ...existing, createdAt: toIsoTimestamp(existing.createdAt) } };
   const mark = recordAttendance(db, {
-    studentId: student.studentId, date, status: 'present', captureMethod: 'rfid', recordedBy: actor, source: 'client',
+    studentId: student.studentId, date, status: 'present', captureMethod: 'card', recordedBy: actor, source: 'client',
     createdAt: scannedAt,
   });
   return { outcome: 'recorded', student, mark };

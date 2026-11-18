@@ -255,7 +255,7 @@ export default function AttendanceForm({ classGroupId, initialDate = null, initi
     }
     try {
       await setAttendance({
-        studentId: id, date, status: 'present', captureMethod: 'rfid', recordedBy: user?.username ?? null,
+        studentId: id, date, status: 'present', captureMethod: 'card', recordedBy: user?.username ?? null,
       });
     } catch (err) {
       answerScan('error', `Could not save ${student.fullName}`, err.message);
@@ -503,7 +503,7 @@ export default function AttendanceForm({ classGroupId, initialDate = null, initi
                         )}
                         {fromGate ? (
                           <span className="state-note">
-                            scanned {timeOf(record.updatedAt ?? record.createdAt)}{record.captureMethod === 'fingerprint' ? ' (fingerprint)' : ''}
+                            scanned {timeOf(record.updatedAt ?? record.createdAt)}
                           </span>
                         ) : changed ? (
                           <span className="state-note">changed</span>

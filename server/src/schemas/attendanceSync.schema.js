@@ -14,7 +14,7 @@ export const attendanceRecordSchema = {
     status: { type: 'string', enum: ['present', 'absent'] },
     captureMethod: {
       type: 'string',
-      enum: ['manual', 'rfid', 'fingerprint', 'import'],
+      enum: ['manual', 'card', 'import'],
       default: 'manual',
     },
     recordedBy: { type: ['string', 'null'], maxLength: 128 },

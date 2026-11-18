@@ -59,6 +59,13 @@ db.version(6).stores({
 db.version(7).stores({}).upgrade(async (tx) => {
   await tx.table('attendanceEvents').where('status').equals('late').modify({ status: 'present' });
 });
+// v8: every scanned ID card is stored as captureMethod 'card'; older builds
+// used other names for it.
+db.version(8).stores({}).upgrade(async (tx) => {
+  await tx.table('attendanceEvents')
+    .filter((e) => !['manual', 'card', 'import', undefined, null].includes(e.captureMethod))
+    .modify({ captureMethod: 'card' });
+});
 
 /** Keep a scan the station could not send; it goes up when back online. */
 export async function queueStationScan(cardUid, scannedAt = new Date().toISOString()) {
@@ -86,7 +93,7 @@ export const ATTENDANCE_STATUSES = ['present', 'absent'];
 export const ABSENCE_REASONS = ['fee', 'health', 'other', 'unknown'];
 
 /** Capture methods that mean "the school gate hardware recorded this". */
-export const GATE_CAPTURE_METHODS = ['rfid', 'fingerprint'];
+export const GATE_CAPTURE_METHODS = ['card'];
 
 /** A reason only means something on an absence; anything else carries none. */
 function normalizeReason(status, reason) {
@@ -678,7 +685,7 @@ export async function getStudentsByClass(classGroupId, { includeInactive = false
     .sort((a, b) => a.fullName.localeCompare(b.fullName));
 }
 
-// RFID cards: 8 upper-case hex characters, e.g. "A1B2C3D4".
+// ID card numbers: 8 upper-case hex characters, e.g. "A1B2C3D4".
 
 export function normalizeCardUid(raw) {
   const v = String(raw ?? '').replace(/\s+/g, '').toUpperCase();

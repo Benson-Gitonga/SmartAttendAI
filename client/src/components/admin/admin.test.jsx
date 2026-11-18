@@ -109,7 +109,7 @@ describe('AdminClassPage, taking or correcting a register', () => {
     date: todayISO(),
     class: { classGroupId: 'class-3b', grade: 'Form 3', stream: 'B', teacherName: 'Ms. Otieno', teacherUserId: 'user-otieno' },
     students: [
-      { studentId: 'stu-1', fullName: 'Amina Wanjiru', admissionNo: '3B/001', mark: { status: 'present', captureMethod: 'rfid', createdAt: new Date().toISOString() }, override: null },
+      { studentId: 'stu-1', fullName: 'Amina Wanjiru', admissionNo: '3B/001', mark: { status: 'present', captureMethod: 'card', createdAt: new Date().toISOString() }, override: null },
       { studentId: 'stu-2', fullName: 'Brian Kamau', admissionNo: '3B/002', mark: null, override: null },
       { studentId: 'stu-3', fullName: 'Chebet Rono', admissionNo: '3B/003', mark: null, override: null },
     ],
@@ -163,7 +163,7 @@ describe('AdminClassPage, taking or correcting a register', () => {
     api.getClassRegister.mockResolvedValue(register({
       students: [
         { studentId: 'stu-1', fullName: 'Amina Wanjiru', admissionNo: '3B/001', mark: { status: 'present', captureMethod: 'manual', createdAt: new Date().toISOString() }, override: { actor: 'admin@kibera.ac.ke', reason: 'wrong_mark' } },
-        { studentId: 'stu-2', fullName: 'Brian Kamau', admissionNo: '3B/002', mark: { status: 'present', captureMethod: 'rfid', createdAt: new Date().toISOString() }, override: null },
+        { studentId: 'stu-2', fullName: 'Brian Kamau', admissionNo: '3B/002', mark: { status: 'present', captureMethod: 'card', createdAt: new Date().toISOString() }, override: null },
         { studentId: 'stu-3', fullName: 'Chebet Rono', admissionNo: '3B/003', mark: null, override: null },
       ],
     }));

@@ -127,16 +127,16 @@ CREATE TABLE IF NOT EXISTS students (
 CREATE INDEX IF NOT EXISTS idx_students_class ON students(class_group_id);
 
 -- A replaced card is kept with active = 0.
-CREATE TABLE IF NOT EXISTS rfid_cards (
+CREATE TABLE IF NOT EXISTS id_cards (
   card_uid    TEXT PRIMARY KEY,
   student_id  TEXT NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
   issued_at   TEXT NOT NULL DEFAULT (datetime('now')),
   active      INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
 );
 
-CREATE INDEX IF NOT EXISTS idx_rfid_student ON rfid_cards(student_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_rfid_one_active_card
-  ON rfid_cards(student_id) WHERE active = 1;
+CREATE INDEX IF NOT EXISTS idx_cards_student ON id_cards(student_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_cards_one_active
+  ON id_cards(student_id) WHERE active = 1;
 
 CREATE TABLE IF NOT EXISTS attendance_events (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,7 +144,7 @@ CREATE TABLE IF NOT EXISTS attendance_events (
   student_id     TEXT NOT NULL REFERENCES students(student_id) ON DELETE CASCADE,
   date           TEXT NOT NULL,                       -- YYYY-MM-DD, school-local
   status         TEXT NOT NULL CHECK (status IN ('present', 'absent')),
-  capture_method TEXT NOT NULL CHECK (capture_method IN ('manual', 'rfid', 'fingerprint', 'import')),
+  capture_method TEXT NOT NULL CHECK (capture_method IN ('manual', 'card', 'import')),
   verified       INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0, 1)),
   recorded_by    TEXT,                                -- teacher username, or NULL for hardware
   source         TEXT NOT NULL DEFAULT 'simulation' CHECK (source IN ('simulation', 'client', 'manual')),

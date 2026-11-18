@@ -54,7 +54,7 @@ function gateWithAminaScanned() {
       gate: { lastScanAt: new Date().toISOString() },
       records: [{
         eventId: '11111111-1111-4111-8111-111111111111', studentId: 'stu-1', date: TODAY,
-        status: 'present', captureMethod: 'fingerprint', verified: true, recordedBy: null,
+        status: 'present', captureMethod: 'card', verified: true, recordedBy: null,
         reason: null, source: 'simulation', createdAt: new Date().toISOString(),
       }],
     }),
@@ -70,7 +70,7 @@ describe('AttendanceForm with the school gate', () => {
     render(<AttendanceForm classGroupId={CLASS} />);
 
     expect(await screen.findByText(/1 of 2 scanned in by card/)).toBeInTheDocument();
-    expect(within(rowFor('Amina Wanjiru')).getByText(/scanned .* \(fingerprint\)/)).toBeInTheDocument();
+    expect(within(rowFor('Amina Wanjiru')).getByText(/scanned \d/)).toBeInTheDocument();
     expect(tickFor('Amina Wanjiru')).toBeChecked();
     // no scan: absent until the teacher ticks them
     expect(tickFor('Kevin Odhiambo')).not.toBeChecked();
@@ -156,7 +156,7 @@ describe('AttendanceForm scanning cards on the phone, offline', () => {
     // saved straight away as a card scan, waiting to sync
     await waitFor(async () => {
       const amina = await db.attendanceEvents.where('[studentId+date]').equals(['stu-1', TODAY]).first();
-      expect(amina).toMatchObject({ status: 'present', captureMethod: 'rfid', recordedBy: 'teacher.a' });
+      expect(amina).toMatchObject({ status: 'present', captureMethod: 'card', recordedBy: 'teacher.a' });
     });
     expect(await countPendingSync()).toBe(1);
     expect(await screen.findByText(/1 of 2 scanned in by card/)).toBeInTheDocument();

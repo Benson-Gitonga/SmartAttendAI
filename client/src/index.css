@@ -1583,7 +1583,7 @@ button.student-cell:hover .student-cell__name { color: var(--indigo-600); text-d
   .avatar--md { width: 38px; height: 38px; }
 }
 
-/* ========================================================= RFID card list === */
+/* ========================================================= ID card list ===== */
 
 .cardlist-sheet {
   background: var(--surface);

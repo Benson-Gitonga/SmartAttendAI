@@ -69,7 +69,7 @@ describe('GET /api/gate/classes/:id/attendance', () => {
   });
 
   test("returns today's gate scans in the PWA's shape, keeping the server eventId", async () => {
-    const scan = recordAttendance(db, { studentId: 'stu-form3b-001', captureMethod: 'rfid', source: 'client' });
+    const scan = recordAttendance(db, { studentId: 'stu-form3b-001', captureMethod: 'card', source: 'client' });
 
     const body = await (await getClassAttendance(CLASS)).json();
     assert.equal(body.records.length, 1);
@@ -77,7 +77,7 @@ describe('GET /api/gate/classes/:id/attendance', () => {
     assert.equal(r.eventId, scan.eventId);
     assert.equal(r.studentId, 'stu-form3b-001');
     assert.equal(r.status, 'present');
-    assert.equal(r.captureMethod, 'rfid');
+    assert.equal(r.captureMethod, 'card');
     assert.equal(r.source, 'client');
     assert.match(r.createdAt, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
     assert.equal(body.gate.lastScanAt, r.createdAt);
@@ -103,8 +103,8 @@ describe('GET /api/gate/classes/:id/attendance', () => {
   });
 
   test('only returns students in the requested class', async () => {
-    recordAttendance(db, { studentId: 'stu-form3b-001', captureMethod: 'rfid' });
-    recordAttendance(db, { studentId: 'stu-other-1', captureMethod: 'rfid' });
+    recordAttendance(db, { studentId: 'stu-form3b-001', captureMethod: 'card' });
+    recordAttendance(db, { studentId: 'stu-other-1', captureMethod: 'card' });
 
     const body = await (await getClassAttendance(CLASS)).json();
     assert.deepEqual(body.records.map((r) => r.studentId), ['stu-form3b-001']);
@@ -116,14 +116,14 @@ describe('GET /api/gate/classes/:id/attendance', () => {
                 VALUES ('class-elsewhere', 'school-other', 'Form 1', 2026)`).run();
     db.prepare(`INSERT INTO students (student_id, class_group_id, admission_no, full_name)
                 VALUES ('stu-elsewhere-1', 'class-elsewhere', 'E/001', 'Elsewhere Student')`).run();
-    recordAttendance(db, { studentId: 'stu-elsewhere-1', captureMethod: 'rfid' });
+    recordAttendance(db, { studentId: 'stu-elsewhere-1', captureMethod: 'card' });
 
     // another school scanned a card; this school has not
     const before = await (await getClassAttendance(CLASS)).json();
     assert.equal(before.gate.lastScanAt, null);
 
     // a scan in another class of this school does count
-    const ours = recordAttendance(db, { studentId: 'stu-other-1', captureMethod: 'rfid' });
+    const ours = recordAttendance(db, { studentId: 'stu-other-1', captureMethod: 'card' });
     const after = await (await getClassAttendance(CLASS)).json();
     // stored to the second
     const toSecond = (t) => Math.floor(new Date(t).getTime() / 1000);
@@ -131,8 +131,8 @@ describe('GET /api/gate/classes/:id/attendance', () => {
   });
 
   test('filters by the requested date', async () => {
-    recordAttendance(db, { studentId: 'stu-form3b-001', captureMethod: 'rfid', date: '2026-09-01' });
-    recordAttendance(db, { studentId: 'stu-form3b-001', captureMethod: 'rfid', date: '2026-09-02' });
+    recordAttendance(db, { studentId: 'stu-form3b-001', captureMethod: 'card', date: '2026-09-01' });
+    recordAttendance(db, { studentId: 'stu-form3b-001', captureMethod: 'card', date: '2026-09-02' });
 
     const body = await (await getClassAttendance(CLASS, '?date=2026-09-01')).json();
     assert.equal(body.records.length, 1);

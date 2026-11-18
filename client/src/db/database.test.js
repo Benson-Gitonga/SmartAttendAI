@@ -84,12 +84,12 @@ describe('addAttendanceEvent - writing a record', () => {
 
   it('defaults captureMethod to "manual" and preserves an explicit one', async () => {
     await addAttendanceEvent({ studentId: 'stu-1', date: DATE, status: 'present' });
-    await addAttendanceEvent({ studentId: 'stu-2', date: DATE, status: 'absent', captureMethod: 'rfid' });
+    await addAttendanceEvent({ studentId: 'stu-2', date: DATE, status: 'absent', captureMethod: 'card' });
 
     const a = await db.attendanceEvents.where('studentId').equals('stu-1').first();
     const b = await db.attendanceEvents.where('studentId').equals('stu-2').first();
     expect(a.captureMethod).toBe('manual');
-    expect(b.captureMethod).toBe('rfid');
+    expect(b.captureMethod).toBe('card');
   });
 
   it.each([
@@ -311,7 +311,7 @@ describe('roster management', () => {
   });
 });
 
-describe('RFID cards', () => {
+describe('ID cards', () => {
   const CLASS = 'class-x';
 
   it('normalizes a card UID (trim, strip spaces, upper-case)', () => {
@@ -573,7 +573,7 @@ describe("applyGateRecords - merging the gate server's records", () => {
     studentId: 'stu-1',
     date: DATE,
     status: 'present',
-    captureMethod: 'rfid',
+    captureMethod: 'card',
     verified: false,
     recordedBy: null,
     reason: null,
@@ -588,7 +588,7 @@ describe("applyGateRecords - merging the gate server's records", () => {
 
     const stored = await db.attendanceEvents.get({ eventId: gateScan().eventId });
     expect(stored.status).toBe('present');
-    expect(stored.captureMethod).toBe('rfid');
+    expect(stored.captureMethod).toBe('card');
     expect(stored.syncedAt).toEqual(expect.any(String));
     expect(await countPendingSync()).toBe(0);
   });
@@ -619,12 +619,12 @@ describe("applyGateRecords - merging the gate server's records", () => {
   it('the gate wins over a different offline mark, and reports it', async () => {
     const local = await addAttendanceEvent({ studentId: 'stu-1', date: DATE, status: 'absent', reason: 'fee' });
 
-    const out = await applyGateRecords([gateScan({ captureMethod: 'fingerprint', verified: true })]);
+    const out = await applyGateRecords([gateScan({ verified: true })]);
     expect(out.replaced).toEqual([{
       studentId: 'stu-1',
       localStatus: 'absent',
       serverStatus: 'present',
-      captureMethod: 'fingerprint',
+      captureMethod: 'card',
       createdAt: '2026-08-27T04:12:00Z',
     }]);
 
